@@ -1,0 +1,45 @@
+# Downloaded paper
+paper/*.pdf
+
+# Data
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+
+# Experiment outputs
+results/*
+!results/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE and operating systems
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Secrets and credentials
+.env
+.env.*
+!.env.example
+!.env.*.example
+kaggle.json
+*api_key*
+*apikey*
+*credential*
+*credentials*
+service-account*.json
+client_secret*.json
