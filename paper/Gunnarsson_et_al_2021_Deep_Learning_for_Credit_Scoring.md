@@ -172,13 +172,13 @@ As discussed in a previous section, the benchmark study by Lessmann et al. (2015
 Traditional performance measures like the ones discussed in the previous section are often not able to accurately take into account the business reality of credit scoring. The expected maximum profit measure (EMP) was developed to be more in line with business concerns, and is a general performance measure which estimates the profit that a company can achieve by applying a particular classifier (Verbraken et al., 2014). The average classification profit for each customer achieved by utilizing a classifier for PD modelling like described above is calculated as follows:
 
 $$
-P(t;b_1,c_0,c^*)=(b_1-c^*)\pi_1F_1(t)-(c_0+c^*)\pi_0F_0(t)\qquad \text{(4)}
+P(t,b_1,c_0,c^*)=(b_1-c^*)\pi_1F_1(t)-(c_0+c^*)\pi_0F_0(t)\qquad \text{(4)}
 $$
 
-where $b_1$ is the benefit of correctly classifying a customer that will default, $c_0$ is the cost of classifying a non-defaulting customer as a defaulter and $c^*$ is the general cost of an action undertaken by a company. The prior probability of a default (non-default) is $\pi_1$ ($\pi_0$) and $F_1(t)$ ($F_0(t)$) is the cumulative density function of a default (non-default) given the threshold $t$. The estimated average profit is a function of the threshold $t$, optimizing this leads to the maximum profit (MP) measure defined as $MP = \max_{\forall t} P(t;b_1,c_0,c^*)$. Since the cost and benefit parameters, $c_0$ and $b_1$, can not always be determined upfront exactly, the expected
+where $b_1$ is the benefit of correctly classifying a customer that will default, $c_0$ is the cost of classifying a non-defaulting customer as a defaulter and $c^*$ is the general cost of an action undertaken by a company. The prior probability of a default (non-default) is $\pi_1$ ($\pi_0$) and $F_1(t)$ ($F_0(t)$) is the cumulative density function of a default (non-default) given the threshold $t$. The estimated average profit is a function of the threshold $t$, optimizing this leads to the maximum profit (MP) measure defined as $MP = \max_{\forall t} P(t,b_1,c_0,c^*)$. Since the cost and benefit parameters, $c_0$ and $b_1$, can not always be determined upfront exactly, the expected
 
 $$
-\mathrm{EMP}=\int_{b_1}\int_{c_0}P\!\left(T(\theta);b_1,c_0,c^*\right)h(b_1,c_0)\,dc_0\,db_1\qquad \text{(5)}
+\mathrm{EMP}=\int_{b_1}\int_{c_0}P\!\left(T(\theta),b_1,c_0,c^*\right)h(b_1,c_0)\,dc_0\,db_1\qquad \text{(5)}
 $$
 
 with h(b1, c0) the joint probability density of the classification costs. Hence, EMP is a measure of the profit a company can achieve by applying a classifier. In fact it has been shown that the EMP is an upper bound to the profit a company can attain by applying a particular classifier (for more details on the EMP measure, e.g. with regards to specifying the cost and benefit parameters, see Verbraken et al. (2014)).

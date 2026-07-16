@@ -172,13 +172,13 @@ Như đã thảo luận trong mục trước, nghiên cứu chuẩn của Lessma
 Các thước đo hiệu năng truyền thống như những thước đo đã thảo luận ở mục trước thường không thể tính đến chính xác thực tế kinh doanh của chấm điểm tín dụng. Thước đo lợi nhuận kỳ vọng tối đa (EMP) được phát triển để phù hợp hơn với các mối quan tâm kinh doanh, và là một thước đo hiệu năng tổng quát ước lượng lợi nhuận mà một công ty có thể đạt được bằng cách áp dụng một bộ phân loại cụ thể (Verbraken et al., 2014). Lợi nhuận phân loại trung bình cho mỗi khách hàng đạt được bằng cách sử dụng một bộ phân loại cho mô hình hóa PD như mô tả ở trên được tính như sau:
 
 $$
-P(t;b_1,c_0,c^*)=(b_1-c^*)\pi_1F_1(t)-(c_0+c^*)\pi_0F_0(t)\qquad \text{(4)}
+P(t,b_1,c_0,c^*)=(b_1-c^*)\pi_1F_1(t)-(c_0+c^*)\pi_0F_0(t)\qquad \text{(4)}
 $$
 
-trong đó $b_1$ là lợi ích của việc phân loại đúng một khách hàng sẽ vỡ nợ, $c_0$ là chi phí của việc phân loại một khách hàng không vỡ nợ thành người vỡ nợ, và $c^*$ là chi phí chung của một hành động do công ty thực hiện. Xác suất tiên nghiệm của vỡ nợ (không vỡ nợ) là $\pi_1$ ($\pi_0$) và $F_1(t)$ ($F_0(t)$) là hàm mật độ tích lũy của vỡ nợ (không vỡ nợ) cho trước ngưỡng $t$. Lợi nhuận trung bình ước lượng là một hàm của ngưỡng $t$; tối ưu hóa hàm này dẫn tới thước đo lợi nhuận tối đa (MP) được định nghĩa là $MP = \max_{\forall t} P(t;b_1,c_0,c^*)$. Vì các tham số chi phí và lợi ích, $c_0$ và $b_1$, không phải lúc nào cũng có thể được xác định chính xác từ trước, giá trị kỳ vọng
+trong đó $b_1$ là lợi ích của việc phân loại đúng một khách hàng sẽ vỡ nợ, $c_0$ là chi phí của việc phân loại một khách hàng không vỡ nợ thành người vỡ nợ, và $c^*$ là chi phí chung của một hành động do công ty thực hiện. Xác suất tiên nghiệm của vỡ nợ (không vỡ nợ) là $\pi_1$ ($\pi_0$) và $F_1(t)$ ($F_0(t)$) là hàm mật độ tích lũy của vỡ nợ (không vỡ nợ) cho trước ngưỡng $t$. Lợi nhuận trung bình ước lượng là một hàm của ngưỡng $t$; tối ưu hóa hàm này dẫn tới thước đo lợi nhuận tối đa (MP) được định nghĩa là $MP = \max_{\forall t} P(t,b_1,c_0,c^*)$. Vì các tham số chi phí và lợi ích, $c_0$ và $b_1$, không phải lúc nào cũng có thể được xác định chính xác từ trước, giá trị kỳ vọng
 
 $$
-\mathrm{EMP}=\int_{b_1}\int_{c_0}P\!\left(T(\theta);b_1,c_0,c^*\right)h(b_1,c_0)\,dc_0\,db_1\qquad \text{(5)}
+\mathrm{EMP}=\int_{b_1}\int_{c_0}P\!\left(T(\theta),b_1,c_0,c^*\right)h(b_1,c_0)\,dc_0\,db_1\qquad \text{(5)}
 $$
 
 với h(b1, c0) là mật độ xác suất chung của chi phí phân loại. Do đó, EMP là thước đo lợi nhuận mà một công ty có thể đạt được bằng cách áp dụng một bộ phân loại. Trên thực tế, đã chứng minh rằng EMP là cận trên của lợi nhuận mà một công ty có thể đạt được khi áp dụng một bộ phân loại cụ thể (để biết thêm chi tiết về thước đo EMP, ví dụ liên quan đến việc xác định các tham số chi phí và lợi ích, xem Verbraken et al. (2014)).
