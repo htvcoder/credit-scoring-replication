@@ -53,9 +53,9 @@ Như đã thảo luận trong mục trước, các phương pháp chấm điểm
 
 Trong những thập kỷ qua, hồi quy logistic đã trở thành phương pháp phân tích tiêu chuẩn trong nhiều lĩnh vực mà biến kết quả quan tâm là một biến nhị phân rời rạc (Hosmer Jr et al., 2013). Với một tập huấn luyện, hồi quy logistic ước lượng xác suất vỡ nợ, $p(+1\mid x)$, đối với một khoản vay x như sau:
 
-$$
+```math
 p(+1\mid x)=\frac{1}{1+\exp\left[-\left(w_0+w^T x\right)\right]}\qquad \text{(1)}
-$$
+```
 
 trong đó w là vectơ tham số và đại lượng vô hướng w0 là hệ số chặn (Baesens et al., 2003).
 
@@ -69,15 +69,15 @@ Các phương pháp tổ hợp ước lượng nhiều mô hình thay vì chỉ 
 
 Mạng nơ-ron nhân tạo (ANN) là các mạng gồm những phần tử xử lý đơn giản gọi là nơ-ron. Nơ-ron là các đơn vị tính toán đơn giản nhận một số lượng tùy ý các đầu vào có trọng số (tùy chọn bao gồm một đầu vào thiên lệch) và có thể trả về một đầu ra duy nhất thông qua một hàm kích hoạt. Ý tưởng về nơ-ron có thể được khái quát hóa thành mạng nơ-ron perceptron đa tầng (MLP) bằng cách thêm nhiều tầng chứa nhiều nơ-ron vào mạng này, trong đó mỗi nơ-ron xử lý các đầu vào của nó và tạo ra một giá trị đầu ra được truyền tới tất cả nơ-ron ở tầng tiếp theo. Cấu trúc cơ bản của mạng nơ-ron perceptron đa tầng có một tầng ẩn và một tầng đầu ra. Để tính đầu ra của một nơ-ron ẩn i, trong
 
-$$
+```math
 h_i=f^{(1)}\left(b_i^{(1)}+\sum_{j=1}^{m}W_{ij}x_j\right)\qquad \text{(2)}
-$$
+```
 
 trong đó $W$ là ma trận trọng số và $W_{ij}$ biểu thị trọng số nối đầu vào $j$ với đơn vị ẩn $i$. Tương tự,
 
-$$
+```math
 y=f^{(2)}\left(b^{(2)}+\sum_{j=1}^{m_h}v_jh_j\right)\qquad \text{(3)}
-$$
+```
 
 trong đó $m_h$ biểu thị số lượng nơ-ron ẩn và $v$ là vectơ trọng số, còn $v_j$ là trọng số nối đơn vị ẩn $j$ với nơ-ron đầu ra. Cuối cùng, mạng có khả năng mô hình hóa các quan hệ phi tuyến trong dữ liệu bằng cách sử dụng các hàm kích hoạt $f^{(1)}$ và $f^{(2)}$. Hai loại hàm kích hoạt được sử dụng phổ biến nhất trong mạng nơ-ron là hàm sigmoid và hàm tuyến tính chỉnh lưu (Svozil et al., 1997; Schmidhuber, 2015; Baesens, 2014; Baesens et al., 2003; Spanoudes and Nguyen, 2017). Các tiến bộ trong nghiên cứu mạng nơ-ron và sự gia tăng hiệu năng tính toán đã dẫn đến sự ra đời của các mạng lớn với nhiều tầng ẩn, tức học sâu. Hệ quả là mạng có thể lan truyền trọng số qua mạng và do đó có thể học các độ phức tạp trong các bộ dữ liệu lớn thông qua việc sử dụng nhiều tầng xử lý với cấu trúc phức tạp. Một ví dụ về mạng MLP sâu được thể hiện trong Hình 1. Mạng này được xây dựng bằng nhiều tầng nơ-ron được kết nối với các hàm kích hoạt đơn giản. Khi xử lý các bài toán phân loại, hàm softmax có thể được sử dụng làm hàm kích hoạt trên các nơ-ron nằm ở tầng đầu ra. Để đưa ra dự đoán, mạng sử dụng lớp của tầng đầu ra mà nơ-ron trả về xác suất cao nhất làm lớp dự đoán của mạng. Khi đó, sự khác biệt giữa vectơ xác suất do tầng đầu ra trả về và vectơ nhãn thật có thể được định lượng như một lỗi. Lượng lỗi quyết định cách các trọng số sẽ được điều chỉnh trong quá trình huấn luyện mạng (Spanoudes and Nguyen, 2017; Luo et al., 2017; Van-Sang and Ha-Nam, 2016; Svozil et al., 1997).
 
@@ -171,25 +171,25 @@ Như đã thảo luận trong mục trước, nghiên cứu chuẩn của Lessma
 
 Các thước đo hiệu năng truyền thống như những thước đo đã thảo luận ở mục trước thường không thể tính đến chính xác thực tế kinh doanh của chấm điểm tín dụng. Thước đo lợi nhuận kỳ vọng tối đa (EMP) được phát triển để phù hợp hơn với các mối quan tâm kinh doanh, và là một thước đo hiệu năng tổng quát ước lượng lợi nhuận mà một công ty có thể đạt được bằng cách áp dụng một bộ phân loại cụ thể (Verbraken et al., 2014). Lợi nhuận phân loại trung bình cho mỗi khách hàng đạt được bằng cách sử dụng một bộ phân loại cho mô hình hóa PD như mô tả ở trên được tính như sau:
 
-$$
+```math
 P(t;b_{1},c_{0},c^{*})
 =
 (b_{1}-c^{*})\pi_{1}F_{1}(t)
 -
 (c_{0}+c^{*})\pi_{0}F_{0}(t)
 \qquad \text{(4)}
-$$
+```
 
 trong đó $b_{1}$ là lợi ích của việc phân loại đúng một khách hàng sẽ vỡ nợ, $c_{0}$ là chi phí của việc phân loại một khách hàng không vỡ nợ thành người vỡ nợ, và $c^{*}$ là chi phí chung của một hành động do công ty thực hiện. Xác suất tiên nghiệm của vỡ nợ (không vỡ nợ) là $\pi_{1}$ ($\pi_{0}$) và $F_{1}(t)$ ($F_{0}(t)$) là hàm mật độ tích lũy của vỡ nợ (không vỡ nợ) cho trước ngưỡng $t$. Lợi nhuận trung bình ước lượng là một hàm của ngưỡng $t$; tối ưu hóa hàm này dẫn tới thước đo lợi nhuận tối đa ($MP$) được định nghĩa là $MP = \max_{\forall t} P(t;b_{1},c_{0},c^{*})$. Vì các tham số chi phí và lợi ích, $c_{0}$ và $b_{1}$, không phải lúc nào cũng có thể được xác định chính xác từ trước, giá trị kỳ vọng
 
-$$
+```math
 \mathrm{EMP}
 =
 \int_{b_{1}}\int_{c_{0}}
 P\!\left(T(\theta);b_{1},c_{0},c^{*}\right)
 h(b_{1},c_{0})\,dc_{0}\,db_{1}
 \qquad \text{(5)}
-$$
+```
 
 với $h(b_{1},c_{0})$ là mật độ xác suất chung của chi phí phân loại. Do đó, $EMP$ là thước đo lợi nhuận mà một công ty có thể đạt được bằng cách áp dụng một bộ phân loại. Trên thực tế, đã chứng minh rằng $EMP$ là cận trên của lợi nhuận mà một công ty có thể đạt được khi áp dụng một bộ phân loại cụ thể (để biết thêm chi tiết về thước đo $EMP$, ví dụ liên quan đến việc xác định các tham số chi phí và lợi ích, xem Verbraken et al. (2014)).
 

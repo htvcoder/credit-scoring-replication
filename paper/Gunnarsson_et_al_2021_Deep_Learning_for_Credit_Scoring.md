@@ -53,9 +53,9 @@ As discussed in a previous section, credit scoring methods are developed with th
 
 Over the past decades, logistic regression has become the standard method of analysis in various fields where the outcome variable of interest is a discrete binary variable (Hosmer Jr et al., 2013). Given a training set logistic regression estimates the probability of default, $p(+1\mid x)$ for a loan x, as follows:
 
-$$
+```math
 p(+1\mid x)=\frac{1}{1+\exp\left[-\left(w_0+w^T x\right)\right]}\qquad \text{(1)}
-$$
+```
 
 where w is the parameter vector and the scalar w0 is the intercept (Baesens et al., 2003).
 
@@ -69,15 +69,15 @@ Ensemble methods estimate multiple models instead of using only one model. Rando
 
 Artificial neural networks (ANNs) are networks of simple processing elements called neurons. Neurons are simple computational units that take an arbitrary number of weighted inputs (optionally including a bias input) and are able to return a single output through a activation function. The idea of a neuron can be generalized to a multilayer perceptron (MLP) neural network by adding multiple layers containing multiple neurons to this network, where each neuron processes its inputs and generates one output value that is transmitted to all neurons in the following layer. The basic structure of a multilayer perceptron neural network has one hidden layer and one output layer. In order to compute the output of a hidden neuron i, in
 
-$$
+```math
 h_i=f^{(1)}\left(b_i^{(1)}+\sum_{j=1}^{m}W_{ij}x_j\right)\qquad \text{(2)}
-$$
+```
 
 where $W$ is the weight matrix and $W_{ij}$ denotes the weight connecting input $j$ to hidden unit $i$. Similarly, the
 
-$$
+```math
 y=f^{(2)}\left(b^{(2)}+\sum_{j=1}^{m_h}v_jh_j\right)\qquad \text{(3)}
-$$
+```
 
 where $m_h$ represents the number of hidden neurons and $v$ is the weight vector, and $v_j$ is the weight connecting a hidden unit $j$ to the output neuron. Lastly, the network is able to model non-linear relationships in the data using the activation functions $f^{(1)}$ and $f^{(2)}$. Two types of activation functions are most commonly used in neural networks, namely the sigmoid function and the rectified linear function (Svozil et al., 1997; Schmidhuber, 2015; Baesens, 2014; Baesens et al., 2003; Spanoudes and Nguyen, 2017). Advances in research on neural networks and increases in computing performance have led to the inception of large networks with multiple hidden layers, i.e. deep learning. The effect of this is that the network is able to propagate weights through the network and can therefore learn complexities in large data sets by the use of multiple processing layers with complex structures. An example of a deep MLP network is shown in Figure 1. This network is constructed using multiple layers of connected neurons with simple activation functions. When dealing with classification problems a softmax function can be used as the activation function over the neurons situated in the output layer. In order to make predictions, the network uses the class of the output layer for which neuron returned the highest probability as the predicted class of the network. The difference between the probability vector returned by the output layer and the true label vector can then be quantified as an error. The amount of error dictates how the weights will be adjusted during the training of the network (Spanoudes and Nguyen, 2017; Luo et al., 2017; Van-Sang and Ha-Nam, 2016; Svozil et al., 1997).
 
@@ -171,25 +171,25 @@ As discussed in a previous section, the benchmark study by Lessmann et al. (2015
 
 Traditional performance measures like the ones discussed in the previous section are often not able to accurately take into account the business reality of credit scoring. The expected maximum profit measure (EMP) was developed to be more in line with business concerns, and is a general performance measure which estimates the profit that a company can achieve by applying a particular classifier (Verbraken et al., 2014). The average classification profit for each customer achieved by utilizing a classifier for PD modelling like described above is calculated as follows:
 
-$$
+```math
 P(t;b_{1},c_{0},c^{*})
 =
 (b_{1}-c^{*})\pi_{1}F_{1}(t)
 -
 (c_{0}+c^{*})\pi_{0}F_{0}(t)
 \qquad \text{(4)}
-$$
+```
 
 where $b_{1}$ is the benefit of correctly classifying a customer that will default, $c_{0}$ is the cost of classifying a non-defaulting customer as a defaulter and $c^{*}$ is the general cost of an action undertaken by a company. The prior probability of a default (non-default) is $\pi_{1}$ ($\pi_{0}$) and $F_{1}(t)$ ($F_{0}(t)$) is the cumulative density function of a default (non-default) given the threshold $t$. The estimated average profit is a function of the threshold $t$, optimizing this leads to the maximum profit ($MP$) measure defined as $MP = \max_{\forall t} P(t;b_{1},c_{0},c^{*})$. Since the cost and benefit parameters, $c_{0}$ and $b_{1}$, can not always be determined upfront exactly, the expected
 
-$$
+```math
 \mathrm{EMP}
 =
 \int_{b_{1}}\int_{c_{0}}
 P\!\left(T(\theta);b_{1},c_{0},c^{*}\right)
 h(b_{1},c_{0})\,dc_{0}\,db_{1}
 \qquad \text{(5)}
-$$
+```
 
 with $h(b_{1},c_{0})$ the joint probability density of the classification costs. Hence, $EMP$ is a measure of the profit a company can achieve by applying a classifier. In fact it has been shown that the $EMP$ is an upper bound to the profit a company can attain by applying a particular classifier (for more details on the $EMP$ measure, e.g. with regards to specifying the cost and benefit parameters, see Verbraken et al. (2014)).
 
