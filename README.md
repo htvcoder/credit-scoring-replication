@@ -268,6 +268,48 @@ Phần còn lại cho P1C:
 
 - P1C: CI/CD, Google Cloud VM, health check, rollback và deployment runbook.
 
+### Production deployment P1C
+
+P1C bổ sung luồng continuous deployment cho website production:
+
+```text
+GitHub Actions
+-> build Docker image
+-> tag bằng full Git commit SHA
+-> push lên GHCR
+-> SSH vào Google Cloud VM
+-> docker pull đúng image SHA
+-> docker compose up -d
+-> kiểm tra /, /health/ và /version/
+-> rollback tự động nếu deploy lỗi
+```
+
+Các file chính:
+
+- `.github/workflows/deploy-production.yml`: build, push GHCR và deploy/rollback qua SSH; không chạy trên Pull Request.
+- `docker-compose.prod.yml`: chạy website image qua biến `WEBSITE_IMAGE`, map host `80` sang container `8080`.
+- `scripts/deploy-production.sh`: deploy immutable image, ghi state/log, kiểm tra health/version và rollback khi lỗi.
+- `scripts/rollback-production.sh`: rollback thủ công về previous successful image.
+- `docs/DEPLOYMENT_GOOGLE_CLOUD.md`: runbook production, GHCR authentication, secrets, logs, retention và acceptance checklist.
+
+Image production có dạng:
+
+```text
+ghcr.io/<owner>/<repository>-website:<full-sha>
+```
+
+GitHub Secrets production đang dùng:
+
+- `PROD_HOST`
+- `PROD_USER`
+- `PROD_SSH_PORT`
+- `PROD_SSH_PRIVATE_KEY`
+- `PROD_KNOWN_HOSTS`
+
+Manual deploy dùng workflow `Deploy Production` với `action=deploy`. Manual rollback dùng cùng workflow với `action=rollback`.
+
+P1C chưa được đánh dấu hoàn thành chính thức nếu chưa có evidence chạy thật trên GitHub Actions và Google Cloud VM: GHCR push, VM pull đúng image immutable, website public IP trả `/`, `/health/`, `/version/` khớp SHA, rollback thật pass và failed deployment tự rollback được. Domain và HTTPS vẫn Optional trong checkpoint này.
+
 ## Metadata dataset
 
 `data/datasets.yaml` là registry chính cho Phase 0. File này khai báo cho 6 dataset công khai:

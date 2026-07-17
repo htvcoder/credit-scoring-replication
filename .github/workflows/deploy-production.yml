@@ -1,0 +1,307 @@
+name: Deploy Production
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - website/**
+      - deploy/**
+      - scripts/deploy-production.sh
+      - scripts/rollback-production.sh
+      - docker-compose.prod.yml
+      - .github/workflows/deploy-production.yml
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "deploy or rollback"
+        required: true
+        default: "deploy"
+        type: choice
+        options:
+          - deploy
+          - rollback
+      deploy_sha:
+        description: "Full commit SHA to build/deploy. Defaults to the workflow commit."
+        required: false
+        type: string
+      image_tag:
+        description: "Optional GHCR tag to push/deploy. Defaults to deploy_sha."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy website to Google Cloud VM
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: ${{ github.event_name != 'pull_request' }}
+    steps:
+      - name: Resolve deployment inputs
+        id: resolve
+        shell: bash
+        env:
+          ACTION_INPUT: ${{ github.event.inputs.action }}
+          DEPLOY_SHA_INPUT: ${{ github.event.inputs.deploy_sha }}
+          IMAGE_TAG_INPUT: ${{ github.event.inputs.image_tag }}
+        run: |
+          set -euo pipefail
+
+          action="${ACTION_INPUT:-deploy}"
+          if [[ "${action}" != "deploy" && "${action}" != "rollback" ]]; then
+            echo "Invalid action: ${action}" >&2
+            exit 1
+          fi
+
+          deploy_sha="${DEPLOY_SHA_INPUT:-${GITHUB_SHA}}"
+          if [[ ! "${deploy_sha}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "deploy_sha must be a full lowercase 40-character Git SHA." >&2
+            exit 1
+          fi
+
+          image_tag="${IMAGE_TAG_INPUT:-${deploy_sha}}"
+          if [[ ! "${image_tag}" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+            echo "image_tag must be a valid Docker tag." >&2
+            exit 1
+          fi
+
+          repository_lower="$(printf '%s' "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')"
+          image="ghcr.io/${repository_lower}-website:${image_tag}"
+
+          {
+            echo "action=${action}"
+            echo "deploy_sha=${deploy_sha}"
+            echo "image_tag=${image_tag}"
+            echo "image=${image}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Checkout
+        if: ${{ steps.resolve.outputs.action == 'deploy' }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.resolve.outputs.deploy_sha }}
+
+      - name: Setup Node
+        if: ${{ steps.resolve.outputs.action == 'deploy' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - name: Install website dependencies
+        if: ${{ steps.resolve.outputs.action == 'deploy' }}
+        working-directory: website
+        run: npm ci
+
+      - name: Validate website
+        if: ${{ steps.resolve.outputs.action == 'deploy' }}
+        working-directory: website
+        env:
+          NEXT_PUBLIC_BUILD_SHA: ${{ steps.resolve.outputs.deploy_sha }}
+        run: |
+          set -euo pipefail
+          npm run sync:datasets
+          npm run lint
+          npm run type-check
+          npm run validate:content
+          node scripts/security-scan.mjs
+          npm run build
+
+      - name: Validate deployment files
+        if: ${{ steps.resolve.outputs.action == 'deploy' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/deploy-production.sh
+          bash -n scripts/rollback-production.sh
+          WEBSITE_IMAGE="${{ steps.resolve.outputs.image }}" docker compose -f docker-compose.prod.yml config >/dev/null
+
+      - name: Login to GHCR
+        if: ${{ steps.resolve.outputs.action == 'deploy' }}
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build website image
+        if: ${{ steps.resolve.outputs.action == 'deploy' }}
+        run: |
+          set -euo pipefail
+          docker build \
+            --build-arg BUILD_SHA="${{ steps.resolve.outputs.deploy_sha }}" \
+            -t "${{ steps.resolve.outputs.image }}" \
+            website
+
+      - name: Smoke test image
+        if: ${{ steps.resolve.outputs.action == 'deploy' }}
+        run: |
+          set -euo pipefail
+          docker run -d --rm --name credit-scoring-website-deploy-check -p 8080:8080 "${{ steps.resolve.outputs.image }}"
+          trap 'docker stop credit-scoring-website-deploy-check >/dev/null 2>&1 || true' EXIT
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8080/health/ | grep -q "OK"; then
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8080/
+          curl -fsS http://127.0.0.1:8080/health/ | grep -q "OK"
+          curl -fsS http://127.0.0.1:8080/version/ | grep -q "${{ steps.resolve.outputs.deploy_sha }}"
+          docker exec credit-scoring-website-deploy-check sh -c '
+            set -eu
+            test ! -e /usr/share/nginx/html/data/raw
+            test ! -e /usr/share/nginx/html/data/processed
+            ! find /usr/share/nginx/html -name ".env*" -o -name "kaggle.json" -o -name "*.pem" -o -name "*.key" | grep .
+            ! grep -R "data/raw\|data/processed\|BEGIN RSA PRIVATE KEY\|BEGIN OPENSSH PRIVATE KEY" /usr/share/nginx/html
+          '
+
+      - name: Push image
+        if: ${{ steps.resolve.outputs.action == 'deploy' }}
+        run: docker push "${{ steps.resolve.outputs.image }}"
+
+      - name: Checkout deployment files for rollback
+        if: ${{ steps.resolve.outputs.action == 'rollback' }}
+        uses: actions/checkout@v4
+
+      - name: Validate required SSH secrets
+        shell: bash
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+          PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
+          PROD_SSH_PRIVATE_KEY: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+          PROD_KNOWN_HOSTS: ${{ secrets.PROD_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+
+          missing=0
+          for secret_name in PROD_HOST PROD_USER PROD_SSH_PORT PROD_SSH_PRIVATE_KEY PROD_KNOWN_HOSTS; do
+            if [ -z "${!secret_name}" ]; then
+              echo "Missing required secret: ${secret_name}" >&2
+              missing=1
+            fi
+          done
+
+          if [ "${missing}" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Prepare SSH files
+        shell: bash
+        env:
+          PROD_SSH_PRIVATE_KEY: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+          PROD_KNOWN_HOSTS: ${{ secrets.PROD_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+
+          ssh_key_path="${HOME}/.ssh/github_actions_production"
+          ssh_known_hosts_path="${HOME}/.ssh/known_hosts"
+
+          install -d -m 700 "${HOME}/.ssh"
+          printf '%s\n' "${PROD_SSH_PRIVATE_KEY}" | tr -d '\r' > "${ssh_key_path}"
+          chmod 600 "${ssh_key_path}"
+          printf '%s\n' "${PROD_KNOWN_HOSTS}" | tr -d '\r' > "${ssh_known_hosts_path}"
+          chmod 600 "${ssh_known_hosts_path}"
+          ssh-keygen -y -f "${ssh_key_path}" >/dev/null
+
+      - name: Copy deployment bundle to VM
+        shell: bash
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+          PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
+        run: |
+          set -euo pipefail
+
+          ssh_key_path="${HOME}/.ssh/github_actions_production"
+          ssh_known_hosts_path="${HOME}/.ssh/known_hosts"
+          remote="${PROD_USER}@${PROD_HOST}"
+          ssh_opts=(
+            -i "${ssh_key_path}"
+            -p "${PROD_SSH_PORT}"
+            -o BatchMode=yes
+            -o StrictHostKeyChecking=yes
+            -o UserKnownHostsFile="${ssh_known_hosts_path}"
+            -o ConnectTimeout=15
+            -o IdentitiesOnly=yes
+            -o PasswordAuthentication=no
+          )
+          scp_opts=(
+            -i "${ssh_key_path}"
+            -P "${PROD_SSH_PORT}"
+            -o BatchMode=yes
+            -o StrictHostKeyChecking=yes
+            -o UserKnownHostsFile="${ssh_known_hosts_path}"
+            -o ConnectTimeout=15
+            -o IdentitiesOnly=yes
+            -o PasswordAuthentication=no
+          )
+
+          ssh "${ssh_opts[@]}" "${remote}" 'set -euo pipefail; mkdir -p /opt/credit-scoring-deploy/scripts /opt/credit-scoring-deploy/state /opt/credit-scoring-deploy/logs'
+          scp "${scp_opts[@]}" docker-compose.prod.yml "${remote}:/opt/credit-scoring-deploy/docker-compose.prod.yml"
+          scp "${scp_opts[@]}" scripts/deploy-production.sh scripts/rollback-production.sh "${remote}:/opt/credit-scoring-deploy/scripts/"
+          ssh "${ssh_opts[@]}" "${remote}" 'set -euo pipefail; chmod 755 /opt/credit-scoring-deploy/scripts/deploy-production.sh /opt/credit-scoring-deploy/scripts/rollback-production.sh'
+
+      - name: Deploy or rollback on VM
+        shell: bash
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+          PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
+          ACTION: ${{ steps.resolve.outputs.action }}
+          WEBSITE_IMAGE: ${{ steps.resolve.outputs.image }}
+          DEPLOY_SHA: ${{ steps.resolve.outputs.deploy_sha }}
+        run: |
+          set -euo pipefail
+
+          ssh_key_path="${HOME}/.ssh/github_actions_production"
+          ssh_known_hosts_path="${HOME}/.ssh/known_hosts"
+          remote="${PROD_USER}@${PROD_HOST}"
+          ssh_opts=(
+            -i "${ssh_key_path}"
+            -p "${PROD_SSH_PORT}"
+            -o BatchMode=yes
+            -o StrictHostKeyChecking=yes
+            -o UserKnownHostsFile="${ssh_known_hosts_path}"
+            -o ConnectTimeout=15
+            -o IdentitiesOnly=yes
+            -o PasswordAuthentication=no
+            -T
+          )
+
+          if [ "${ACTION}" = "rollback" ]; then
+            ssh "${ssh_opts[@]}" "${remote}" 'DEPLOY_ROOT=/opt/credit-scoring-deploy /opt/credit-scoring-deploy/scripts/rollback-production.sh'
+          else
+            ssh "${ssh_opts[@]}" "${remote}" \
+              "WEBSITE_IMAGE='${WEBSITE_IMAGE}' DEPLOY_SHA='${DEPLOY_SHA}' DEPLOY_ROOT=/opt/credit-scoring-deploy /opt/credit-scoring-deploy/scripts/deploy-production.sh"
+          fi
+
+      - name: Verify public endpoint
+        if: ${{ steps.resolve.outputs.action == 'deploy' }}
+        shell: bash
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          DEPLOY_SHA: ${{ steps.resolve.outputs.deploy_sha }}
+        run: |
+          set -euo pipefail
+          base_url="http://${PROD_HOST}"
+          curl -fsS "${base_url}/" >/dev/null
+          curl -fsS "${base_url}/health/" | grep -q "OK"
+          curl -fsS "${base_url}/version/" | grep -q "${DEPLOY_SHA}"
+
+      - name: Cleanup SSH files
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f "${HOME}/.ssh/github_actions_production" "${HOME}/.ssh/known_hosts"
