@@ -1,0 +1,13 @@
+*.md text eol=lf
+*.py text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+data/checksums-sha256.csv text eol=lf
+
+data/raw/** -text
+data/processed/** -text
+paper/*.pdf -text
+*.zip -text
+*.xls -text
+*.xlsx -text
+*.dat -text

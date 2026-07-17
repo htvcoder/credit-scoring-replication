@@ -1,0 +1,384 @@
+datasets:
+  ac:
+    id: ac
+    full_name: Australian Credit Approval
+    raw_file: data/raw/ac/australian.dat
+    processed_file:
+    dictionary_files:
+      - data/raw/ac/australian.doc
+      - data/raw/ac/Index
+    reader:
+      type: delimited
+      sep: whitespace
+      header: false
+      columns:
+        - A1
+        - A2
+        - A3
+        - A4
+        - A5
+        - A6
+        - A7
+        - A8
+        - A9
+        - A10
+        - A11
+        - A12
+        - A13
+        - A14
+        - target
+    target:
+      column: target
+      raw_values:
+        good: 0
+        bad: 1
+      mapping_to_binary:
+        0: 0
+        1: 1
+      documentation: "australian.doc lists class 2/+ as 307 rows and class 1/- as 383 rows; paper prior default rate 0.445 matches 307/690, so pipeline treats raw value 1 as bad/default and 0 as good/non-default."
+    expected:
+      rows: 690
+      input_count: 14
+      total_columns: 15
+      default_count: 307
+      non_default_count: 383
+      default_rate: 0.4449275362
+      duplicate_rows: 0
+    numeric_columns:
+      - A2
+      - A3
+      - A7
+      - A10
+      - A13
+      - A14
+    categorical_columns:
+      - A1
+      - A4
+      - A5
+      - A6
+      - A8
+      - A9
+      - A11
+      - A12
+    identifier_columns: []
+    ignored_columns: []
+    missing_values:
+      - "?"
+    source: UCI Australian Credit Approval, Quinlan credit approval data.
+    source_url: https://archive.ics.uci.edu/dataset/143/statlog+australian+credit+approval
+    license: Chưa xác định; UCI access terms apply.
+    raw_preprocessing_caveat: "Source documentation says missing values were replaced by mean/mode and categorical labels were recoded to numeric labels before distribution."
+    project_preprocessing_caveat: None.
+    usable: true
+    deviation_notes: "AC target semantics are inferred from source class distribution and the paper prior default rate; original anonymized labels do not name default directly."
+
+  gc:
+    id: gc
+    full_name: German Credit Data
+    raw_file: data/raw/gc/german.data
+    processed_file:
+    dictionary_files:
+      - data/raw/gc/german.doc
+      - data/raw/gc/Index
+    reader:
+      type: delimited
+      sep: whitespace
+      header: false
+      columns:
+        - A1
+        - A2
+        - A3
+        - A4
+        - A5
+        - A6
+        - A7
+        - A8
+        - A9
+        - A10
+        - A11
+        - A12
+        - A13
+        - A14
+        - A15
+        - A16
+        - A17
+        - A18
+        - A19
+        - A20
+        - target
+    target:
+      column: target
+      raw_values:
+        good: 1
+        bad: 2
+      mapping_to_binary:
+        1: 0
+        2: 1
+      documentation: "german.doc states 1 = Good and 2 = Bad; pipeline maps 1 -> 0 and 2 -> 1."
+    expected:
+      rows: 1000
+      input_count: 20
+      total_columns: 21
+      default_count: 300
+      non_default_count: 700
+      default_rate: 0.3
+      duplicate_rows: 0
+    numeric_columns:
+      - A2
+      - A5
+      - A8
+      - A11
+      - A13
+      - A16
+      - A18
+    categorical_columns:
+      - A1
+      - A3
+      - A4
+      - A6
+      - A7
+      - A9
+      - A10
+      - A12
+      - A14
+      - A15
+      - A17
+      - A19
+      - A20
+    identifier_columns: []
+    ignored_columns: []
+    missing_values: []
+    source: UCI German Credit Data, Prof. Hans Hofmann.
+    source_url: https://archive.ics.uci.edu/dataset/144/statlog+german+credit+data
+    license: Chưa xác định; UCI access terms apply.
+    raw_preprocessing_caveat: "The repo uses original symbolic `german.data`; UCI also provides a numeric transformed file, but that file is not the active core input."
+    project_preprocessing_caveat: None.
+    usable: true
+    deviation_notes: None.
+
+  hmeq:
+    id: hmeq
+    full_name: Home Equity Loan
+    raw_file: data/raw/hmeq/hmeq_full.csv
+    processed_file:
+    dictionary_files: []
+    reader:
+      type: csv
+      header: true
+    target:
+      column: BAD
+      raw_values:
+        good: 0
+        bad: 1
+      mapping_to_binary:
+        0: 0
+        1: 1
+      documentation: "HMEQ BAD is 1 for default/seriously delinquent and 0 otherwise."
+    expected:
+      rows: 5960
+      input_count: 12
+      total_columns: 13
+      default_count: 1189
+      non_default_count: 4771
+      default_rate: 0.1994966443
+      duplicate_rows: 0
+    numeric_columns:
+      - LOAN
+      - MORTDUE
+      - VALUE
+      - YOJ
+      - DEROG
+      - DELINQ
+      - CLAGE
+      - NINQ
+      - CLNO
+      - DEBTINC
+    categorical_columns:
+      - REASON
+      - JOB
+    identifier_columns: []
+    ignored_columns: []
+    missing_values:
+      - ""
+      - NA
+    source: SAS HMEQ sample data, current artifact downloaded from a GitHub raw CSV mirror.
+    source_url: https://raw.githubusercontent.com/Carl-Lejerskar/HMEQ/master/hmeq.csv
+    license: Chưa xác định; verify redistribution rights before publishing raw data.
+    raw_preprocessing_caveat: "The active file is the full 5,960-row artifact. The old `data/raw/hmeq/hmeq.csv` is a truncated 604-row prefix and must not be used for core replication."
+    project_preprocessing_caveat: None.
+    usable: true
+    deviation_notes: "Current HMEQ full checksum is DFDBC2B7CDF728A15B53E323CDE6127995715DFA6B178BD3C1E3D9916D0367AA, not the expected SAS artifact checksum provided in the remediation prompt."
+
+  th02:
+    id: th02
+    full_name: Thomas et al. 2002 public credit scoring data
+    raw_file: data/raw/th02/public.xls
+    processed_file: data/processed/th02/th02.csv
+    dictionary_files:
+      - data/raw/th02/publicdict.xls
+    reader:
+      type: csv
+      header: true
+      verify_file: processed
+    target:
+      column: BAD
+      raw_values:
+        good: 0
+        bad: 1
+      mapping_to_binary:
+        0: 0
+        1: 1
+      documentation: "Dictionary and dataset use BAD as binary target, with 1 = bad/default and 0 = good/non-default."
+    expected:
+      rows: 1225
+      input_count: 14
+      total_columns: 15
+      default_count: 323
+      non_default_count: 902
+      default_rate: 0.2636734694
+      duplicate_rows: 23
+    numeric_columns:
+      - DOB
+      - NKID
+      - DEP
+      - PHON
+      - SINC
+      - DAINC
+      - DHVAL
+      - DMORT
+      - DOUTM
+      - DOUTL
+      - DOUTHP
+      - DOUTCC
+    categorical_columns:
+      - AES
+      - RES
+    identifier_columns: []
+    ignored_columns: []
+    missing_values: []
+    source: Supplementary material for Credit Scoring and Its Applications, Thomas, Edelman and Crook, SIAM, 2002.
+    source_url: Book supplementary material; access terms must be checked at source.
+    license: Chưa xác định; book supplementary material access terms apply.
+    raw_preprocessing_caveat: "Raw `public.xls` is BIFF2 legacy Excel. Project-level CSV conversion preserves values and duplicate rows."
+    project_preprocessing_caveat: "Converted CSV is a format artifact only; no imputation, encoding or feature selection has been applied."
+    usable: true
+    deviation_notes: "Pipeline should consume `data/processed/th02/th02.csv` after rerunning `scripts/convert_th02.py`."
+
+  tc:
+    id: tc
+    full_name: Default of Credit Card Clients
+    raw_file: data/raw/tc/default of credit card clients.xls
+    processed_file:
+    dictionary_files: []
+    reader:
+      type: excel
+      engine: xlrd
+      header: 1
+    target:
+      column: default payment next month
+      raw_values:
+        good: 0
+        bad: 1
+      mapping_to_binary:
+        0: 0
+        1: 1
+      documentation: "UCI/Yeh and Lien target `default payment next month` uses 1 = default and 0 = non-default."
+    expected:
+      rows: 30000
+      input_count: 23
+      total_columns: 25
+      default_count: 6636
+      non_default_count: 23364
+      default_rate: 0.2212
+      duplicate_rows: 0
+    numeric_columns:
+      - LIMIT_BAL
+      - AGE
+      - BILL_AMT1
+      - BILL_AMT2
+      - BILL_AMT3
+      - BILL_AMT4
+      - BILL_AMT5
+      - BILL_AMT6
+      - PAY_AMT1
+      - PAY_AMT2
+      - PAY_AMT3
+      - PAY_AMT4
+      - PAY_AMT5
+      - PAY_AMT6
+    categorical_columns:
+      - SEX
+      - EDUCATION
+      - MARRIAGE
+      - PAY_0
+      - PAY_2
+      - PAY_3
+      - PAY_4
+      - PAY_5
+      - PAY_6
+    identifier_columns:
+      - ID
+    ignored_columns:
+      - ID
+    missing_values: []
+    source: UCI Default of Credit Card Clients, Yeh and Lien.
+    source_url: https://archive.ics.uci.edu/dataset/350/default+of+credit+card+clients
+    license: Chưa xác định; UCI access terms apply.
+    raw_preprocessing_caveat: "Several categorical/ordinal variables are numerically encoded in the source file; `ID` is an identifier and not a model input."
+    project_preprocessing_caveat: None.
+    usable: true
+    deviation_notes: "Expected input count excludes `ID` and target."
+
+  gmc:
+    id: gmc
+    full_name: Give Me Some Credit
+    raw_file: data/raw/gmc/cs-training.csv
+    processed_file:
+    dictionary_files:
+      - data/raw/gmc/Data Dictionary.xls
+    reader:
+      type: csv
+      header: true
+    target:
+      column: SeriousDlqin2yrs
+      raw_values:
+        good: 0
+        bad: 1
+      mapping_to_binary:
+        0: 0
+        1: 1
+      documentation: "Kaggle target `SeriousDlqin2yrs` is 1 for serious delinquency within two years and 0 otherwise."
+    expected:
+      rows: 150000
+      input_count: 10
+      total_columns: 12
+      default_count: 10026
+      non_default_count: 139974
+      default_rate: 0.06684
+      duplicate_rows: 0
+    numeric_columns:
+      - RevolvingUtilizationOfUnsecuredLines
+      - age
+      - NumberOfTime30-59DaysPastDueNotWorse
+      - DebtRatio
+      - MonthlyIncome
+      - NumberOfOpenCreditLinesAndLoans
+      - NumberOfTimes90DaysLate
+      - NumberRealEstateLoansOrLines
+      - NumberOfTime60-89DaysPastDueNotWorse
+      - NumberOfDependents
+    categorical_columns: []
+    identifier_columns:
+      - "Unnamed: 0"
+    ignored_columns:
+      - "Unnamed: 0"
+    missing_values:
+      - ""
+      - NA
+    source: Kaggle Give Me Some Credit competition.
+    source_url: https://www.kaggle.com/c/GiveMeSomeCredit
+    license: Kaggle competition terms; credentials/login may be required.
+    raw_preprocessing_caveat: "Training CSV includes an index column `Unnamed: 0` that is not a model input."
+    project_preprocessing_caveat: None.
+    usable: true
+    deviation_notes: "Expected input count excludes `Unnamed: 0` and target."

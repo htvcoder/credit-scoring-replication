@@ -122,11 +122,15 @@ DBN là mô hình có trong nghiên cứu gốc, nhưng không được tái l�
 .
 ├── data/
 │   ├── checksums-sha256.csv
+│   ├── datasets.yaml
 │   ├── processed/
 │   └── raw/
+├── docs/
+│   └── data-cards/
 ├── paper/
 ├── results/
-└── scripts/
+├── scripts/
+└── tests/
 ```
 
 ## Quy ước dữ liệu
@@ -136,6 +140,102 @@ DBN là mô hình có trong nghiên cứu gốc, nhưng không được tái l�
 - Không chỉnh sửa trực tiếp file trong `data/raw/`.
 - Dữ liệu sau xử lý phải ghi vào `data/processed/`.
 
+## Yêu cầu môi trường
+
+- Python: đã kiểm tra với Python `3.11.0`.
+- Runtime dependencies: `requirements.txt`.
+- Test/development dependencies: `requirements-dev.txt`.
+
+Thiết lập môi trường sạch:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\pip.exe install -r requirements-dev.txt
+```
+
+## Metadata dataset
+
+`data/datasets.yaml` là registry chính cho Phase 0. File này khai báo cho 6 dataset công khai:
+
+- file active;
+- target mapping;
+- numeric/categorical/identifier columns;
+- expected shape, class distribution và default rate;
+- source/access condition;
+- raw preprocessing caveat;
+- deviation so với paper.
+
+Data cards chi tiết nằm trong `docs/data-cards/`.
+
+## Download dữ liệu
+
+Raw data đang bị `.gitignore` loại khỏi commit. Sau khi clone repo mới, đặt hoặc tải dữ liệu vào đúng vị trí sau:
+
+| Dataset | File kỳ vọng | Nguồn/điều kiện |
+|---|---|---|
+| AC | `data/raw/ac/australian.dat`, `data/raw/ac/australian.doc`, `data/raw/ac/Index` | UCI Australian Credit Approval. |
+| GC | `data/raw/gc/german.data`, `data/raw/gc/german.doc`, `data/raw/gc/Index` | UCI German Credit Data. |
+| HMEQ | `data/raw/hmeq/hmeq_full.csv` | Có thể tải bằng script bên dưới; artifact hiện tại có SHA-256 `DFDBC2B7CDF728A15B53E323CDE6127995715DFA6B178BD3C1E3D9916D0367AA`. |
+| TH02 | `data/raw/th02/public.xls`, `data/raw/th02/publicdict.xls` | Supplementary material của *Credit Scoring and Its Applications*; kiểm tra điều kiện truy cập nguồn. |
+| TC | `data/raw/tc/default of credit card clients.xls` | UCI Default of Credit Card Clients. |
+| GMC | `data/raw/gmc/cs-training.csv`, `data/raw/gmc/Data Dictionary.xls` | Kaggle Give Me Some Credit; có thể cần Kaggle login/credential và chấp nhận điều khoản. |
+
+Tải HMEQ full nếu file chưa có:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\download_hmeq.py
+```
+
+Script không ghi đè file hiện có nếu không truyền `--force`.
+
+## Prepare dữ liệu
+
+Phase 0 chỉ thực hiện format conversion cần thiết, không làm experimental preprocessing. Không chạy imputation, WOE, VIF, encoding, scaling, class balancing hoặc train/test split.
+
+TH02 raw là Excel BIFF2 legacy. Tạo lại CSV kiểm chứng được bằng:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\convert_th02.py --input data/raw/th02/public.xls --output data/processed/th02/th02.csv
+```
+
+Conversion giữ nguyên 1.225 dòng, 15 cột, `BAD=0: 902`, `BAD=1: 323` và 23 duplicate rows. Không sửa hoặc ghi đè `data/raw/th02/public.xls`.
+
+## Verify dữ liệu
+
+Verify một dataset:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\verify_credit_datasets.py --dataset gc
+```
+
+Verify toàn bộ dataset:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\verify_credit_datasets.py --dataset all
+```
+
+Verify toàn bộ checksum:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\verify_credit_datasets.py --dataset all --checksums-only
+```
+
+Script tự xác định repository root theo vị trí script, nên có thể chạy từ root hoặc thư mục khác. Kết quả `pass: true` nghĩa là file tồn tại, checksum khớp, schema/target/class count/default rate/metadata feature set đều khớp registry.
+
+## Target mapping
+
+| Dataset | Target | Mapping dùng trong pipeline |
+|---|---|---|
+| AC | `target` | `0 = good/non-default`, `1 = bad/default`; mapping suy ra từ `australian.doc` và default rate paper. |
+| GC | `target` | Raw `1 = Good`, `2 = Bad`; pipeline map `1 -> 0`, `2 -> 1`. |
+| HMEQ | `BAD` | `0 = good/non-default`, `1 = bad/default`. |
+| TH02 | `BAD` | `0 = good/non-default`, `1 = bad/default`. |
+| TC | `default payment next month` | `0 = non-default`, `1 = default`; `ID` không phải input. |
+| GMC | `SeriousDlqin2yrs` | `0 = non-default`, `1 = default`; `Unnamed: 0` không phải input. |
+
+Numeric/categorical/identifier metadata đầy đủ nằm trong `data/datasets.yaml` và `docs/data-cards/*.md`.
+
 ## Chính sách Git
 
 - Không commit raw data.
@@ -143,18 +243,31 @@ DBN là mô hình có trong nghiên cứu gốc, nhưng không được tái l�
 - Không commit PDF của paper.
 - Không commit Kaggle token hoặc credential.
 - Chỉ commit source code, tài liệu, checksum và script tải hoặc kiểm tra dữ liệu.
+- Raw file không được chỉnh sửa trực tiếp.
+- Processed artifact phải có script tái tạo; hiện tại `data/processed/th02/th02.csv` được tái tạo bởi `scripts/convert_th02.py`.
+- `data/checksums-sha256.csv` dùng đường dẫn tương đối từ repository root, dấu `/`, không dùng drive letter hoặc path tuyệt đối.
 
-## Kiểm tra checksum
+## Clean environment verification
 
-Chạy lệnh PowerShell sau để tạo lại checksum cho các file trong `data/raw/`:
+Sau khi clone và đặt raw data đúng vị trí:
 
 ```powershell
-Get-ChildItem "data\raw" -Recurse -File | Get-FileHash -Algorithm SHA256 | Select-Object Path, Algorithm, Hash | Export-Csv "data\checksums-sha256.csv" -NoTypeInformation -Encoding UTF8
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\pip.exe install -r requirements-dev.txt
+.\.venv\Scripts\python.exe scripts\convert_th02.py --input data/raw/th02/public.xls --output data/processed/th02/th02.csv
+.\.venv\Scripts\python.exe scripts\verify_credit_datasets.py --dataset all --checksums-only
+.\.venv\Scripts\python.exe scripts\verify_credit_datasets.py --dataset all
+.\.venv\Scripts\python.exe -m pytest tests/test_verify_credit_datasets.py
 ```
 
 ## Trạng thái hiện tại
 
 - Đã tải paper.
 - Đã tải đủ 6 dataset công khai.
-- Đã tạo checksum tại `data/checksums-sha256.csv`.
-- Bước tiếp theo là xây dựng `scripts/audit_datasets.py`.
+- Đã bổ sung HMEQ full tại `data/raw/hmeq/hmeq_full.csv`; file HMEQ 604 dòng cũ được giữ nguyên nhưng không dùng cho core replication.
+- Đã chuyển đổi TH02 từ `data/raw/th02/public.xls` sang `data/processed/th02/th02.csv` bằng `scripts/convert_th02.py`.
+- Đã chuyển `data/checksums-sha256.csv` sang relative portable paths.
+- Đã tạo `data/datasets.yaml` làm registry metadata chính.
+- Đã có script kiểm tra dữ liệu `scripts/verify_credit_datasets.py`.
+- Bước tiếp theo là xây dựng pipeline smoke experiment, chưa chạy model.

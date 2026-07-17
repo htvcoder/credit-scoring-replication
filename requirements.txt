@@ -1,0 +1,4 @@
+pandas==3.0.3
+numpy==2.4.6
+xlrd==2.0.2
+PyYAML==6.0.3
