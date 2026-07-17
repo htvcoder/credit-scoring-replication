@@ -1,0 +1,80 @@
+[
+  {
+    "id": "AC",
+    "fullName": "Australian Credit Approval",
+    "rows": 690,
+    "inputCount": 14,
+    "targetColumn": "target",
+    "defaultRate": 0.4449275362,
+    "source": "UCI Australian Credit Approval, Quinlan credit approval data.",
+    "sourceUrl": "https://archive.ics.uci.edu/dataset/143/statlog+australian+credit+approval",
+    "license": "Chưa xác định; UCI access terms apply.",
+    "usable": true,
+    "publicNote": "Caveat: target semantics được suy luận từ phân phối class và prior default rate của paper."
+  },
+  {
+    "id": "GC",
+    "fullName": "German Credit Data",
+    "rows": 1000,
+    "inputCount": 20,
+    "targetColumn": "target",
+    "defaultRate": 0.3,
+    "source": "UCI German Credit Data, Prof. Hans Hofmann.",
+    "sourceUrl": "https://archive.ics.uci.edu/dataset/144/statlog+german+credit+data",
+    "license": "Chưa xác định; UCI access terms apply.",
+    "usable": true,
+    "publicNote": "Không có deviation công khai trọng yếu ở Phase 0."
+  },
+  {
+    "id": "HMEQ",
+    "fullName": "Home Equity Loan",
+    "rows": 5960,
+    "inputCount": 12,
+    "targetColumn": "BAD",
+    "defaultRate": 0.1994966443,
+    "source": "SAS HMEQ sample data, current artifact downloaded from a GitHub raw CSV mirror.",
+    "sourceUrl": "https://raw.githubusercontent.com/Carl-Lejerskar/HMEQ/master/hmeq.csv",
+    "license": "Chưa xác định; verify redistribution rights before publishing raw data.",
+    "usable": true,
+    "publicNote": "Caveat: artifact full khớp shape/schema/class distribution của paper nhưng checksum không phải checksum SAS artifact kỳ vọng."
+  },
+  {
+    "id": "TH02",
+    "fullName": "Thomas et al. 2002 public credit scoring data",
+    "rows": 1225,
+    "inputCount": 14,
+    "targetColumn": "BAD",
+    "defaultRate": 0.2636734694,
+    "source": "Supplementary material for Credit Scoring and Its Applications, Thomas, Edelman and Crook, SIAM, 2002.",
+    "sourceUrl": "Book supplementary material; access terms must be checked at source.",
+    "license": "Chưa xác định; book supplementary material access terms apply.",
+    "usable": true,
+    "publicNote": "Caveat: raw workbook là Excel legacy; CSV conversion chỉ là format artifact, chưa áp dụng experimental preprocessing."
+  },
+  {
+    "id": "TC",
+    "fullName": "Default of Credit Card Clients",
+    "rows": 30000,
+    "inputCount": 23,
+    "targetColumn": "default payment next month",
+    "defaultRate": 0.2212,
+    "source": "UCI Default of Credit Card Clients, Yeh and Lien.",
+    "sourceUrl": "https://archive.ics.uci.edu/dataset/350/default+of+credit+card+clients",
+    "license": "Chưa xác định; UCI access terms apply.",
+    "usable": true,
+    "publicNote": "Caveat: ID không phải input mô hình."
+  },
+  {
+    "id": "GMC",
+    "fullName": "Give Me Some Credit",
+    "rows": 150000,
+    "inputCount": 10,
+    "targetColumn": "SeriousDlqin2yrs",
+    "defaultRate": 0.06684,
+    "source": "Kaggle Give Me Some Credit competition.",
+    "sourceUrl": "https://www.kaggle.com/c/GiveMeSomeCredit",
+    "license": "Kaggle competition terms; credentials/login may be required.",
+    "usable": true,
+    "publicNote": "Caveat: index column không phải input mô hình; cần tuân thủ điều kiện truy cập Kaggle."
+  }
+]

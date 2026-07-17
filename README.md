@@ -197,9 +197,75 @@ Cấu trúc nội dung chính:
 - `website/content/deviations.md`: deviation và giới hạn hiện tại.
 - `data/datasets.yaml`: source of truth cho metadata dataset hiển thị trên website.
 
-Phần còn lại cho P1B/P1C:
+### Docker và CI P1B
 
-- P1B: Docker hóa website và chuẩn bị build context an toàn.
+P1B Docker hóa website và bổ sung CI kiểm tra website, Docker image và các test Phase 0 phù hợp. P1B không push image, không deploy VM, không cấu hình GHCR, Nginx production, domain hoặc HTTPS.
+
+Yêu cầu:
+
+- Node.js/npm: CI dùng Node `24`.
+- Docker: dùng để build và smoke test image local.
+- Python: CI dùng Python `3.11` cho Phase 0 tests không cần raw data.
+
+Build metadata:
+
+- Website đọc `NEXT_PUBLIC_BUILD_SHA` tại build time.
+- Nếu không truyền giá trị, website hiển thị `local`.
+- Docker build nhận `BUILD_SHA` và truyền vào `NEXT_PUBLIC_BUILD_SHA`.
+- Build version xem được ở footer và route `/version/`.
+
+Đồng bộ derivative metadata dataset công khai từ `data/datasets.yaml`:
+
+```powershell
+cd website
+npm run sync:datasets
+```
+
+Build Docker image:
+
+```powershell
+cd ..
+docker build --build-arg BUILD_SHA=$(git rev-parse --short HEAD) -t credit-scoring-replication-website:local website
+```
+
+Chạy container local:
+
+```powershell
+docker run --rm -p 8080:8080 credit-scoring-replication-website:local
+```
+
+Kiểm tra health và version:
+
+```powershell
+curl http://127.0.0.1:8080/health/
+curl http://127.0.0.1:8080/version/
+```
+
+CI hiện kiểm tra:
+
+- `npm ci`;
+- sync public dataset metadata;
+- lint;
+- TypeScript type check;
+- content validation;
+- security scan;
+- production build;
+- Phase 0 Python tests không cần raw data: `python -m pytest tests/test_verify_credit_datasets.py -m "not raw_data"`;
+- Docker image build;
+- container smoke test;
+- health/version response;
+- kiểm tra image không chứa raw data, processed data, `.env`, secret hoặc private key.
+
+GitHub Actions workflow chỉ chạy trên `pull_request` và `push` vào `main`. P1B không dùng production secret, không login registry và không deploy.
+
+Trạng thái nội bộ:
+
+- P1A: Completed.
+- P1B: Completed khi các acceptance checks ở trên pass.
+- P1C: Planned.
+
+Phần còn lại cho P1C:
+
 - P1C: CI/CD, Google Cloud VM, health check, rollback và deployment runbook.
 
 ## Metadata dataset

@@ -7,7 +7,7 @@ const repoRoot = path.resolve(websiteRoot, "..");
 const forbiddenPatterns = [
   /data[\\/](raw|processed)/i,
   /[A-Z]:\\/,
-  /\.env(\.|$)/i,
+  /(^|[\\/])\.env(\.|$)/i,
   /api[_-]?key/i,
   /credential/i,
   /client_secret/i,
@@ -38,6 +38,7 @@ function fail(message) {
 
 const progress = parse(read(path.join(websiteRoot, "content", "progress.yaml")));
 const paper = parse(read(path.join(websiteRoot, "content", "paper.yaml")));
+const publicDatasets = JSON.parse(read(path.join(websiteRoot, "content", "datasets.public.json")));
 const phase0 = progress.phases.find((phase) => phase.id === "Phase 0");
 const phase1 = progress.phases.find((phase) => phase.id === "Phase 1");
 
@@ -71,17 +72,34 @@ for (const field of requiredPaperFields) {
   }
 }
 
-const registry = parse(read(path.join(repoRoot, "data", "datasets.yaml")));
+const registryPath = path.join(repoRoot, "data", "datasets.yaml");
+const registry = fs.existsSync(registryPath) ? parse(read(registryPath)) : null;
 const requiredDatasetIds = ["ac", "gc", "hmeq", "th02", "tc", "gmc"];
 for (const id of requiredDatasetIds) {
-  const dataset = registry.datasets?.[id];
-  if (!dataset) {
-    fail(`Missing dataset registry entry: ${id}`);
-    continue;
+  const publicDataset = publicDatasets.find((dataset) => dataset.id === id.toUpperCase());
+  if (!publicDataset) {
+    fail(`Missing public dataset entry: ${id}`);
   }
 
-  if (!dataset.expected?.rows || !dataset.expected?.input_count) {
+  if (!publicDataset?.rows || !publicDataset?.inputCount || !publicDataset?.targetColumn) {
     fail(`Dataset ${id} is missing public shape metadata.`);
+  }
+
+  if (registry) {
+    const dataset = registry.datasets?.[id];
+    if (!dataset) {
+      fail(`Missing dataset registry entry: ${id}`);
+      continue;
+    }
+
+    if (
+      publicDataset.rows !== dataset.expected.rows ||
+      publicDataset.inputCount !== dataset.expected.input_count ||
+      publicDataset.defaultRate !== dataset.expected.default_rate ||
+      publicDataset.targetColumn !== dataset.target.column
+    ) {
+      fail(`Public dataset metadata is out of sync with data/datasets.yaml: ${id}`);
+    }
   }
 }
 

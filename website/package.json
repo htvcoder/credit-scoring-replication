@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "lint": "eslint .",
+    "sync:datasets": "node scripts/sync-public-datasets.mjs",
     "type-check": "tsc --noEmit",
     "validate:content": "node scripts/validate-content.mjs",
     "build": "npm run validate:content && next build"

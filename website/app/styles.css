@@ -425,6 +425,26 @@ section {
   text-align: center;
 }
 
+.site-footer p {
+  margin: 4px 0;
+}
+
+.build-version {
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 0.86rem;
+}
+
+.utility-page {
+  margin: 0 auto;
+  max-width: 720px;
+  padding: 56px 24px;
+}
+
+.utility-page h1 {
+  font-size: 2rem;
+  margin: 0 0 12px;
+}
+
 @media (max-width: 860px) {
   .header-inner {
     align-items: flex-start;

@@ -1,0 +1,49 @@
+# Dependencies and build outputs
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+
+# Logs and caches
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.eslintcache
+.cache/
+coverage/
+
+# Tests and local tooling artifacts
+tests/
+__tests__/
+*.test.*
+*.spec.*
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+*api_key*
+*apikey*
+*credential*
+*credentials*
+client_secret*.json
+service-account*.json
+id_rsa
+id_ed25519
+*.pem
+*.key
+
+# VCS, editor, and OS files
+.git/
+.github/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local artifacts
+tmp/
+temp/
+*.local

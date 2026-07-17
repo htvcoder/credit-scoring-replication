@@ -1,28 +1,5 @@
 import fs from "fs";
 import path from "path";
-import { parse } from "yaml";
-
-type DatasetRegistry = {
-  datasets: Record<string, DatasetEntry>;
-};
-
-type DatasetEntry = {
-  id: string;
-  full_name: string;
-  target: {
-    column: string;
-  };
-  expected: {
-    rows: number;
-    input_count: number;
-    default_rate: number;
-  };
-  source: string;
-  source_url: string;
-  license: string;
-  usable: boolean;
-  deviation_notes?: string | null;
-};
 
 export type DatasetSummary = {
   id: string;
@@ -38,53 +15,8 @@ export type DatasetSummary = {
   publicNote: string;
 };
 
-const orderedDatasetIds = ["ac", "gc", "hmeq", "th02", "tc", "gmc"];
-
-function publicDatasetNote(dataset: DatasetEntry) {
-  if (dataset.id === "hmeq") {
-    return "Caveat: artifact full khớp shape/schema/class distribution của paper nhưng checksum không phải checksum SAS artifact kỳ vọng.";
-  }
-
-  if (dataset.id === "ac") {
-    return "Caveat: target semantics được suy luận từ phân phối class và prior default rate của paper.";
-  }
-
-  if (dataset.id === "th02") {
-    return "Caveat: raw workbook là Excel legacy; CSV conversion chỉ là format artifact, chưa áp dụng experimental preprocessing.";
-  }
-
-  if (dataset.id === "tc") {
-    return "Caveat: ID không phải input mô hình.";
-  }
-
-  if (dataset.id === "gmc") {
-    return "Caveat: index column không phải input mô hình; cần tuân thủ điều kiện truy cập Kaggle.";
-  }
-
-  return dataset.deviation_notes && dataset.deviation_notes !== "None."
-    ? dataset.deviation_notes
-    : "Không có deviation công khai trọng yếu ở Phase 0.";
-}
-
 export function getDatasetSummaries(): DatasetSummary[] {
-  const registryPath = path.join(process.cwd(), "..", "data", "datasets.yaml");
-  const registry = parse(fs.readFileSync(registryPath, "utf8")) as DatasetRegistry;
-
-  return orderedDatasetIds.map((id) => {
-    const dataset = registry.datasets[id];
-
-    return {
-      id: dataset.id.toUpperCase(),
-      fullName: dataset.full_name,
-      rows: dataset.expected.rows,
-      inputCount: dataset.expected.input_count,
-      targetColumn: dataset.target.column,
-      defaultRate: dataset.expected.default_rate,
-      source: dataset.source,
-      sourceUrl: dataset.source_url,
-      license: dataset.license,
-      usable: dataset.usable,
-      publicNote: publicDatasetNote(dataset),
-    };
-  });
+  const publicRegistryPath = path.join(process.cwd(), "content", "datasets.public.json");
+  const source = fs.readFileSync(publicRegistryPath, "utf8");
+  return JSON.parse(source) as DatasetSummary[];
 }
