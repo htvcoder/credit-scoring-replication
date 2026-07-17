@@ -1,0 +1,130 @@
+name: Test VM SSH
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-vm-ssh:
+    name: Test VM SSH
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate required secrets
+        shell: bash
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+          PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
+          PROD_SSH_PRIVATE_KEY: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+          PROD_KNOWN_HOSTS: ${{ secrets.PROD_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+
+          missing=0
+          for secret_name in PROD_HOST PROD_USER PROD_SSH_PORT PROD_SSH_PRIVATE_KEY PROD_KNOWN_HOSTS; do
+            if [ -z "${!secret_name}" ]; then
+              echo "Missing required secret: ${secret_name}" >&2
+              missing=1
+            fi
+          done
+
+          if [ "${missing}" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Prepare SSH files
+        shell: bash
+        env:
+          PROD_SSH_PRIVATE_KEY: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+          PROD_KNOWN_HOSTS: ${{ secrets.PROD_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+
+          ssh_key_path="${HOME}/.ssh/github_actions_production"
+          ssh_known_hosts_path="${HOME}/.ssh/known_hosts"
+
+          install -d -m 700 "${HOME}/.ssh"
+          printf '%s\n' "${PROD_SSH_PRIVATE_KEY}" | tr -d '\r' > "${ssh_key_path}"
+          chmod 600 "${ssh_key_path}"
+          printf '%s\n' "${PROD_KNOWN_HOSTS}" | tr -d '\r' > "${ssh_known_hosts_path}"
+          chmod 600 "${ssh_known_hosts_path}"
+          ssh-keygen -y -f "${ssh_key_path}" >/dev/null
+
+      - name: Verify remote user
+        shell: bash
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+          PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
+        run: |
+          set -euo pipefail
+
+          ssh_key_path="${HOME}/.ssh/github_actions_production"
+          ssh_known_hosts_path="${HOME}/.ssh/known_hosts"
+
+          remote_user="$(
+            ssh \
+              -i "${ssh_key_path}" \
+              -p "${PROD_SSH_PORT}" \
+              -o BatchMode=yes \
+              -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="${ssh_known_hosts_path}" \
+              -o ConnectTimeout=15 \
+              -o IdentitiesOnly=yes \
+              -o PasswordAuthentication=no \
+              -T \
+              "${PROD_USER}@${PROD_HOST}" \
+              'set -euo pipefail; whoami'
+          )"
+
+          if [ "${remote_user}" != "${PROD_USER}" ]; then
+            echo "Remote user mismatch" >&2
+            exit 1
+          fi
+
+          echo "Remote user verified"
+
+      - name: Check VM Docker access
+        shell: bash
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+          PROD_SSH_PORT: ${{ secrets.PROD_SSH_PORT }}
+        run: |
+          set -euo pipefail
+
+          ssh_key_path="${HOME}/.ssh/github_actions_production"
+          ssh_known_hosts_path="${HOME}/.ssh/known_hosts"
+
+          ssh \
+            -i "${ssh_key_path}" \
+            -p "${PROD_SSH_PORT}" \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="${ssh_known_hosts_path}" \
+            -o ConnectTimeout=15 \
+            -o IdentitiesOnly=yes \
+            -o PasswordAuthentication=no \
+            -T \
+            "${PROD_USER}@${PROD_HOST}" \
+            'bash -s' <<'REMOTE_CHECKS'
+          set -euo pipefail
+          echo "SSH connection established"
+          echo "Remote user verified"
+          echo "Remote host: $(hostname)"
+          docker --version
+          docker compose version
+          docker ps >/dev/null
+          echo "GITHUB_TO_VM_SSH_OK"
+          REMOTE_CHECKS
+
+      - name: Cleanup SSH files
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rm -f "${HOME}/.ssh/github_actions_production" "${HOME}/.ssh/known_hosts"
