@@ -292,7 +292,7 @@ Ràng buộc phụ thuộc cần giữ nhất quán trong toàn bộ roadmap:
 | Phạm vi | Website nội dung ban đầu, trang hoặc khu vực “Giới thiệu đề tài thực tập”, content contract, Docker, CI workflow, production deployment workflow, Google Cloud VM, reverse proxy nếu cần, health check, rollback, logging, deployment runbook. Domain riêng, subdomain riêng, HTTPS, Let’s Encrypt và chứng chỉ SSL/TLS là Optional/Should. |
 | Đầu vào | README, feasibility report, data cards, `data/datasets.yaml`, plan này, paper Markdown. |
 | Đầu ra | Website production chạy ổn định trên Google Cloud VM, truy cập được từ Internet bằng public IP, hostname hoặc domain; CI/CD hoạt động; health check pass; rollback đã kiểm thử; website hiển thị Git commit SHA hoặc version đang deploy; trang tiến độ hiển thị Phase 0 completed và Phase 1 completed sau tag; kiểm tra dữ liệu và bảo mật pass. |
-| Nhiệm vụ chi tiết | Tạo `website/`; xây trang chủ, giới thiệu đề tài thực tập, giới thiệu nghiên cứu, RQ, dữ liệu, phương pháp, tiến độ, kết quả placeholder, tái lập; tạo content schema; Docker hóa website; tạo CI; tạo deploy workflow; cấu hình VM; cấu hình reverse proxy nếu cần; thiết lập health check, rollback và logging; cho phép truy cập bằng public IP, hostname hoặc domain; có thể bổ sung HTTPS nếu có domain/hostname phù hợp; viết runbook; kiểm tra no raw data và no secret. |
+| Nhiệm vụ chi tiết | Tạo `website/`; xây trang chủ, giới thiệu đề tài thực tập, giới thiệu nghiên cứu, RQ, dữ liệu, phương pháp, tiến độ và kết quả placeholder; tạo content schema; Docker hóa website; tạo CI; tạo deploy workflow; cấu hình VM; cấu hình reverse proxy nếu cần; thiết lập health check, rollback và logging; cho phép truy cập bằng public IP, hostname hoặc domain; có thể bổ sung HTTPS nếu có domain/hostname phù hợp; viết runbook; kiểm tra no raw data và no secret. |
 | File dự kiến tạo/sửa | `website/`, `website/Dockerfile`, `website/.dockerignore`, `docker-compose.prod.yml`, `.github/workflows/ci.yml`, `.github/workflows/deploy-production.yml`, `deploy/nginx/`, `scripts/deploy-production.sh`, `scripts/rollback-production.sh`, `docs/DEPLOYMENT_GOOGLE_CLOUD.md`. |
 | Test | Website lint, TypeScript type check, unit/component test nếu có, production build, Docker build, Python Phase 0 tests, content source validation, secret/raw-data scan, no forbidden files in image, health check, deployment smoke test, rollback test, responsive smoke, accessibility smoke. |
 | Acceptance criteria | Clean clone có thể cài dependencies, chạy test, build website và build Docker image; website được deploy lên Google Cloud VM; website truy cập được từ Internet bằng public IP, hostname hoặc domain; website responsive, tiếng Việt có dấu, có trang hoặc khu vực giới thiệu đề tài thực tập, không có kết quả giả; CI chạy thành công; production deployment workflow chạy thành công; health check pass; rollback được kiểm thử thực tế ít nhất một lần; website hiển thị Git commit SHA hoặc version đang deploy; Docker image không chứa `data/raw/`, `data/processed/`, row-level prediction, secret hoặc `.env` production; trang tiến độ hiển thị đúng Phase 0 và Phase 1; domain và HTTPS là Optional/Should, không phải acceptance criteria bắt buộc; có thể tạo tag `p1-website-cicd-foundation` khi các tiêu chí bắt buộc đã pass, kể cả website đang truy cập qua HTTP và public IP. |
@@ -468,13 +468,13 @@ Không tạo tag riêng cho P1A/P1B/P1C, trừ khi sau này cần internal tags.
 | Phân loại | Must |
 | Mục tiêu | So sánh mô hình đúng đơn vị thống kê, không pseudo-replicate fold như dataset độc lập. |
 | Phạm vi | Average rank, Friedman, Rom, Nemenyi, Bayesian signed-rank, ROPE, posterior probability, posterior odds. |
-| Đầu vào | Aggregated metrics từ Phase 7 và Phase 8. |
+| Đầu vào | Aggregated metrics từ Phase 7; thêm Phase 8 khi chạy modern reassessment, trong đó CatBoost là phần bắt buộc để trả lời RQ3. |
 | Đầu ra | Tables tương ứng Table 4, Table 5, Table 6 adaptation; statistical report. |
 | Nhiệm vụ chi tiết | Aggregate per dataset/model; compute rank; implement Friedman/Rom; Nemenyi cho MLP depth; Bayesian signed-rank với ROPE; report 6-dataset limitation. |
 | File dự kiến tạo/sửa | `src/creditrep/stats/`, `src/creditrep/aggregation/`, report scripts, tests. |
 | Test | Toy rank table, known Friedman/Rom example, Bayesian deterministic seed, no fold pseudo-replication default. |
 | Acceptance criteria | Statistical tables reproducible từ artifacts; replication và modern reassessment tách riêng; limitation power ghi rõ. |
-| Dependency | Phase 7 là bắt buộc; Phase 7 và Phase 8 đều bắt buộc. Phase 9 phải tạo các phân tích riêng cho replication core và modern reassessment. |
+| Dependency | Phase 7 là bắt buộc cho statistical comparison của replication core. Phase 8 CatBoost là bắt buộc nếu Phase 9 trả lời RQ3; TabNet và FT-Transformer không phải điều kiện bắt buộc nếu có no-go hợp lệ theo resource checkpoint. Phase 9 phải tạo các phân tích riêng cho replication core và modern reassessment, giữ nguyên nguyên tắc không trộn Protocol A và Protocol B. |
 | Rủi ro | Chỉ có 6 dataset, implementation Rom/Bayesian sai, ties/ranks ambiguity. |
 | Go/no-go | Go Phase 10 khi tables regenerate được. |
 | Ngoài phạm vi | Chạy thêm model để “cứu” kết quả sau khi thấy thống kê. |
@@ -522,7 +522,7 @@ Không tạo tag riêng cho P1A/P1B/P1C, trừ khi sau này cần internal tags.
 | Ngoài phạm vi | Thêm experiment mới sau khi final report frozen. |
 | Commit đề xuất | `docs(results): add final reproducibility package` |
 | Tag đề xuất | `p11-final-reproducibility-package` |
-| Website cần cập nhật | Công bố kết quả cuối đã kiểm chứng, tables, figures, limitations và reproducibility guide. |
+| Website cần cập nhật | Công bố kết quả cuối đã kiểm chứng, tables, figures và limitations; reproducibility guide thuộc package Phase 11 và chỉ đưa lên public website nếu đã được curate phù hợp, không chứa raw data, secret hoặc local path. |
 
 ## 8. Kiến trúc module website
 
@@ -537,7 +537,7 @@ Không tạo tag riêng cho P1A/P1B/P1C, trừ khi sau này cần internal tags.
 | Trang phương pháp | Models, Protocol A/B, metrics, stats | Plan/method content | Public page | Content schema |
 | Trang tiến độ | Phase status, milestone, tag, update date | `progress.yaml` | Public page | Progress validation |
 | Trang kết quả | Placeholder ban đầu, sau này tables/figures | Sanitized artifacts | Public page | No fake result check |
-| Trang tái lập | Environment, dataset preparation, deviations | Docs curated | Public page | Link check |
+| Reproducibility guide | Environment, dataset preparation, deviations | Docs curated | Phase 11 package; public link chỉ khi đã sanitize | Link check |
 | Build/version banner | Hiển thị commit/tag đang deploy | CI metadata | Public version | E2E smoke |
 | Public result exporter | Validate, sanitize và copy kết quả public hợp lệ sang `website/public/results/`; tạo manifest; fail nếu phát hiện trường bị cấm | Aggregated internal results | Public artifacts + manifest | Forbidden fields, no row-level prediction, manifest integrity |
 

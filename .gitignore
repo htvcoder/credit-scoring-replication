@@ -22,6 +22,14 @@ venv/
 .coverage
 htmlcov/
 
+# Node / Next.js
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+website/.next/
+website/out/
+
 # Jupyter
 .ipynb_checkpoints/
 

@@ -1,0 +1,124 @@
+import fs from "fs";
+import path from "path";
+import { parse } from "yaml";
+
+const websiteRoot = process.cwd();
+const repoRoot = path.resolve(websiteRoot, "..");
+const forbiddenPatterns = [
+  /data[\\/](raw|processed)/i,
+  /[A-Z]:\\/,
+  /\.env(\.|$)/i,
+  /api[_-]?key/i,
+  /credential/i,
+  /client_secret/i,
+  /AUC\s*[:=]\s*0\.\d+/i,
+  /Brier\s*[:=]\s*0\.\d+/i,
+  /XGBoost\s+(đứng đầu|tốt nhất|thắng)/i,
+];
+
+function read(filePath) {
+  return fs.readFileSync(filePath, "utf8");
+}
+
+function walk(dir) {
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      return walk(fullPath);
+    }
+
+    return fullPath;
+  });
+}
+
+function fail(message) {
+  console.error(message);
+  process.exitCode = 1;
+}
+
+const progress = parse(read(path.join(websiteRoot, "content", "progress.yaml")));
+const paper = parse(read(path.join(websiteRoot, "content", "paper.yaml")));
+const phase0 = progress.phases.find((phase) => phase.id === "Phase 0");
+const phase1 = progress.phases.find((phase) => phase.id === "Phase 1");
+
+if (phase0?.status !== "Completed") {
+  fail("Phase 0 must be Completed.");
+}
+
+if (phase1?.status !== "In progress") {
+  fail("Phase 1 must remain In progress for P1A.");
+}
+
+for (const phase of progress.phases.slice(2)) {
+  if (phase.status !== "Planned") {
+    fail(`${phase.id} must remain Planned in P1A.`);
+  }
+}
+
+const requiredPaperFields = [
+  "title",
+  "authors",
+  "year",
+  "publication",
+  "doi",
+  "main_objective",
+  "reported_findings",
+];
+
+for (const field of requiredPaperFields) {
+  if (!paper[field] || (Array.isArray(paper[field]) && paper[field].length === 0)) {
+    fail(`Missing required paper content field: ${field}`);
+  }
+}
+
+const registry = parse(read(path.join(repoRoot, "data", "datasets.yaml")));
+const requiredDatasetIds = ["ac", "gc", "hmeq", "th02", "tc", "gmc"];
+for (const id of requiredDatasetIds) {
+  const dataset = registry.datasets?.[id];
+  if (!dataset) {
+    fail(`Missing dataset registry entry: ${id}`);
+    continue;
+  }
+
+  if (!dataset.expected?.rows || !dataset.expected?.input_count) {
+    fail(`Dataset ${id} is missing public shape metadata.`);
+  }
+}
+
+const scannedFiles = [
+  ...walk(path.join(websiteRoot, "content")),
+  ...walk(path.join(websiteRoot, "app")),
+  ...walk(path.join(websiteRoot, "components")),
+  ...walk(path.join(websiteRoot, "lib")),
+].filter((filePath) => /\.(md|ya?ml|tsx?|css)$/.test(filePath));
+
+const appRoutes = walk(path.join(websiteRoot, "app"))
+  .filter((filePath) => path.basename(filePath) === "page.tsx")
+  .map((filePath) =>
+    path
+      .relative(path.join(websiteRoot, "app"), path.dirname(filePath))
+      .replaceAll("\\", "/"),
+  );
+
+if (appRoutes.includes("tai-lap")) {
+  fail("Public route /tai-lap must not exist.");
+}
+
+for (const filePath of scannedFiles) {
+  const relativePath = path.relative(websiteRoot, filePath);
+  const text = read(filePath);
+
+  for (const pattern of forbiddenPatterns) {
+    if (pattern.test(text)) {
+      fail(`Forbidden public content pattern ${pattern} found in ${relativePath}`);
+    }
+  }
+
+  if (/href=["'{`]\/tai-lap\/?/.test(text) || />\s*Tái lập\s*</.test(text)) {
+    fail(`Removed public route still referenced in ${relativePath}`);
+  }
+}
+
+if (!process.exitCode) {
+  console.log("content validation passed");
+}

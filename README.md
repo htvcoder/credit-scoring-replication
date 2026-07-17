@@ -130,7 +130,8 @@ DBN là mô hình có trong nghiên cứu gốc, nhưng không được tái l�
 ├── paper/
 ├── results/
 ├── scripts/
-└── tests/
+├── tests/
+└── website/
 ```
 
 ## Quy ước dữ liệu
@@ -153,6 +154,53 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
 .\.venv\Scripts\pip.exe install -r requirements-dev.txt
 ```
+
+## Website local P1A
+
+Website P1A nằm trong `website/`, dùng Next.js với TypeScript theo hướng static-first. Website giới thiệu đề tài, paper gốc, phạm vi dữ liệu công khai, câu hỏi nghiên cứu, phương pháp dự kiến, tiến độ phase và kết quả placeholder.
+
+P1A không triển khai Docker, CI/CD, backend API, database, authentication, Google Cloud VM, domain hoặc HTTPS. Website không công bố kết quả thực nghiệm và không chứa raw data, processed data, secret hoặc path nội bộ không cần thiết.
+
+Cài dependencies website:
+
+```powershell
+cd website
+npm install
+```
+
+Chạy local:
+
+```powershell
+npm run dev
+```
+
+Kiểm tra website:
+
+```powershell
+npm run lint
+npm run type-check
+npm run validate:content
+npm run build
+```
+
+Cấu trúc nội dung chính:
+
+- `website/content/project.yaml`: thông tin đề tài, mục tiêu và câu hỏi nghiên cứu.
+- Navigation công khai hiện gồm 6 mục: Trang chủ, Giới thiệu, Dữ liệu, Phương pháp, Tiến độ và Kết quả.
+- Menu và route `Tái lập` không còn nằm trong website công khai P1A. Reproducibility vẫn là yêu cầu nội bộ của pipeline thực nghiệm và thuộc Phase 11, không bị loại khỏi kế hoạch nghiên cứu.
+- `website/content/internship.yaml`: thông tin giới thiệu đề tài thực tập; trường chưa có giữ `Chưa cập nhật`.
+- `website/content/paper.yaml`: thông tin paper gốc, thiết kế thực nghiệm và kết quả chính do paper báo cáo.
+- `website/content/background.md`: bối cảnh và mục đích của đề tài thực tập.
+- `website/content/limitations.md`: hạn chế của paper và hạn chế khi tái thực hiện.
+- `website/content/progress.yaml`: trạng thái phase; Phase 0 là `Completed`, Phase 1 là `In progress`, Phase 2 đến Phase 11 là `Planned`.
+- `website/content/methods.md`: phương pháp dự kiến.
+- `website/content/deviations.md`: deviation và giới hạn hiện tại.
+- `data/datasets.yaml`: source of truth cho metadata dataset hiển thị trên website.
+
+Phần còn lại cho P1B/P1C:
+
+- P1B: Docker hóa website và chuẩn bị build context an toàn.
+- P1C: CI/CD, Google Cloud VM, health check, rollback và deployment runbook.
 
 ## Metadata dataset
 
@@ -270,4 +318,5 @@ python -m venv .venv
 - Đã chuyển `data/checksums-sha256.csv` sang relative portable paths.
 - Đã tạo `data/datasets.yaml` làm registry metadata chính.
 - Đã có script kiểm tra dữ liệu `scripts/verify_credit_datasets.py`.
-- Bước tiếp theo là xây dựng pipeline smoke experiment, chưa chạy model.
+- Đang triển khai P1A website local và nội dung ban đầu.
+- Bước tiếp theo sau P1A là Docker hóa/CI-CD theo phạm vi P1B/P1C; chưa chạy model và chưa có pipeline smoke experiment.
