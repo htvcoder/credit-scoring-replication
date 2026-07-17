@@ -3,6 +3,8 @@ import Link from "next/link";
 import { Nav } from "@/components/Nav";
 import "./styles.css";
 
+const buildSha = process.env.NEXT_PUBLIC_BUILD_SHA || "local";
+
 export const metadata: Metadata = {
   title: "Credit Scoring Replication",
   description:
@@ -31,6 +33,7 @@ export default function RootLayout({
             P1A: website local static-first. Chưa công bố kết quả thực nghiệm,
             chưa triển khai production.
           </p>
+          <p className="build-version">Build: {buildSha}</p>
         </footer>
       </body>
     </html>

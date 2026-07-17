@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  website:
+    name: Website checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Sync public dataset metadata
+        run: npm run sync:datasets
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run type-check
+
+      - name: Content validation
+        run: npm run validate:content
+
+      - name: Security scan
+        run: node scripts/security-scan.mjs
+
+      - name: Production build
+        env:
+          NEXT_PUBLIC_BUILD_SHA: ${{ github.sha }}
+        run: npm run build
+
+  phase0-python:
+    name: Phase 0 Python checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Run non-raw-data Phase 0 tests
+        run: python -m pytest tests/test_verify_credit_datasets.py -m "not raw_data"
+
+  docker:
+    name: Docker image check
+    runs-on: ubuntu-latest
+    needs:
+      - website
+      - phase0-python
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build --build-arg BUILD_SHA=${{ github.sha }} -t credit-scoring-replication-website:${{ github.sha }} website
+
+      - name: Run container
+        run: docker run -d --rm --name credit-scoring-website-ci -p 8080:8080 credit-scoring-replication-website:${{ github.sha }}
+
+      - name: Check health
+        run: |
+          for i in {1..20}; do
+            if curl -fsS http://127.0.0.1:8080/health/ | grep -q "OK"; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs credit-scoring-website-ci
+          exit 1
+
+      - name: Check build version
+        run: curl -fsS http://127.0.0.1:8080/version/ | grep -q "${{ github.sha }}"
+
+      - name: Check forbidden files are absent from image
+        run: |
+          docker exec credit-scoring-website-ci sh -c '
+            set -eu
+            test ! -e /usr/share/nginx/html/data/raw
+            test ! -e /usr/share/nginx/html/data/processed
+            ! find /usr/share/nginx/html -name ".env*" -o -name "kaggle.json" -o -name "*.pem" -o -name "*.key" | grep .
+            ! grep -R "data/raw\|data/processed\|BEGIN RSA PRIVATE KEY\|BEGIN OPENSSH PRIVATE KEY" /usr/share/nginx/html
+          '
+
+      - name: Stop container
+        if: always()
+        run: docker stop credit-scoring-website-ci || true

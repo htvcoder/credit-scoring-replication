@@ -81,6 +81,7 @@ def test_metadata_feature_sets_are_consistent():
 
 
 @pytest.mark.parametrize("dataset", ["ac", "gc", "hmeq", "th02", "tc", "gmc"])
+@pytest.mark.raw_data
 def test_integration_dataset_validation_passes(dataset):
     registry = load_registry()
     active = registry[dataset].get("processed_file") if registry[dataset].get("reader", {}).get("verify_file") == "processed" else registry[dataset]["raw_file"]
@@ -89,6 +90,7 @@ def test_integration_dataset_validation_passes(dataset):
     assert result["pass"], result
 
 
+@pytest.mark.raw_data
 def test_hmeq_active_file_is_full_and_604_file_fails_core_validation():
     registry = load_registry()
     require_path(ROOT / "data" / "raw" / "hmeq" / "hmeq_full.csv")
@@ -104,6 +106,7 @@ def test_hmeq_active_file_is_full_and_604_file_fails_core_validation():
     assert not old_result["checks"]["class_counts"]
 
 
+@pytest.mark.raw_data
 def test_th02_conversion_preserves_shape_class_counts_duplicates_and_raw_hash(tmp_path):
     raw_path = ROOT / "data" / "raw" / "th02" / "public.xls"
     require_path(raw_path)
@@ -168,11 +171,13 @@ def test_relative_path_resolves_from_repo_root():
     assert resolved == ROOT / "data" / "checksums-sha256.csv"
 
 
+@pytest.mark.raw_data
 def test_checksum_verification_passes_for_present_files():
     result = verify_all_checksums()
     assert result["checksums_pass"], result
 
 
+@pytest.mark.raw_data
 def test_verifier_runs_from_non_root_cwd(tmp_path):
     script = ROOT / "scripts" / "verify_credit_datasets.py"
     completed = subprocess.run(
