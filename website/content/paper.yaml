@@ -1,0 +1,41 @@
+title: "Deep Learning for Credit Scoring: Do or Don't?"
+authors: "Björn Rafn Gunnarsson, Seppe vanden Broucke, Bart Baesens, María Óskarsdóttir, Wilfried Lemahieu"
+year: 2021
+publication: "European Journal of Operational Research, Volume 295, Issue 1, trang 292-305"
+publisher: "Elsevier"
+doi: "10.1016/j.ejor.2021.03.006"
+official_link: "https://doi.org/10.1016/j.ejor.2021.03.006"
+main_objective: "Đánh giá mức độ phù hợp của deep learning cho bài toán credit scoring bằng cách so sánh MLP và DBN với các mô hình conventional và ensemble trên nhiều dataset, nhiều metric và kiểm định thống kê."
+problem_context: "Credit scoring là bài toán phân loại người vay thành nhóm có khả năng trả nợ và nhóm có khả năng default; paper xem xét liệu deep learning có mang lại lợi thế thực nghiệm so với các phương pháp truyền thống và ensemble trong bối cảnh này hay không."
+compared_models:
+  - "Logistic Regression"
+  - "Decision Tree C4.5"
+  - "Random Forest"
+  - "XGBoost"
+  - "MLP với 1, 3 và 5 lớp ẩn"
+  - "DBN với 1, 3 và 5 lớp ẩn"
+dataset_count: 10
+preprocessing:
+  - "Mean replacement cho biến numeric bị thiếu."
+  - "Mode replacement cho biến nominal bị thiếu."
+  - "Weight of Evidence cho biến nominal."
+  - "Variance Inflation Factor với ngưỡng VIF <= 10."
+cross_validation:
+  - "Outer N x 2 cross-validation, với N phụ thuộc từng dataset."
+  - "Inner five-fold cross-validation để tuning trong từng outer training split."
+metrics:
+  - "AUC"
+  - "Brier Score"
+  - "Partial Gini"
+  - "Expected Maximum Profit"
+statistical_analysis:
+  - "Average rank"
+  - "Friedman test"
+  - "Rom procedure"
+  - "Nemenyi multiple comparison"
+  - "Bayesian signed-rank test"
+reported_findings:
+  - "Paper báo cáo XGBoost là classifier có thứ hạng tổng thể tốt nhất trong các mô hình được xét và tốt nhất theo các performance measures được sử dụng."
+  - "Paper báo cáo các mạng neural sâu không vượt trội hơn phiên bản nông hơn với một lớp ẩn trong so sánh này."
+  - "Paper nhấn mạnh các mô hình deep neural có chi phí tính toán cao hơn đáng kể khi tuning hyperparameter."
+  - "Paper lưu ý nếu interpretability là ưu tiên chính, các phương pháp conventional như Logistic Regression vẫn có vai trò thực tế."

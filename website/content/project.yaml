@@ -1,0 +1,19 @@
+title: "Partial replication và đánh giá lại mô hình credit scoring"
+short_description: "Website giới thiệu đề tài thực tập, phạm vi dữ liệu công khai, câu hỏi nghiên cứu, phương pháp dự kiến và tiến độ triển khai."
+repository: "credit-scoring-replication"
+role_of_website: "Công bố thông tin nền tảng, tiến độ và sau này là các kết quả đã được kiểm chứng; P1A chưa công bố kết quả thực nghiệm."
+research_questions:
+  - id: "RQ1"
+    question: "Kết quả chính của paper gốc có tái xuất hiện trên các bộ dữ liệu công khai hay không?"
+  - id: "RQ2"
+    question: "MLP nhiều lớp ẩn có tiếp tục không tốt hơn MLP một lớp ẩn hay không?"
+  - id: "RQ3"
+    question: "CatBoost, TabNet hoặc FT-Transformer có làm thay đổi kết luận rằng XGBoost nên được ưu tiên cho credit scoring hay không?"
+objectives:
+  - "Tái lập một phần pipeline đánh giá credit scoring trên 6 bộ dữ liệu công khai có thể kiểm chứng."
+  - "Tái kiểm chứng vai trò của XGBoost và ảnh hưởng của độ sâu trong các cấu hình MLP."
+  - "Đánh giá thêm các mô hình tabular hiện đại theo protocol tách biệt, không trộn với replication core."
+scope_notes:
+  - "Dự án là partial replication, không phải full replication vì 4 dataset trong paper gốc là dữ liệu riêng tư."
+  - "DBN không nằm trong core scope hiện tại và được ghi nhận là deviation."
+  - "P1A chỉ xây website local và nội dung ban đầu; chưa có Docker, CI/CD, deployment hoặc pipeline thực nghiệm."
