@@ -56,6 +56,9 @@ export type Phase = {
   title: string;
   status: PhaseStatus;
   summary: string;
+  tasks: string[];
+  deliverables: string[];
+  checkpoints?: string[];
   caveat?: string;
 };
 
