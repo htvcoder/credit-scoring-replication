@@ -56,7 +56,7 @@ Tài liệu này là kế hoạch triển khai tổng thể cho đề tài `Tái
 
 ### 2.1.1. Cập nhật trạng thái Phase 1 sau P1C
 
-Tính đến sau khi P1C được merge vào `main`, các evidence đã được người dùng xác nhận:
+Tính đến ngày 2026-07-18, Phase 1 đã Completed. Các evidence đã được người dùng xác nhận:
 
 - P1A website local và nội dung ban đầu: Completed.
 - P1B Docker và CI: Completed; CI đã chạy thành công trên Pull Request và `main`.
@@ -65,13 +65,13 @@ Tính đến sau khi P1C được merge vào `main`, các evidence đã được
 - Docker image website đã được build, push lên GHCR và deploy lên Google Cloud VM.
 - Website production đang hoạt động tại `http://34.142.206.15`.
 - Health/version validation trong deployment workflow đã pass vì workflow production báo thành công.
+- Manual rollback production: PASS; production đã khôi phục từ image `e0c9b20d3ce99901f2bbdfe67d9c009a545ad6ea` về image `1cbbbd2c7cc242b98d1dfa2a99ee3ad2d6619f66`, container sau rollback healthy và log có `Rollback succeeded`.
+- Automatic failed-deployment rollback: PASS bằng manual workflow với `force_post_deploy_failure=true`; candidate image `4c201dc7e1e48bc6abf520861f784ed63e7264ef` được deploy, health check pass, forced failure kích hoạt rollback, previous good image `e0c9b20d3ce99901f2bbdfe67d9c009a545ad6ea` được restore và workflow kết thúc exit code 1 như expected.
+- Sau test, production đã được deploy lại từ `main` với `force_post_deploy_failure=false`.
 - Website hiện dùng HTTP/public IP; domain và HTTPS vẫn Optional trong phạm vi hiện tại.
 - Website chỉ có nội dung công khai, không có authentication hoặc dữ liệu nhạy cảm.
 
-Các acceptance criteria còn pending trước khi đánh dấu Phase 1 Completed hoàn toàn:
-
-- Manual rollback production chưa được xác nhận kiểm thử thật.
-- Automatic failed-deployment rollback chưa được xác nhận kiểm thử thật.
+Không còn acceptance criteria bắt buộc còn pending cho Phase 1. Domain và HTTPS vẫn Optional, không ảnh hưởng acceptance của Phase 1.
 
 ### 2.2. Baseline dữ liệu Phase 0
 
@@ -321,7 +321,7 @@ Ràng buộc phụ thuộc cần giữ nhất quán trong toàn bộ roadmap:
 | Ngoài phạm vi | Training job, backend API, database, result thật, admin dashboard. |
 | Commit đề xuất | `feat(website): add project website and production delivery foundation` |
 | Tag đề xuất | `p1-website-cicd-foundation` |
-| Website cần cập nhật | Website là sản phẩm chính của phase; trạng thái Phase 1 chuyển từ In progress sang Completed sau tag. |
+| Website cần cập nhật | Website là sản phẩm chính của phase; trạng thái Phase 1 hiện là Completed. |
 
 Checkpoint nội bộ của Phase 1:
 
@@ -339,14 +339,14 @@ Trạng thái hiện tại của checkpoint:
 |---|---|
 | P1A - Website local và nội dung ban đầu | Completed |
 | P1B - Docker và CI | Completed |
-| P1C - Production deployment | Operational; rollback verification pending |
+| P1C - Production deployment | Completed |
 | GitHub Actions -> VM SSH | Passed |
 | Automatic deployment from `main` | Passed |
 | Website public | `http://34.142.206.15` |
-| Manual rollback production | Pending |
-| Automatic failed-deployment rollback | Pending |
+| Manual rollback production | Passed |
+| Automatic failed-deployment rollback | Passed |
 
-Vì hai kiểm thử rollback production chưa được xác nhận thật, Phase 1 nên ở trạng thái **In progress/gần hoàn thành**, chưa đánh dấu Completed hoàn toàn. Bước tiếp theo trước Phase 2 là kiểm thử manual rollback và automatic failed-deployment rollback trên production.
+Phase 1 ở trạng thái **Completed**. Bước tiếp theo là Phase 2 - nền tảng thực nghiệm và smoke test; Phase 2 vẫn Planned cho đến khi bắt đầu triển khai riêng.
 
 ### Phase 2 - Nền tảng thực nghiệm và smoke test
 
@@ -948,7 +948,7 @@ Domain + HTTPS:
 
 ## 22. Giai đoạn tiếp theo
 
-**Giai đoạn tiếp theo được đề xuất:** hoàn tất phần rollback còn pending của **Phase 1 - Website giới thiệu đề tài và nền tảng CI/CD**, sau đó chuyển sang **Phase 2 - Nền tảng thực nghiệm và smoke test**.
+**Giai đoạn tiếp theo được đề xuất:** bắt đầu **Phase 2 - Nền tảng thực nghiệm và smoke test** trong một nhiệm vụ riêng. Phase 2 vẫn Planned, chưa có artifact thực nghiệm.
 
 Các quyết định Phase 1 đã chốt hoặc đã vận hành:
 
@@ -957,7 +957,7 @@ Các quyết định Phase 1 đã chốt hoặc đã vận hành:
 - Deploy production tự động khi push phù hợp vào `main` theo path filter, đồng thời hỗ trợ `workflow_dispatch`.
 - Production hiện dùng Docker Compose, HTTP/public IP và không cài host-level Nginx trong P1C.
 - Domain riêng và HTTPS giữ Optional.
-- Rollback đã có script/workflow support nhưng manual rollback production và automatic failed-deployment rollback vẫn cần kiểm thử thật.
+- Manual rollback production và automatic failed-deployment rollback đã PASS.
 
 Quyết định Optional, không chặn Phase 1:
 

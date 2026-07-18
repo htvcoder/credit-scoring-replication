@@ -203,7 +203,7 @@ Cấu trúc nội dung chính:
 - `website/content/paper.yaml`: thông tin paper gốc, thiết kế thực nghiệm và kết quả chính do paper báo cáo.
 - `website/content/background.md`: bối cảnh và mục đích của đề tài thực tập.
 - `website/content/limitations.md`: hạn chế của paper và hạn chế khi tái thực hiện.
-- `website/content/progress.yaml`: trạng thái phase; Phase 0 là `Completed`, Phase 1 là `In progress`, Phase 2 đến Phase 11 là `Planned`.
+- `website/content/progress.yaml`: source of truth cho trạng thái phase; Phase 0 là `Completed`, Phase 1 là `Completed`, Phase 2 đến Phase 11 là `Planned`.
 - `website/content/methods.md`: phương pháp dự kiến.
 - `website/content/deviations.md`: deviation và giới hạn hiện tại.
 - `data/datasets.yaml`: source of truth cho metadata dataset hiển thị trên website.
@@ -273,7 +273,7 @@ Trạng thái nội bộ:
 
 - P1A: Completed.
 - P1B: Completed; CI đã chạy thành công trên Pull Request và `main`.
-- P1C: Production deployment operational; rollback verification pending.
+- P1C: Production deployment Completed; rollback verification PASS.
 
 Production hiện tại:
 
@@ -284,7 +284,7 @@ Production hiện tại:
 - Health/version validation trong deployment workflow đã pass vì workflow production báo thành công.
 - Website hiện dùng HTTP/public IP; domain và HTTPS vẫn Optional trong phạm vi hiện tại.
 - Website chỉ có nội dung công khai, không có đăng nhập hoặc chức năng truyền dữ liệu nhạy cảm.
-- Manual rollback production và automatic failed-deployment rollback chưa được xác nhận kiểm thử thật, nên Phase 1 chưa đánh dấu Completed hoàn toàn.
+- Manual rollback production và automatic failed-deployment rollback đã được xác nhận PASS, nên Phase 1 đã Completed.
 
 ### Production deployment P1C
 
@@ -326,7 +326,7 @@ GitHub Secrets production đang dùng:
 
 Manual deploy dùng workflow `Deploy Production` với `action=deploy`. Manual rollback dùng cùng workflow với `action=rollback`.
 
-Các evidence đã có: GHCR push, VM pull đúng image immutable, website public IP trả `/`, `/health/`, `/version/` khớp SHA trong workflow deployment thành công. Các evidence còn pending: manual rollback thật và automatic failed-deployment rollback thật. Domain và HTTPS vẫn Optional trong checkpoint này.
+Các evidence đã có: GHCR push, VM pull đúng image immutable, website public IP trả `/`, `/health/`, `/version/` khớp SHA trong workflow deployment thành công; manual rollback production PASS; automatic failed-deployment rollback PASS bằng forced post-deploy failure mode. Domain và HTTPS vẫn Optional trong checkpoint này.
 
 ## Metadata dataset
 
@@ -445,6 +445,6 @@ python -m venv .venv
 - Đã tạo `data/datasets.yaml` làm registry metadata chính.
 - Đã có script kiểm tra dữ liệu `scripts/verify_credit_datasets.py`.
 - Phase 0: Completed với 6 dataset công khai đã xác minh; giữ caveat provenance HMEQ.
-- Phase 1: P1A Completed; P1B Completed; P1C production deployment operational tại `http://34.142.206.15`; còn pending manual rollback production và automatic failed-deployment rollback.
+- Phase 1: Completed; P1A Completed, P1B Completed, P1C Completed; production deployment operational tại `http://34.142.206.15`; manual rollback production PASS và automatic failed-deployment rollback PASS.
 - Phase 2 đến Phase 11: Planned; chưa chạy model, chưa có pipeline smoke experiment và chưa có kết quả khoa học.
-- Bước tiếp theo sau khi hoàn tất rollback production là Phase 2 - nền tảng thực nghiệm và smoke test.
+- Bước tiếp theo là Phase 2 - nền tảng thực nghiệm và smoke test; Phase 2 vẫn Planned, chưa bắt đầu.

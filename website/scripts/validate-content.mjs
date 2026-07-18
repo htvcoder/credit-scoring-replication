@@ -48,8 +48,8 @@ if (phase0?.status !== "Completed") {
   fail("Phase 0 must be Completed.");
 }
 
-if (phase1?.status !== "In progress") {
-  fail("Phase 1 must remain In progress until production rollback verification is confirmed.");
+if (phase1?.status !== "Completed") {
+  fail("Phase 1 must be Completed after production rollback verification passed.");
 }
 
 if (progress.phases.length !== expectedPhaseOrder.length) {

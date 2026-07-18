@@ -6,7 +6,7 @@ Phạm vi P1C chỉ gồm website production, Docker image immutable trên GHCR,
 
 ## Trạng thái hiện tại
 
-Các fact đã được xác nhận sau khi P1C được merge vào `main`:
+Các fact đã được xác nhận sau khi P1C được merge vào `main` và rollback production được kiểm thử thật:
 
 - Workflow `Test VM SSH` đã pass.
 - Production deployment workflow đã chạy tự động thành công từ `main`.
@@ -16,13 +16,35 @@ Các fact đã được xác nhận sau khi P1C được merge vào `main`:
 - Website hiện chạy bằng HTTP/public IP.
 - Domain và HTTPS vẫn Optional trong phạm vi hiện tại.
 - Website chỉ có nội dung công khai, không có authentication hoặc chức năng truyền dữ liệu nhạy cảm.
+- Manual rollback production đã PASS.
+- Automatic failed-deployment rollback đã PASS bằng manual workflow với `force_post_deploy_failure=true`.
+- Sau forced rollback test, production đã được deploy lại từ `main` với `force_post_deploy_failure=false`.
 
-Các kiểm thử production còn pending:
+P1C ở trạng thái **Completed** và Phase 1 đã **Completed**. Domain và HTTPS vẫn Optional, không phải điều kiện hoàn thành Phase 1.
 
-- Manual rollback production.
-- Automatic rollback khi deployment lỗi.
+## Phase 1 production verification status
 
-Vì hai kiểm thử rollback chưa được xác nhận thật, P1C ở trạng thái **production deployment operational; rollback verification pending**. Không đánh dấu Phase 1 Completed hoàn toàn cho đến khi hai kiểm thử này pass.
+| Verification | Status |
+|---|---|
+| GitHub Actions -> VM SSH | PASS |
+| Automatic deployment | PASS |
+| Manual rollback | PASS |
+| Forced automatic rollback | PASS |
+| Public health/version verification | PASS |
+| Domain/HTTPS | Optional |
+
+Evidence text, không chứa secret:
+
+- Ngày kiểm thử: 2026-07-18.
+- Manual rollback source image SHA: `e0c9b20d3ce99901f2bbdfe67d9c009a545ad6ea`.
+- Manual rollback restored image SHA: `1cbbbd2c7cc242b98d1dfa2a99ee3ad2d6619f66`.
+- Manual rollback log: `rollback-20260718T124110Z.log`, có `Rollback succeeded`.
+- Forced rollback candidate image SHA: `4c201dc7e1e48bc6abf520861f784ed63e7264ef`.
+- Forced rollback previous good image SHA: `e0c9b20d3ce99901f2bbdfe67d9c009a545ad6ea`.
+- Forced rollback log: `deploy-20260718T141929Z.log`.
+- Evidence log markers: `Health check passed for candidate image`, `Forced post-deploy failure requested for rollback verification`, `Rollback start: restoring previous good image`, `Restored image health check passed`, `Final rollback result: restored ...`, `ERROR: Forced post-deploy failure triggered; rollback completed`.
+- Forced workflow failure with exit code 1 is expected behavior because the candidate deployment is intentionally failed after production validation to prove automatic rollback.
+- State safety was confirmed: the candidate image was not recorded as successful `current.env`, and production was restored to the previous good image.
 
 ## Kiến trúc
 
@@ -302,7 +324,7 @@ git branch -d <test-branch>
 git push origin --delete <test-branch>
 ```
 
-Không đánh dấu Phase 1 Completed cho đến khi manual rollback production và forced automatic rollback test đều PASS trên production thật.
+Phase 1 đã Completed vì manual rollback production và forced automatic rollback test đều PASS trên production thật. Sau forced rollback test, deploy lại `main` với `force_post_deploy_failure=false` để đưa production về trạng thái cuối mong muốn.
 
 ## Image retention
 
@@ -365,13 +387,13 @@ Trạng thái acceptance hiện tại:
 | Push phù hợp vào `main` kích hoạt deployment | Passed |
 | Path filter hoạt động | Passed theo automatic deployment từ `main` |
 | Concurrency control hoạt động | Configured; chưa có evidence cạnh tranh đồng thời |
-| Rollback thực tế được kiểm thử ít nhất một lần | Pending |
-| Failed deployment tự rollback được | Pending |
-| Deployment logs tồn tại | Expected từ deploy script; cần xác nhận trên VM nếu cần evidence file |
-| Current và previous image được lưu đúng | Expected từ deploy script; cần xác nhận trên VM nếu cần evidence file |
+| Rollback thực tế được kiểm thử ít nhất một lần | Passed |
+| Failed deployment tự rollback được | Passed |
+| Deployment logs tồn tại | Passed: `rollback-20260718T124110Z.log`, `deploy-20260718T141929Z.log` |
+| Current và previous image được lưu đúng | Passed theo forced rollback evidence |
 | Không có raw data hoặc secret trong image | Passed theo CI/deployment image scan |
 | Tài liệu deployment đầy đủ | Updated |
 | Domain và HTTPS không phải điều kiện bắt buộc | Confirmed Optional |
 | Chưa triển khai Phase 2 | Confirmed |
 
-Phase 1 chỉ nên chuyển sang Completed sau khi manual rollback production và automatic failed-deployment rollback được kiểm thử thật.
+Phase 1 Completed sau khi manual rollback production và automatic failed-deployment rollback được kiểm thử thật.
