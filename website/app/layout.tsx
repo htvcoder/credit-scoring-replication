@@ -6,9 +6,9 @@ import "./styles.css";
 const buildSha = process.env.NEXT_PUBLIC_BUILD_SHA || "local";
 
 export const metadata: Metadata = {
-  title: "Credit Scoring Replication",
+  title: "Tái lập và đánh giá lại mô hình tính điểm tín dụng",
   description:
-    "Website giới thiệu đề tài partial replication và đánh giá lại mô hình credit scoring.",
+    "Website báo cáo tiến độ và công bố kết quả kiểm chứng của đề tài tính điểm tín dụng.",
 };
 
 export default function RootLayout({
@@ -22,7 +22,7 @@ export default function RootLayout({
         <header className="site-header">
           <div className="header-inner">
             <Link className="brand" href="/">
-              Credit Scoring Replication
+              Tái lập và đánh giá lại mô hình tính điểm tín dụng
             </Link>
             <Nav />
           </div>
@@ -30,8 +30,8 @@ export default function RootLayout({
         <main>{children}</main>
         <footer className="site-footer">
           <p>
-            P1A: website local static-first. Chưa công bố kết quả thực nghiệm,
-            chưa triển khai production.
+            Production: http://34.142.206.15. Phase 1 còn pending kiểm thử
+            rollback; chưa công bố kết quả thực nghiệm.
           </p>
           <p className="build-version">Build: {buildSha}</p>
         </footer>

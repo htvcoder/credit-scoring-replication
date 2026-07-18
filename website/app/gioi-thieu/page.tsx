@@ -13,7 +13,7 @@ export default function InternshipPage() {
   const details = [
     ["Tên đề tài", internship.title],
     ["Mô tả ngắn", internship.short_description],
-    ["Mục tiêu thực tập", internship.internship_goal],
+    ["Mục tiêu dự án", internship.project_goal],
     ["Sinh viên thực hiện", internship.student],
     ["Người hướng dẫn", internship.supervisor],
     ["Đơn vị hoặc chương trình", internship.unit_or_program],
@@ -25,7 +25,7 @@ export default function InternshipPage() {
   return (
     <div className="page">
       <section className="page-title">
-        <p className="eyebrow">Giới thiệu đề tài thực tập</p>
+        <p className="eyebrow">Giới thiệu đề tài</p>
         <h1>{internship.title}</h1>
         <p className="lead">{internship.short_description}</p>
       </section>

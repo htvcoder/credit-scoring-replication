@@ -1,6 +1,6 @@
 # Phương pháp dự kiến
 
-Website P1A chỉ mô tả phương pháp ở mức kế hoạch. Chưa có pipeline thực nghiệm, metrics hoặc kết luận nghiên cứu được công bố.
+Website hiện chỉ mô tả phương pháp ở mức kế hoạch. Chưa có pipeline thực nghiệm, metrics hoặc kết luận nghiên cứu được công bố.
 
 ## Replication core
 

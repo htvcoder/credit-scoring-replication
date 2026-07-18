@@ -10,8 +10,9 @@ export default function ProgressPage() {
         <p className="eyebrow">Roadmap</p>
         <h1>Tiến độ các phase</h1>
         <p className="lead">
-          P1A không tự động đánh dấu Phase 1 Completed. Các phase sau vẫn ở
-          trạng thái Planned cho đến khi có bằng chứng nghiệm thu tương ứng.
+          Phase 1 đã vận hành production tại http://34.142.206.15, nhưng vẫn
+          chưa đánh dấu Completed cho đến khi rollback production được kiểm thử
+          thật. Các phase sau vẫn Planned cho đến khi có bằng chứng nghiệm thu.
         </p>
       </section>
 

@@ -47,12 +47,12 @@ if (phase0?.status !== "Completed") {
 }
 
 if (phase1?.status !== "In progress") {
-  fail("Phase 1 must remain In progress for P1A.");
+  fail("Phase 1 must remain In progress until production rollback verification is confirmed.");
 }
 
 for (const phase of progress.phases.slice(2)) {
   if (phase.status !== "Planned") {
-    fail(`${phase.id} must remain Planned in P1A.`);
+    fail(`${phase.id} must remain Planned until implementation evidence exists.`);
   }
 }
 

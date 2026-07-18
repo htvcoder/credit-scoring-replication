@@ -4,6 +4,26 @@ Tài liệu này mô tả Checkpoint P1C cho website `credit-scoring-replication
 
 Phạm vi P1C chỉ gồm website production, Docker image immutable trên GHCR, SSH vào Google Cloud VM, Docker Compose, health/version check, logging và rollback. P1C không triển khai Phase 2, pipeline thực nghiệm, backend API, database, domain hoặc HTTPS.
 
+## Trạng thái hiện tại
+
+Các fact đã được xác nhận sau khi P1C được merge vào `main`:
+
+- Workflow `Test VM SSH` đã pass.
+- Production deployment workflow đã chạy tự động thành công từ `main`.
+- Docker image website đã được build, push lên GHCR và deploy lên Google Cloud VM.
+- Website production đang hoạt động tại `http://34.142.206.15`.
+- Health/version validation trong deployment workflow đã pass vì workflow production báo thành công.
+- Website hiện chạy bằng HTTP/public IP.
+- Domain và HTTPS vẫn Optional trong phạm vi hiện tại.
+- Website chỉ có nội dung công khai, không có authentication hoặc chức năng truyền dữ liệu nhạy cảm.
+
+Các kiểm thử production còn pending:
+
+- Manual rollback production.
+- Automatic rollback khi deployment lỗi.
+
+Vì hai kiểm thử rollback chưa được xác nhận thật, P1C ở trạng thái **production deployment operational; rollback verification pending**. Không đánh dấu Phase 1 Completed hoàn toàn cho đến khi hai kiểm thử này pass.
+
 ## Kiến trúc
 
 ```text
@@ -25,7 +45,7 @@ Không dùng host-level Nginx trong checkpoint này. Domain và HTTPS vẫn Opti
 
 ## Prerequisites trên VM
 
-VM hiện được xác nhận qua workflow `.github/workflows/test-vm-ssh.yml`:
+VM đã được xác nhận qua workflow `.github/workflows/test-vm-ssh.yml`:
 
 - SSH từ GitHub Actions vào VM hoạt động.
 - Docker hoạt động.
@@ -118,6 +138,8 @@ Workflow `.github/workflows/deploy-production.yml` chạy khi push vào `main` v
 - `.github/workflows/deploy-production.yml`
 
 Workflow không chạy deployment trên Pull Request.
+
+Trạng thái hiện tại: automatic deployment từ `main` đã pass và website production đang phục vụ tại `http://34.142.206.15`.
 
 ## Deploy thủ công
 
@@ -250,25 +272,27 @@ Trước khi chấp nhận production:
 
 ## Acceptance P1C
 
-P1C chỉ hoàn thành chính thức khi đã chạy thật và có evidence:
+Trạng thái acceptance hiện tại:
 
-1. Image được push lên GHCR với full commit SHA.
-2. GitHub Actions SSH được vào VM.
-3. VM pull đúng immutable image.
-4. Website truy cập được tại public IP.
-5. `/` trả thành công.
-6. `/health/` pass.
-7. `/version/` khớp commit đang deploy.
-8. Push phù hợp vào `main` kích hoạt deployment.
-9. Path filter hoạt động.
-10. Concurrency control hoạt động.
-11. Rollback thực tế được kiểm thử ít nhất một lần.
-12. Failed deployment tự rollback được.
-13. Deployment logs tồn tại.
-14. Current và previous image được lưu đúng.
-15. Không có raw data hoặc secret trong image.
-16. Tài liệu deployment đầy đủ.
-17. Domain và HTTPS không phải điều kiện bắt buộc.
-18. Chưa triển khai Phase 2.
+| Tiêu chí | Trạng thái |
+|---|---|
+| Image được push lên GHCR với full commit SHA | Passed theo workflow production đã thành công |
+| GitHub Actions SSH được vào VM | Passed |
+| VM pull đúng immutable image | Passed theo workflow production đã thành công |
+| Website truy cập được tại public IP | Passed: `http://34.142.206.15` |
+| `/` trả thành công | Passed theo workflow production đã thành công |
+| `/health/` pass | Passed theo workflow production đã thành công |
+| `/version/` khớp commit đang deploy | Passed theo workflow production đã thành công |
+| Push phù hợp vào `main` kích hoạt deployment | Passed |
+| Path filter hoạt động | Passed theo automatic deployment từ `main` |
+| Concurrency control hoạt động | Configured; chưa có evidence cạnh tranh đồng thời |
+| Rollback thực tế được kiểm thử ít nhất một lần | Pending |
+| Failed deployment tự rollback được | Pending |
+| Deployment logs tồn tại | Expected từ deploy script; cần xác nhận trên VM nếu cần evidence file |
+| Current và previous image được lưu đúng | Expected từ deploy script; cần xác nhận trên VM nếu cần evidence file |
+| Không có raw data hoặc secret trong image | Passed theo CI/deployment image scan |
+| Tài liệu deployment đầy đủ | Updated |
+| Domain và HTTPS không phải điều kiện bắt buộc | Confirmed Optional |
+| Chưa triển khai Phase 2 | Confirmed |
 
-Nếu chưa chạy được GitHub Secrets hoặc VM thật, production acceptance là `Pending`, không được ghi là Completed.
+Phase 1 chỉ nên chuyển sang Completed sau khi manual rollback production và automatic failed-deployment rollback được kiểm thử thật.

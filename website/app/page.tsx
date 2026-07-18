@@ -12,7 +12,7 @@ export default function Home() {
     <div className="page">
       <section className="hero">
         <div>
-          <p className="eyebrow">Đề tài thực tập</p>
+          <p className="eyebrow">Đề tài nghiên cứu</p>
           <h1>{project.title}</h1>
           <p className="lead">{project.short_description}</p>
           <div className="actions">
@@ -24,10 +24,13 @@ export default function Home() {
             </Link>
           </div>
         </div>
-        <aside className="hero-panel" aria-label="Trạng thái P1A">
-          <span className="panel-label">P1A</span>
-          <strong>Website local và nội dung ban đầu</strong>
-          <p>Static-first, không backend API, không database, không kết quả giả.</p>
+        <aside className="hero-panel" aria-label="Trạng thái Phase 1">
+          <span className="panel-label">Phase 1</span>
+          <strong>Production deployment operational</strong>
+          <p>
+            Website đang hoạt động tại http://34.142.206.15; rollback
+            production vẫn pending kiểm thử thật.
+          </p>
         </aside>
       </section>
 

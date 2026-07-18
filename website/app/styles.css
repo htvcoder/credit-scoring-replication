@@ -65,8 +65,9 @@ strong {
 .brand {
   color: var(--text);
   font-weight: 800;
+  line-height: 1.25;
+  max-width: 520px;
   text-decoration: none;
-  white-space: nowrap;
 }
 
 .site-nav {
