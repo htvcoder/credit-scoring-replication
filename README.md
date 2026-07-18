@@ -161,6 +161,17 @@ Website nằm trong `website/`, dùng Next.js với TypeScript theo hướng sta
 
 P1A không triển khai Docker, CI/CD, backend API, database, authentication, Google Cloud VM, domain hoặc HTTPS. Website không công bố kết quả thực nghiệm và không chứa raw data, processed data, secret hoặc path nội bộ không cần thiết.
 
+### Nhận diện website
+
+Website dùng phương án logo số 2 làm nhận diện chính thức cho dự án: biểu tượng khiên đen, ba cột biểu đồ tăng dần màu đỏ và dấu kiểm trắng trong vòng tròn đỏ. Bộ asset nằm trong `website/public/brand/`:
+
+- `csr-mark.svg`: biểu tượng khiên dùng cho favicon, header và các vị trí nhỏ.
+- `csr-logo-horizontal.svg`: lockup ngang gồm biểu tượng, `CSR` và `CREDIT SCORING REPLICATION`.
+- `csr-logo-full.svg`: phiên bản đầy đủ gồm biểu tượng, `CSR`, tên tiếng Anh và tên tiếng Việt `Tái lập và đánh giá lại mô hình tính điểm tín dụng`.
+- `csr-icon-192.png`, `csr-icon-512.png`, `apple-touch-icon.png` và `favicon.ico`: app icon và favicon chỉ dùng biểu tượng khiên, không dùng full wordmark để tránh chữ bị mất ở kích thước nhỏ.
+
+Hệ màu thương hiệu của website là đỏ - đen - trắng. Mã màu chính: primary red `#E30613`, dark red `#B80916`, soft red background `#FFF1F2`, main black `#111111`, charcoal `#1F2933`, muted text `#5F6368`, border `#E5E7EB`, main background `#FFFFFF`, secondary background `#FAFAFA`. Khi thay đổi logo trong tương lai, cập nhật các asset trong `website/public/brand/`, giữ favicon là biểu tượng khiên riêng và đồng bộ metadata trong `website/app/layout.tsx` cùng `website/public/site.webmanifest`.
+
 Cài dependencies website:
 
 ```powershell
