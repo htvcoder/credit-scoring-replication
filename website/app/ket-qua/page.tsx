@@ -5,8 +5,8 @@ export default function ResultsPage() {
         <p className="eyebrow">Kết quả</p>
         <h1>Kết quả thực nghiệm chưa được công bố</h1>
         <p className="lead">
-          P1A chưa triển khai pipeline thực nghiệm, chưa chạy model và chưa có
-          artifact kết quả đã được kiểm chứng.
+          Phase 2 chưa triển khai pipeline thực nghiệm, chưa chạy model và chưa
+          có artifact kết quả đã được kiểm chứng.
         </p>
       </section>
 

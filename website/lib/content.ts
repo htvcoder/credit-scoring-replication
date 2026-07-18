@@ -20,7 +20,7 @@ export type ProjectContent = {
 export type InternshipContent = {
   title: string;
   short_description: string;
-  internship_goal: string;
+  project_goal: string;
   work_scope: string[];
   student: string;
   supervisor: string;
@@ -56,6 +56,9 @@ export type Phase = {
   title: string;
   status: PhaseStatus;
   summary: string;
+  tasks: string[];
+  deliverables: string[];
+  checkpoints?: string[];
   caveat?: string;
 };
 

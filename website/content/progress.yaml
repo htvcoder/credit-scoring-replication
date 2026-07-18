@@ -2,50 +2,172 @@ phases:
   - id: "Phase 0"
     title: "Xác minh dữ liệu nền tảng"
     status: "Completed"
-    summary: "Đã có registry metadata, checksum, data cards, scripts verification và tests cho 6 dataset công khai."
+    summary: "Phase này xác lập baseline dữ liệu verified cho 6 dataset công khai và chuẩn hóa metadata để các phase sau dùng cùng một nguồn sự thật. Công việc cũng ghi rõ caveat HMEQ và thiết lập guard để raw data, processed artifact và secret không lọt vào repository hoặc website."
+    tasks:
+      - "Kiểm kê 6 dataset công khai và đối chiếu shape, target, class distribution."
+      - "Tạo checksum portable và kiểm tra tính toàn vẹn file."
+      - "Chuẩn hóa registry metadata, target mapping, numeric/categorical/identifier columns."
+      - "Viết data cards và ghi caveat provenance cho HMEQ."
+      - "Thiết lập ignore rule, verifier và security guard cho dữ liệu nhạy cảm."
+    deliverables:
+      - "Registry dataset đã xác minh, checksum, data cards và Phase 0 verification smoke check."
+    checkpoints:
+      - "Completed với caveat HMEQ; caveat này phải đi kèm khi diễn giải kết quả sau này."
     caveat: "HMEQ full khớp shape/schema/class distribution của paper nhưng checksum không phải checksum SAS artifact kỳ vọng; cần giữ caveat này khi diễn giải."
   - id: "Phase 1"
     title: "Website và nền tảng công bố"
     status: "In progress"
-    summary: "P1A website local static-first và P1B Docker/CI đã hoàn thành; P1C production deployment đang được chuẩn bị với GHCR, Google Cloud VM, health/version check và rollback."
-    caveat: "Chưa đánh dấu Phase 1 Completed cho đến khi production deploy và rollback được kiểm thử thật. Domain và HTTPS vẫn Optional."
+    summary: "Phase này xây dựng website học thuật, Docker hóa, CI và production deployment để công bố tiến độ, phạm vi và sau này là kết quả đã kiểm chứng. P1A và P1B đã Completed; P1C đang operational/deployed nhưng rollback production thật vẫn chưa được xác nhận."
+    tasks:
+      - "Hoàn thiện website nội dung, health/version page và content validation."
+      - "Docker hóa website, cấu hình CI và security scan."
+      - "Thiết lập GitHub Actions deploy qua SSH, GHCR và Google Cloud VM."
+      - "Kiểm tra production deployment, health/version check và traceability theo commit."
+      - "Xác minh manual rollback và automatic failed-deployment rollback."
+    deliverables:
+      - "Website production vận hành, CI/CD foundation, GHCR image, deploy workflow và runbook production."
+    checkpoints:
+      - "P1A Completed; P1B Completed; P1C operational/deployed."
+      - "Manual rollback production pending."
+      - "Automatic failed-deployment rollback pending."
+    caveat: "Manual rollback production và automatic failed-deployment rollback chưa được xác nhận kiểm thử thật, nên Phase 1 vẫn In progress/gần hoàn thành. Domain và HTTPS vẫn Optional; website hiện dùng HTTP/public IP cho nội dung công khai, không có đăng nhập hoặc dữ liệu nhạy cảm."
   - id: "Phase 2"
     title: "Nền tảng thực nghiệm và smoke test"
     status: "Planned"
-    summary: "Chưa triển khai."
+    summary: "Phase này tạo skeleton pipeline thực nghiệm để chạy được từ config đến artifact, trước khi triển khai preprocessing và model đầy đủ. Mục tiêu là có smoke test end-to-end nhỏ, deterministic và có failure handling rõ."
+    tasks:
+      - "Tạo cấu trúc source cho loader, splitting, artifact writer và runner CLI."
+      - "Thiết lập config, seed, logging, dependency và artifact directory."
+      - "Chuẩn hóa target mapping, identifier removal và split hash."
+      - "Chạy smoke test GC/TC với Logistic Regression và XGBoost ở phạm vi nhỏ."
+      - "Ghi failure artifact khi một bước smoke không đạt."
+    deliverables:
+      - "Pipeline skeleton chạy được, môi trường tái tạo được và smoke artifacts hợp lệ."
+    checkpoints:
+      - "Chỉ bắt đầu sau khi Phase 1 rollback checkpoint được xử lý hoặc được chấp nhận là pending rõ ràng."
   - id: "Phase 3"
     title: "Preprocessing chống leakage"
     status: "Planned"
-    summary: "Chưa triển khai."
+    summary: "Phase này triển khai preprocessing fold-aware để mọi bước học từ dữ liệu chỉ fit trên training fold. Đây là nền tảng để metric và model sau đó không bị inflated bởi leakage."
+    tasks:
+      - "Fit imputation, encoding và scaling chỉ trên training fold."
+      - "Triển khai WOE với smoothing và xử lý category chưa thấy."
+      - "Triển khai VIF/feature filtering theo fold và lưu selected features."
+      - "Persist fold definition để nested CV tái tạo được."
+      - "Viết leakage tests cho train/test overlap và target leakage."
+    deliverables:
+      - "Protocol A preprocessing pipeline fold-aware, leakage guard và preprocessing audit artifact."
+    checkpoints:
+      - "Không chuyển sang core experiment nếu train-only fitting và leakage tests chưa pass."
   - id: "Phase 4"
     title: "Metric và đánh giá kinh doanh"
     status: "Planned"
-    summary: "Chưa triển khai."
+    summary: "Phase này xác minh các metric dự báo và metric kinh doanh trước khi chạy core experiment quy mô lớn. Partial Gini và EMP phải được ghi rõ exact hoặc approximate để tránh diễn giải sai."
+    tasks:
+      - "Implement AUC, Brier Score và Partial Gini với reference tests."
+      - "Xác định EMP exact/approximate và ghi rõ tham số business."
+      - "Chuẩn hóa Protocol A/Protocol B và aggregation rules."
+      - "Tạo fold-level results schema cho metric và prediction."
+      - "Kiểm tra threshold hoặc cost không được chọn trên test fold."
+    deliverables:
+      - "Evaluation engine, metric validation suite và fold-level results schema."
+    checkpoints:
+      - "AUC/Brier/Partial Gini phải pass; EMP không được gọi là exact nếu chỉ approximate."
   - id: "Phase 5"
     title: "Mô hình truyền thống và ensemble"
     status: "Planned"
-    summary: "Chưa triển khai."
+    summary: "Phase này triển khai các baseline chính của paper bằng cùng preprocessing và evaluation protocol. Kết quả baseline là điều kiện để so sánh MLP, XGBoost và modern reassessment sau này."
+    tasks:
+      - "Implement Logistic Regression, Decision Tree/CART hoặc C4.5 nếu khả thi."
+      - "Implement Random Forest và XGBoost với probability output."
+      - "Thiết lập model factory, hyperparameter search và reduced/paper-reference configs."
+      - "Export fold-level predictions, configs và runtime tracking."
+      - "Ghi rõ deviation nếu dùng CART thay cho C4.5."
+    deliverables:
+      - "Baseline model artifacts, fold-level predictions và aggregated baseline metrics."
+    checkpoints:
+      - "Không gọi Decision Tree là C4.5 nếu implementation thực tế là CART approximation."
   - id: "Phase 6"
     title: "MLP depth replication"
     status: "Planned"
-    summary: "Chưa triển khai."
+    summary: "Phase này kiểm tra ảnh hưởng của độ sâu MLP để trả lời RQ2 trong phạm vi partial replication. Các cấu hình MLP-1, MLP-3 và MLP-5 phải dùng training setup nhất quán và log đầy đủ."
+    tasks:
+      - "Implement MLP-1, MLP-3 và MLP-5 bằng cùng model contract."
+      - "Thiết lập early stopping, seed control và normalization train-only."
+      - "Lưu training logs, convergence checks và learning curves."
+      - "Chạy smoke/reduced run trên GC/TC trước khi mở rộng."
+      - "Theo dõi runtime để quyết định budget khả thi."
+    deliverables:
+      - "Kết quả MLP theo độ sâu, learning curves và comparison artifact cho RQ2."
+    checkpoints:
+      - "MLP-1/3/5 smoke phải pass và runtime phải được log trước Phase 7."
   - id: "Phase 7"
     title: "Core replication run"
     status: "Planned"
-    summary: "Chưa triển khai."
+    summary: "Phase này chạy core replication trên 6 dataset public đủ điều kiện với Protocol A và các model core. Chỉ fold-level/aggregated artifacts đã validate mới được dùng cho thống kê và website."
+    tasks:
+      - "Chạy dry run, smoke run và reduced/full approved run theo resource."
+      - "Chạy LR, DT/CART, RF, XGBoost và MLP-1/3/5 trên dataset đã chốt."
+      - "Validate incremental results, resume failed folds và chạy GMC sau cùng."
+      - "Lưu predictions, metrics, configs, runtime và failure logs."
+      - "Gắn HMEQ caveat vào mọi report liên quan."
+    deliverables:
+      - "Fold-level predictions, metrics, configs, runtime logs và evidence package cho RQ1/RQ2."
+    checkpoints:
+      - "Mỗi dataset-model Must phải có artifact hợp lệ hoặc failure status rõ; không tạo result giả."
   - id: "Phase 8"
     title: "Modern reassessment"
     status: "Planned"
-    summary: "Chưa triển khai."
+    summary: "Phase này đánh giá lại kết luận ưu tiên XGBoost bằng mô hình tabular hiện đại. CatBoost là minimum evidence bắt buộc cho RQ3; TabNet và FT-Transformer phụ thuộc resource checkpoint."
+    tasks:
+      - "Implement CatBoost trước với tuning budget so sánh được với XGBoost."
+      - "Tách rõ Protocol A và Protocol B, không trộn kết quả."
+      - "Theo dõi runtime/resource và probability output."
+      - "Chạy TabNet nếu resource checkpoint pass."
+      - "Chạy FT-Transformer nếu resource checkpoint pass hoặc ghi no-go hợp lệ."
+    deliverables:
+      - "Modern reassessment artifacts, bằng chứng trả lời RQ3 và resource/no-go report."
+    checkpoints:
+      - "CatBoost là bắt buộc cho RQ3; no-go của TabNet/FT không làm hỏng core scope nếu có lý do hợp lệ."
   - id: "Phase 9"
     title: "So sánh thống kê"
     status: "Planned"
-    summary: "Chưa triển khai."
+    summary: "Phase này tổng hợp fold-level result và chạy statistical comparison đúng đơn vị thống kê. Kết quả replication core và modern reassessment phải được phân tích riêng, đặc biệt khi Protocol A/B khác nhau."
+    tasks:
+      - "Aggregate per dataset/model và tính average rank."
+      - "Chạy Friedman/Rom cho so sánh chính."
+      - "Chạy Nemenyi cho phân tích MLP depth nếu đủ điều kiện."
+      - "Chạy Bayesian signed-rank với ROPE nếu implementation đã xác minh."
+      - "Tạo publication-ready tables và limitation summary."
+    deliverables:
+      - "Statistical summary, model ranking và evidence package cho RQ1/RQ2/RQ3."
+    checkpoints:
+      - "Phase 9 phụ thuộc Phase 7; nếu trả lời RQ3 đầy đủ thì cần CatBoost từ Phase 8."
   - id: "Phase 10"
     title: "Robustness"
     status: "Planned"
-    summary: "Chưa triển khai."
+    summary: "Phase này kiểm tra độ ổn định của kết luận với seed, preprocessing, metric, dataset caveat và protocol. Mục tiêu là phân biệt kết luận ổn định với kết luận phụ thuộc điều kiện."
+    tasks:
+      - "Chạy hoặc aggregate seed sensitivity và fold sensitivity."
+      - "Kiểm tra HMEQ include/exclude, GMC influence và preprocessing sensitivity."
+      - "So sánh Protocol A/B khi có modern results."
+      - "Kiểm tra metric sensitivity, calibration/Brier sanity và runtime/resource sensitivity."
+      - "Cập nhật deviation register nếu robustness phát hiện rủi ro diễn giải."
+    deliverables:
+      - "Robustness report, sensitivity tables và risk-to-conclusion summary."
+    checkpoints:
+      - "Sensitivity Must không được để lại blocker chưa xử lý trước Phase 11."
   - id: "Phase 11"
     title: "Báo cáo cuối và website kết quả"
     status: "Planned"
-    summary: "Chưa triển khai."
+    summary: "Phase này đóng gói kết quả cuối, cập nhật website bằng kết quả đã kiểm chứng và chuẩn bị reproducibility package. Website chỉ công bố aggregated/sanitized artifacts, không công bố row-level prediction hoặc dữ liệu nhạy cảm."
+    tasks:
+      - "Generate tables, figures, RQ summary, limitations và deviation register."
+      - "Chạy public result exporter để validate và sanitize artifacts."
+      - "Cập nhật website result pages bằng bảng, hình và kết luận đã kiểm chứng."
+      - "Viết reproducibility guide, runbook và artifact manifest."
+      - "Verify clean clone, final smoke test và production deployment cuối."
+    deliverables:
+      - "Final report, website kết quả, reproducibility package, final documentation và handover checklist."
+    checkpoints:
+      - "Không tuyên bố full replication; không overclaim từ 6 public datasets; chỉ publish aggregated artifacts."

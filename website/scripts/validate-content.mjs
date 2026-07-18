@@ -41,18 +41,52 @@ const paper = parse(read(path.join(websiteRoot, "content", "paper.yaml")));
 const publicDatasets = JSON.parse(read(path.join(websiteRoot, "content", "datasets.public.json")));
 const phase0 = progress.phases.find((phase) => phase.id === "Phase 0");
 const phase1 = progress.phases.find((phase) => phase.id === "Phase 1");
+const allowedStatuses = new Set(["Completed", "In progress", "Planned"]);
+const expectedPhaseOrder = Array.from({ length: 12 }, (_, index) => `Phase ${index}`);
 
 if (phase0?.status !== "Completed") {
   fail("Phase 0 must be Completed.");
 }
 
 if (phase1?.status !== "In progress") {
-  fail("Phase 1 must remain In progress for P1A.");
+  fail("Phase 1 must remain In progress until production rollback verification is confirmed.");
+}
+
+if (progress.phases.length !== expectedPhaseOrder.length) {
+  fail(`Progress content must contain ${expectedPhaseOrder.length} phases.`);
+}
+
+for (const [index, expectedId] of expectedPhaseOrder.entries()) {
+  if (progress.phases[index]?.id !== expectedId) {
+    fail(`Progress phase order changed at index ${index}: expected ${expectedId}.`);
+  }
+}
+
+for (const phase of progress.phases) {
+  if (!allowedStatuses.has(phase.status)) {
+    fail(`${phase.id} has invalid status: ${phase.status}`);
+  }
+
+  if (!phase.summary?.trim()) {
+    fail(`${phase.id} summary must not be empty.`);
+  }
+
+  if (/^\s*Chưa triển khai\.?\s*$/i.test(phase.summary)) {
+    fail(`${phase.id} must not use only "Chưa triển khai" as summary.`);
+  }
+
+  if (!Array.isArray(phase.tasks) || phase.tasks.length < 2) {
+    fail(`${phase.id} tasks must contain at least 2 items.`);
+  }
+
+  if (!Array.isArray(phase.deliverables) || phase.deliverables.length < 1) {
+    fail(`${phase.id} deliverables must contain at least 1 item.`);
+  }
 }
 
 for (const phase of progress.phases.slice(2)) {
   if (phase.status !== "Planned") {
-    fail(`${phase.id} must remain Planned in P1A.`);
+    fail(`${phase.id} must remain Planned until implementation evidence exists.`);
   }
 }
 

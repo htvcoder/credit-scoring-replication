@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 220" role="img" aria-labelledby="title desc">
+  <title id="title">CSR Credit Scoring Replication logo</title>
+  <desc id="desc">CSR shield mark with horizontal Credit Scoring Replication wordmark.</desc>
+  <defs>
+    <linearGradient id="red" x1="74" x2="166" y1="54" y2="184" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F01824"/>
+      <stop offset="1" stop-color="#D90416"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(14 8) scale(.78)">
+    <path d="M128 18C104.5 34.2 78.5 45.1 45 52.7v65.6c0 54.5 32.8 99.1 83 119.7 50.2-20.6 83-65.2 83-119.7V52.7C177.5 45.1 151.5 34.2 128 18Z" fill="#14212B"/>
+    <path d="M128 41.4C109 53.2 89.5 61 66.4 66.6v51.7c0 42.3 23.6 76.7 61.6 94.2 38-17.5 61.6-51.9 61.6-94.2V66.6C166.5 61 147 53.2 128 41.4Z" fill="#FFFFFF"/>
+    <path d="M66.4 118.3V66.6C89.5 61 109 53.2 128 41.4c19 11.8 38.5 19.6 61.6 25.2v51.7c0 42.3-23.6 76.7-61.6 94.2-38-17.5-61.6-51.9-61.6-94.2Z" fill="none" stroke="#14212B" stroke-width="7"/>
+    <path d="M82 148h27v49.7a76.7 76.7 0 0 1-27-21.2V148Z" fill="url(#red)"/>
+    <path d="M118 113h27v93.2a80.3 80.3 0 0 1-27-1.3V113Z" fill="url(#red)"/>
+    <path d="M154 78h27v96.8a95.8 95.8 0 0 1-27 23.7V78Z" fill="url(#red)"/>
+    <path d="M74 184c29.2 15.8 75.4 12 112-26-6.3 23.9-27.1 43.4-58 54.5-21.6-7.9-39.9-18.9-54-28.5Z" fill="#14212B"/>
+    <circle cx="162" cy="176" r="44" fill="#FFFFFF"/>
+    <circle cx="162" cy="176" r="35" fill="url(#red)"/>
+    <path d="M143 175.5 155.3 188 183 157.9" fill="none" stroke="#FFFFFF" stroke-linecap="square" stroke-width="12"/>
+  </g>
+  <text x="225" y="115" fill="#14212B" font-family="Inter, Arial, sans-serif" font-size="82" font-weight="900" letter-spacing="3">CSR</text>
+  <path d="M420 45v128" stroke="#E30613" stroke-width="6"/>
+  <text x="450" y="92" fill="#14212B" font-family="Inter, Arial, sans-serif" font-size="36" font-weight="800" letter-spacing="7">CREDIT SCORING</text>
+  <text x="450" y="147" fill="#E30613" font-family="Inter, Arial, sans-serif" font-size="36" font-weight="800" letter-spacing="11">REPLICATION</text>
+</svg>

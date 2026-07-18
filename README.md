@@ -1,8 +1,8 @@
-# Credit Scoring Replication
+# Tái lập và đánh giá lại mô hình tính điểm tín dụng
 
 ## Tổng quan
 
-Repository này chuẩn bị cho một nghiên cứu **partial replication** và mở rộng bài toán credit scoring từ paper **Deep Learning for Credit Scoring: Do or Don't?**. Dự án tái chạy các phần có thể kiểm chứng trên những bộ dữ liệu công khai, đồng thời thử nghiệm thêm một số mô hình tabular hiện đại để đánh giá lại kết luận của nghiên cứu gốc.
+Repository `credit-scoring-replication` chuẩn bị cho đề tài **Tái lập và đánh giá lại mô hình tính điểm tín dụng**. Dự án tái lập có kiểm soát nghiên cứu **Deep Learning for Credit Scoring: Do or Don't?** trên các bộ dữ liệu công khai đã được xác minh, đồng thời đánh giá lại các kết luận của nghiên cứu bằng các mô hình học máy truyền thống, mạng nơ-ron nhiều lớp và một số mô hình tabular hiện đại.
 
 ## Paper gốc
 
@@ -157,9 +157,20 @@ python -m venv .venv
 
 ## Website local P1A
 
-Website P1A nằm trong `website/`, dùng Next.js với TypeScript theo hướng static-first. Website giới thiệu đề tài, paper gốc, phạm vi dữ liệu công khai, câu hỏi nghiên cứu, phương pháp dự kiến, tiến độ phase và kết quả placeholder.
+Website nằm trong `website/`, dùng Next.js với TypeScript theo hướng static-first. Website giới thiệu đề tài, paper gốc, phạm vi dữ liệu công khai, câu hỏi nghiên cứu, phương pháp dự kiến, tiến độ phase và kết quả placeholder.
 
 P1A không triển khai Docker, CI/CD, backend API, database, authentication, Google Cloud VM, domain hoặc HTTPS. Website không công bố kết quả thực nghiệm và không chứa raw data, processed data, secret hoặc path nội bộ không cần thiết.
+
+### Nhận diện website
+
+Website dùng phương án logo số 2 làm nhận diện chính thức cho dự án: biểu tượng khiên đen, ba cột biểu đồ tăng dần màu đỏ và dấu kiểm trắng trong vòng tròn đỏ. Bộ asset nằm trong `website/public/brand/`:
+
+- `csr-mark.svg`: biểu tượng khiên dùng cho favicon, header và các vị trí nhỏ.
+- `csr-logo-horizontal.svg`: lockup ngang gồm biểu tượng, `CSR` và `CREDIT SCORING REPLICATION`.
+- `csr-logo-full.svg`: phiên bản đầy đủ gồm biểu tượng, `CSR`, tên tiếng Anh và tên tiếng Việt `Tái lập và đánh giá lại mô hình tính điểm tín dụng`.
+- `csr-icon-192.png`, `csr-icon-512.png`, `apple-touch-icon.png` và `favicon.ico`: app icon và favicon chỉ dùng biểu tượng khiên, không dùng full wordmark để tránh chữ bị mất ở kích thước nhỏ.
+
+Hệ màu thương hiệu của website là đỏ - đen - trắng. Mã màu chính: primary red `#E30613`, dark red `#B80916`, soft red background `#FFF1F2`, main black `#111111`, charcoal `#1F2933`, muted text `#5F6368`, border `#E5E7EB`, main background `#FFFFFF`, secondary background `#FAFAFA`. Khi thay đổi logo trong tương lai, cập nhật các asset trong `website/public/brand/`, giữ favicon là biểu tượng khiên riêng và đồng bộ metadata trong `website/app/layout.tsx` cùng `website/public/site.webmanifest`.
 
 Cài dependencies website:
 
@@ -185,10 +196,10 @@ npm run build
 
 Cấu trúc nội dung chính:
 
-- `website/content/project.yaml`: thông tin đề tài, mục tiêu và câu hỏi nghiên cứu.
+- `website/content/project.yaml`: tên đề tài công khai, mô tả ngắn, mục tiêu nghiên cứu, vai trò website và câu hỏi nghiên cứu.
 - Navigation công khai hiện gồm 6 mục: Trang chủ, Giới thiệu, Dữ liệu, Phương pháp, Tiến độ và Kết quả.
 - Menu và route `Tái lập` không còn nằm trong website công khai P1A. Reproducibility vẫn là yêu cầu nội bộ của pipeline thực nghiệm và thuộc Phase 11, không bị loại khỏi kế hoạch nghiên cứu.
-- `website/content/internship.yaml`: thông tin giới thiệu đề tài thực tập; trường chưa có giữ `Chưa cập nhật`.
+- `website/content/internship.yaml`: thông tin giới thiệu đề tài, mục tiêu dự án, phạm vi công việc và thông tin thực hiện; trường chưa có giữ `Chưa cập nhật`.
 - `website/content/paper.yaml`: thông tin paper gốc, thiết kế thực nghiệm và kết quả chính do paper báo cáo.
 - `website/content/background.md`: bối cảnh và mục đích của đề tài thực tập.
 - `website/content/limitations.md`: hạn chế của paper và hạn chế khi tái thực hiện.
@@ -261,12 +272,19 @@ GitHub Actions workflow chỉ chạy trên `pull_request` và `push` vào `main`
 Trạng thái nội bộ:
 
 - P1A: Completed.
-- P1B: Completed khi các acceptance checks ở trên pass.
-- P1C: Planned.
+- P1B: Completed; CI đã chạy thành công trên Pull Request và `main`.
+- P1C: Production deployment operational; rollback verification pending.
 
-Phần còn lại cho P1C:
+Production hiện tại:
 
-- P1C: CI/CD, Google Cloud VM, health check, rollback và deployment runbook.
+- Workflow `Test VM SSH` đã pass, xác nhận GitHub Actions SSH được vào Google Cloud VM và user production dùng được Docker/Docker Compose.
+- Workflow production deployment đã chạy tự động thành công từ `main`.
+- Docker image website đã được build, push lên GHCR và deploy lên VM bằng Docker Compose.
+- Website production truy cập được tại `http://34.142.206.15`.
+- Health/version validation trong deployment workflow đã pass vì workflow production báo thành công.
+- Website hiện dùng HTTP/public IP; domain và HTTPS vẫn Optional trong phạm vi hiện tại.
+- Website chỉ có nội dung công khai, không có đăng nhập hoặc chức năng truyền dữ liệu nhạy cảm.
+- Manual rollback production và automatic failed-deployment rollback chưa được xác nhận kiểm thử thật, nên Phase 1 chưa đánh dấu Completed hoàn toàn.
 
 ### Production deployment P1C
 
@@ -308,7 +326,7 @@ GitHub Secrets production đang dùng:
 
 Manual deploy dùng workflow `Deploy Production` với `action=deploy`. Manual rollback dùng cùng workflow với `action=rollback`.
 
-P1C chưa được đánh dấu hoàn thành chính thức nếu chưa có evidence chạy thật trên GitHub Actions và Google Cloud VM: GHCR push, VM pull đúng image immutable, website public IP trả `/`, `/health/`, `/version/` khớp SHA, rollback thật pass và failed deployment tự rollback được. Domain và HTTPS vẫn Optional trong checkpoint này.
+Các evidence đã có: GHCR push, VM pull đúng image immutable, website public IP trả `/`, `/health/`, `/version/` khớp SHA trong workflow deployment thành công. Các evidence còn pending: manual rollback thật và automatic failed-deployment rollback thật. Domain và HTTPS vẫn Optional trong checkpoint này.
 
 ## Metadata dataset
 
@@ -426,5 +444,7 @@ python -m venv .venv
 - Đã chuyển `data/checksums-sha256.csv` sang relative portable paths.
 - Đã tạo `data/datasets.yaml` làm registry metadata chính.
 - Đã có script kiểm tra dữ liệu `scripts/verify_credit_datasets.py`.
-- Đang triển khai P1A website local và nội dung ban đầu.
-- Bước tiếp theo sau P1A là Docker hóa/CI-CD theo phạm vi P1B/P1C; chưa chạy model và chưa có pipeline smoke experiment.
+- Phase 0: Completed với 6 dataset công khai đã xác minh; giữ caveat provenance HMEQ.
+- Phase 1: P1A Completed; P1B Completed; P1C production deployment operational tại `http://34.142.206.15`; còn pending manual rollback production và automatic failed-deployment rollback.
+- Phase 2 đến Phase 11: Planned; chưa chạy model, chưa có pipeline smoke experiment và chưa có kết quả khoa học.
+- Bước tiếp theo sau khi hoàn tất rollback production là Phase 2 - nền tảng thực nghiệm và smoke test.

@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { getDatasetSummaries } from "@/lib/datasets";
 import { getProgressContent, getProjectContent } from "@/lib/content";
@@ -11,24 +12,31 @@ export default function Home() {
   return (
     <div className="page">
       <section className="hero">
-        <div>
-          <p className="eyebrow">Đề tài thực tập</p>
+        <div className="hero-brand">
+          <Image
+            alt="Logo dự án Tái lập và đánh giá lại mô hình tính điểm tín dụng"
+            className="hero-logo"
+            height="1248"
+            priority
+            sizes="(max-width: 560px) 240px, (max-width: 860px) 300px, 360px"
+            src="/brand/csr-logo-full.png"
+            unoptimized
+            width="936"
+          />
+        </div>
+        <div className="hero-copy">
+          <p className="eyebrow">Đề tài nghiên cứu</p>
           <h1>{project.title}</h1>
           <p className="lead">{project.short_description}</p>
           <div className="actions">
             <Link className="button primary" href="/gioi-thieu/">
               Xem giới thiệu
             </Link>
-            <Link className="button secondary" href="/ket-qua/">
-              Trạng thái kết quả
+            <Link className="button secondary" href="/tien-do/">
+              Tiến độ
             </Link>
           </div>
         </div>
-        <aside className="hero-panel" aria-label="Trạng thái P1A">
-          <span className="panel-label">P1A</span>
-          <strong>Website local và nội dung ban đầu</strong>
-          <p>Static-first, không backend API, không database, không kết quả giả.</p>
-        </aside>
       </section>
 
       <section className="section-grid">

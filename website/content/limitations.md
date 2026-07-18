@@ -11,6 +11,7 @@
 
 - Repository hiện chỉ có 6 dataset công khai đã được xác minh: AC, GC, HMEQ, TH02, TC và GMC.
 - Dự án là partial replication, không phải full replication.
+- Đây là giới hạn phạm vi của dự án và phải được xét đến khi diễn giải kết quả; giới hạn này không được đưa vào tên chính thức của đề tài.
 - HMEQ có caveat provenance: artifact full khớp shape/schema/class distribution nhưng checksum không phải checksum SAS artifact kỳ vọng.
 - DBN không thuộc core scope hiện tại.
 - Các khác biệt phương pháp phải được ghi trong deviation register trước khi công bố kết quả.

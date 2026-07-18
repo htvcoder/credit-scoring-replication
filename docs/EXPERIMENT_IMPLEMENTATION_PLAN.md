@@ -28,7 +28,7 @@
 
 ## 1. Mục tiêu và định vị đề tài
 
-Tài liệu này là kế hoạch triển khai tổng thể cho đề tài thực tập `credit-scoring-replication`. Đề tài không chỉ là một chuỗi thực nghiệm mô hình, mà gồm ba luồng công việc liên kết với nhau:
+Tài liệu này là kế hoạch triển khai tổng thể cho đề tài `Tái lập và đánh giá lại mô hình tính điểm tín dụng` trong repository `credit-scoring-replication`. Đề tài không chỉ là một chuỗi thực nghiệm mô hình, mà gồm ba luồng công việc liên kết với nhau:
 
 1. **Luồng website và công bố thông tin**: xây dựng website công khai để giới thiệu đề tài, trình bày mục tiêu, câu hỏi nghiên cứu, phạm vi dữ liệu, phương pháp, tiến độ và kết quả đã được kiểm chứng.
 2. **Luồng hạ tầng và DevOps**: triển khai website trên máy ảo Google Cloud (Google Cloud VM), Docker hóa, thiết lập tích hợp và triển khai liên tục (CI/CD), health check, rollback, logging và bảo mật. Domain riêng và HTTPS là hạng mục Optional/Should trong phạm vi website báo cáo thực tập hiện tại.
@@ -53,6 +53,25 @@ Tài liệu này là kế hoạch triển khai tổng thể cho đề tài thự
 | CI/CD hiện có | Chưa có `.github/workflows/` |
 | Docker/deployment hiện có | Chưa có Dockerfile, `.dockerignore`, `docker-compose*.yml`, `deploy/` hoặc Nginx config |
 | Paper PDF | Có trên đĩa nhưng bị ignore theo chính sách |
+
+### 2.1.1. Cập nhật trạng thái Phase 1 sau P1C
+
+Tính đến sau khi P1C được merge vào `main`, các evidence đã được người dùng xác nhận:
+
+- P1A website local và nội dung ban đầu: Completed.
+- P1B Docker và CI: Completed; CI đã chạy thành công trên Pull Request và `main`.
+- Workflow `Test VM SSH`: Passed.
+- Production deployment workflow: đã chạy tự động thành công từ `main`.
+- Docker image website đã được build, push lên GHCR và deploy lên Google Cloud VM.
+- Website production đang hoạt động tại `http://34.142.206.15`.
+- Health/version validation trong deployment workflow đã pass vì workflow production báo thành công.
+- Website hiện dùng HTTP/public IP; domain và HTTPS vẫn Optional trong phạm vi hiện tại.
+- Website chỉ có nội dung công khai, không có authentication hoặc dữ liệu nhạy cảm.
+
+Các acceptance criteria còn pending trước khi đánh dấu Phase 1 Completed hoàn toàn:
+
+- Manual rollback production chưa được xác nhận kiểm thử thật.
+- Automatic failed-deployment rollback chưa được xác nhận kiểm thử thật.
 
 ### 2.2. Baseline dữ liệu Phase 0
 
@@ -81,7 +100,7 @@ Tài liệu này là kế hoạch triển khai tổng thể cho đề tài thự
 
 ### 2.4. Vấn đề tham chiếu phase hiện có
 
-`docs/EXPERIMENT_FEASIBILITY_ASSESSMENT.md` vẫn tham chiếu Phase 1 là smoke experiment. Tài liệu này không được sửa trong nhiệm vụ hiện tại. Kế hoạch mới sẽ ghi rõ phase mới và nếu cần ở phase sau có thể cập nhật feasibility report để đồng bộ thuật ngữ.
+`docs/EXPERIMENT_FEASIBILITY_ASSESSMENT.md` ban đầu tham chiếu Phase 1 là smoke experiment theo thuật ngữ cũ. Sau P1C, tài liệu này đã được bổ sung ghi chú rằng roadmap hiện hành đặt website/CI/CD ở Phase 1 và smoke experiment ở Phase 2.
 
 ## 3. Phạm vi và ngoài phạm vi
 
@@ -314,6 +333,21 @@ Checkpoint nội bộ của Phase 1:
 
 Không tạo tag riêng cho P1A/P1B/P1C, trừ khi sau này cần internal tags. Tag chính của Phase 1 vẫn là `p1-website-cicd-foundation`.
 
+Trạng thái hiện tại của checkpoint:
+
+| Checkpoint | Trạng thái |
+|---|---|
+| P1A - Website local và nội dung ban đầu | Completed |
+| P1B - Docker và CI | Completed |
+| P1C - Production deployment | Operational; rollback verification pending |
+| GitHub Actions -> VM SSH | Passed |
+| Automatic deployment from `main` | Passed |
+| Website public | `http://34.142.206.15` |
+| Manual rollback production | Pending |
+| Automatic failed-deployment rollback | Pending |
+
+Vì hai kiểm thử rollback production chưa được xác nhận thật, Phase 1 nên ở trạng thái **In progress/gần hoàn thành**, chưa đánh dấu Completed hoàn toàn. Bước tiếp theo trước Phase 2 là kiểm thử manual rollback và automatic failed-deployment rollback trên production.
+
 ### Phase 2 - Nền tảng thực nghiệm và smoke test
 
 | Mục | Nội dung |
@@ -530,7 +564,7 @@ Không tạo tag riêng cho P1A/P1B/P1C, trừ khi sau này cần internal tags.
 |---|---|---|---|---|
 | Content loader | Đọc Markdown/YAML/JSON source-controlled | `website/content/*` | Typed content objects | Schema validation |
 | Trang chủ | Giới thiệu đề tài, trạng thái hiện tại | Project metadata | Public page | Responsive smoke |
-| Trang hoặc khu vực giới thiệu đề tài thực tập | Trình bày tên đề tài, mô tả ngắn, mục tiêu thực tập, phạm vi, sinh viên thực hiện, người hướng dẫn, đơn vị/chương trình, thời gian, repository và vai trò của website | `website/content/project.yaml`; thông tin chưa có phải là `Chưa cập nhật` hoặc `Sẽ bổ sung` | Public page hoặc section trong trang giới thiệu | Content schema, no private information |
+| Trang hoặc khu vực giới thiệu đề tài | Trình bày tên đề tài, mô tả ngắn, mục tiêu dự án, phạm vi, sinh viên thực hiện, người hướng dẫn, đơn vị/chương trình, thời gian, repository và vai trò của website | `website/content/project.yaml` và `website/content/internship.yaml`; thông tin chưa có phải là `Chưa cập nhật` hoặc `Sẽ bổ sung` | Public page hoặc section trong trang giới thiệu | Content schema, no private information |
 | Trang giới thiệu | Bối cảnh, paper gốc, partial replication | README/paper summary curated | Public page | Content review |
 | Trang câu hỏi nghiên cứu | RQ1, RQ2, RQ3 | Plan content | Public page | Snapshot/unit |
 | Trang dữ liệu | 6 dataset public, shape, class, caveat | Generated hoặc checked derivative từ `data/datasets.yaml`, có link tới `docs/data-cards/` | Public page | Consistency check với registry, no raw data check |
@@ -914,16 +948,16 @@ Domain + HTTPS:
 
 ## 22. Giai đoạn tiếp theo
 
-**Giai đoạn tiếp theo được đề xuất:** **Phase 1 - Website giới thiệu đề tài và nền tảng CI/CD**.
+**Giai đoạn tiếp theo được đề xuất:** hoàn tất phần rollback còn pending của **Phase 1 - Website giới thiệu đề tài và nền tảng CI/CD**, sau đó chuyển sang **Phase 2 - Nền tảng thực nghiệm và smoke test**.
 
-Các quyết định cần chốt trước Phase 1:
+Các quyết định Phase 1 đã chốt hoặc đã vận hành:
 
-- Dùng Next.js static-first trong `website/`.
-- Dùng GHCR hay Google Artifact Registry.
-- Deploy production theo path filter sau push vào `main`, theo tag, hay manual-only.
-- Dùng Nginx hay Caddy.
-- Có cần staging environment trong phạm vi thực tập không.
-- Rollback giữ bao nhiêu image version.
+- Website dùng Next.js static-first trong `website/`.
+- Production deployment dùng GHCR và SSH vào Google Cloud VM.
+- Deploy production tự động khi push phù hợp vào `main` theo path filter, đồng thời hỗ trợ `workflow_dispatch`.
+- Production hiện dùng Docker Compose, HTTP/public IP và không cài host-level Nginx trong P1C.
+- Domain riêng và HTTPS giữ Optional.
+- Rollback đã có script/workflow support nhưng manual rollback production và automatic failed-deployment rollback vẫn cần kiểm thử thật.
 
 Quyết định Optional, không chặn Phase 1:
 

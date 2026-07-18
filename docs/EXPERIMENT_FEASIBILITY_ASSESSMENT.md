@@ -20,6 +20,8 @@
 
 Audit này chỉ đọc, kiểm tra và lập báo cáo. Không triển khai model, không viết training pipeline, không tải thêm dataset, không sửa raw data, không tạo processed dataset, không chạy grid search, không commit và không push.
 
+Ghi chú cập nhật sau P1C: thuật ngữ phase thực nghiệm trong báo cáo feasibility này được lập trước khi roadmap website/CI/CD được chốt. Roadmap hiện hành đã đưa website, Docker, CI và production deployment vào Phase 1; smoke experiment chuyển sang Phase 2. P1A và P1B đã Completed, P1C production deployment đang operational tại `http://34.142.206.15`, còn manual rollback production và automatic failed-deployment rollback pending.
+
 ### 1.1. File và thư mục đã kiểm tra
 
 | Hạng mục | Tình trạng repository | Ghi chú |
@@ -317,11 +319,11 @@ Tái tạo nguyên grid search của paper, đặc biệt MLP/DBN, là không th
 | Phase | Mục tiêu | Đầu vào | Đầu ra | Điều kiện bắt đầu | Acceptance criteria | Rủi ro chính | Go/no-go |
 |---|---|---|---|---|---|---|---|
 | Phase 0 - Data verification | Xác minh checksum, schema, target, class balance, data card | Raw data và checksum | Data card từng dataset | Không cần model | AC/GC/HMEQ/TH02/TC/GMC pass | Dùng nhầm artifact HMEQ cũ | Go; HMEQ và TH02 đã pass remediation |
-| Phase 1 - Smoke experiment | Xác minh pipeline end-to-end | Một dataset nhỏ và một vừa | Metric/log/artifact tối thiểu | Phase 0 pass | LR và XGBoost chạy nested-lite, metric hợp lệ | Leakage, target mapping sai | Go nếu fold isolation pass |
-| Phase 2 - Core partial replication | Chạy LR, DT, RF, XGB, MLP-1/3/5 trên dataset đủ điều kiện | Dataset pass Phase 0 | Fold-level predictions/metrics | Smoke pass | AUC/Brier/Partial Gini tính ổn định; EMP nếu đủ | Compute và C4.5 approximation | Go nếu budget và metric OK |
-| Phase 3 - Modern reassessment | Chạy CatBoost, TabNet, FT-Transformer theo protocol | Core pipeline | Kết quả Protocol A/B tách riêng | Phase 2 có baseline đáng tin | Không trộn protocol; seed logged | Overfitting và GPU/CPU cost | Go cho CatBoost trước, deep tabular sau |
-| Phase 4 - Statistical comparison | Friedman, post-hoc, Bayesian signed-rank, ROPE | Fold-level metrics | Statistical tables | Có đủ dataset/fold metric | Reproduce table format tương tự paper | Ít dataset làm power thấp | Go nếu >=4 dataset pass |
-| Phase 5 - Robustness checks | Multi-seed, sensitivity preprocessing/protocol | Core + modern results | Robustness appendix | Phase 4 sơ bộ | Kết luận không phụ thuộc một seed/protocol | Compute tăng | Optional/Should tùy tài nguyên |
+| Phase 2 - Smoke experiment | Xác minh pipeline end-to-end | Một dataset nhỏ và một vừa | Metric/log/artifact tối thiểu | Phase 1 rollback production pass | LR và XGBoost chạy nested-lite, metric hợp lệ | Leakage, target mapping sai | Go nếu fold isolation pass |
+| Phase 7 - Core partial replication | Chạy LR, DT, RF, XGB, MLP-1/3/5 trên dataset đủ điều kiện | Dataset pass Phase 0 và pipeline Phase 2-6 | Fold-level predictions/metrics | Smoke pass, preprocessing/metric/model foundation pass | AUC/Brier/Partial Gini tính ổn định; EMP nếu đủ | Compute và C4.5 approximation | Go nếu budget và metric OK |
+| Phase 8 - Modern reassessment | Chạy CatBoost, TabNet, FT-Transformer theo protocol | Core pipeline | Kết quả Protocol A/B tách riêng | Phase 7 có baseline đáng tin | Không trộn protocol; seed logged | Overfitting và GPU/CPU cost | Go cho CatBoost trước, deep tabular sau |
+| Phase 9 - Statistical comparison | Friedman, post-hoc, Bayesian signed-rank, ROPE | Fold-level metrics | Statistical tables | Có đủ dataset/fold metric | Reproduce table format tương tự paper | Ít dataset làm power thấp | Go nếu >=4 dataset pass |
+| Phase 10 - Robustness checks | Multi-seed, sensitivity preprocessing/protocol | Core + modern results | Robustness appendix | Phase 9 sơ bộ | Kết luận không phụ thuộc một seed/protocol | Compute tăng | Optional/Should tùy tài nguyên |
 
 ## 10. Ma trận thực nghiệm tối thiểu
 
@@ -369,7 +371,7 @@ Các deviation hiện đã biết hoặc rất có khả năng cần chấp nh�
 
 **Kết luận cập nhật sau Phase 0:** **Khả thi có điều kiện** cho partial replication trên 6 dataset công khai; vẫn không khả thi cho full replication vì thiếu Bene1, Bene2, Bene3 và UK.
 
-Không nên bắt đầu triển khai thực nghiệm đầy đủ ngay trước khi chốt pipeline chống leakage, nhưng có thể bắt đầu Phase 1 smoke experiment. Phase 0 acceptance hiện đã có registry tập trung, checksum portable, target mapping đủ 6 dataset, numeric/categorical/identifier metadata, data cards, dependency pin, reusable TH02 conversion và verifier chạy độc lập current working directory. Blocker dữ liệu HMEQ/TH02 đã được xử lý ở mức verification: HMEQ full pass validation, TH02 pass validation sau conversion. Blocker còn lại trước core experiment là thiết kế WOE/VIF theo fold, quyết định implementation C4.5 hoặc deviation CART, và xác định EMP là exact hay approximate.
+Không nên bắt đầu triển khai thực nghiệm đầy đủ ngay trước khi chốt pipeline chống leakage. Theo roadmap hiện hành, bước thực nghiệm kế tiếp sau khi hoàn tất rollback production của Phase 1 là Phase 2 smoke experiment. Phase 0 acceptance hiện đã có registry tập trung, checksum portable, target mapping đủ 6 dataset, numeric/categorical/identifier metadata, data cards, dependency pin, reusable TH02 conversion và verifier chạy độc lập current working directory. Blocker dữ liệu HMEQ/TH02 đã được xử lý ở mức verification: HMEQ full pass validation, TH02 pass validation sau conversion. Blocker còn lại trước core experiment là thiết kế WOE/VIF theo fold, quyết định implementation C4.5 hoặc deviation CART, và xác định EMP là exact hay approximate.
 
 Dataset nên dùng cho smoke test đầu tiên: **GC** cho dataset nhỏ vì schema và mapping nhãn rõ, sau đó **TC** cho dataset vừa/lớn vì khớp paper và có ID cần loại đúng. Model nên triển khai đầu tiên: **Logistic Regression** và **XGBoost**.
 
@@ -384,5 +386,5 @@ Nên giữ nguyên `N x 2` CV của paper cho dataset Must nếu compute cho ph�
 - Số dataset đủ điều kiện ngay: 6 dataset công khai sau remediation; HMEQ dùng `hmeq_full.csv`, TH02 dùng conversion artifact.
 - Blocker chính: thiếu 4 dataset độc quyền, HMEQ full chưa khớp checksum SAS kỳ vọng, C4.5/EMP/WOE/VIF cần implementation chống leakage.
 - Protocol đề xuất: Protocol A làm chính, Protocol B làm sensitivity/modern reassessment phụ.
-- Phase tiếp theo: Phase 1 - Smoke experiment với GC và TC, Logistic Regression và XGBoost; Phase 1 chưa được triển khai.
+- Phase tiếp theo: hoàn tất kiểm thử rollback production còn pending của Phase 1, sau đó triển khai Phase 2 smoke experiment với GC và TC, Logistic Regression và XGBoost.
 - File báo cáo đã tạo: `docs/EXPERIMENT_FEASIBILITY_ASSESSMENT.md`.

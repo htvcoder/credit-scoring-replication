@@ -10,8 +10,9 @@ export default function ProgressPage() {
         <p className="eyebrow">Roadmap</p>
         <h1>Tiến độ các phase</h1>
         <p className="lead">
-          P1A không tự động đánh dấu Phase 1 Completed. Các phase sau vẫn ở
-          trạng thái Planned cho đến khi có bằng chứng nghiệm thu tương ứng.
+          Phase 1 đã vận hành production trên public IP, nhưng vẫn chưa đánh
+          dấu Completed cho đến khi rollback production được kiểm thử thật. Các
+          phase sau vẫn Planned cho đến khi có bằng chứng nghiệm thu.
         </p>
       </section>
 
@@ -19,12 +20,42 @@ export default function ProgressPage() {
         {progress.phases.map((phase) => (
           <article className="timeline-item" key={phase.id}>
             <div className="timeline-index">{phase.id}</div>
-            <div>
+            <div className="timeline-content">
               <div className="timeline-title">
-                <h2>{phase.title}</h2>
+                <div>
+                  <h2>{phase.title}</h2>
+                </div>
                 <StatusBadge status={phase.status} />
               </div>
-              <p>{phase.summary}</p>
+              <p className="phase-summary">{phase.summary}</p>
+              <div className="phase-detail-grid">
+                <div>
+                  <h3>Công việc chính</h3>
+                  <ul className="phase-list">
+                    {phase.tasks.map((task) => (
+                      <li key={task}>{task}</li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <h3>Đầu ra chính</h3>
+                  <ul className="phase-list">
+                    {phase.deliverables.map((deliverable) => (
+                      <li key={deliverable}>{deliverable}</li>
+                    ))}
+                  </ul>
+                  {phase.checkpoints?.length ? (
+                    <div className="phase-checkpoints">
+                      <h3>Checkpoint còn lại</h3>
+                      <ul className="phase-list">
+                        {phase.checkpoints.map((checkpoint) => (
+                          <li key={checkpoint}>{checkpoint}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
               {phase.caveat ? <p className="caveat">{phase.caveat}</p> : null}
             </div>
           </article>

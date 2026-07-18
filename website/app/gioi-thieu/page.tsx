@@ -13,19 +13,19 @@ export default function InternshipPage() {
   const details = [
     ["Tên đề tài", internship.title],
     ["Mô tả ngắn", internship.short_description],
-    ["Mục tiêu thực tập", internship.internship_goal],
-    ["Sinh viên thực hiện", internship.student],
+    ["Mục tiêu dự án", internship.project_goal],
+    ["Người thực hiện", internship.student],
     ["Người hướng dẫn", internship.supervisor],
     ["Đơn vị hoặc chương trình", internship.unit_or_program],
     ["Thời gian thực hiện", internship.timeframe],
-    ["Repository", internship.repository],
+    ["Repository", "repository"],
     ["Vai trò của website", internship.website_role],
   ];
 
   return (
     <div className="page">
       <section className="page-title">
-        <p className="eyebrow">Giới thiệu đề tài thực tập</p>
+        <p className="eyebrow">Giới thiệu đề tài</p>
         <h1>{internship.title}</h1>
         <p className="lead">{internship.short_description}</p>
       </section>
@@ -35,7 +35,20 @@ export default function InternshipPage() {
           {details.map(([label, value]) => (
             <div className="detail-row" key={label}>
               <dt>{label}</dt>
-              <dd>{value}</dd>
+              <dd>
+                {value === "repository" ? (
+                  <a
+                    className="text-link repository-link"
+                    href={internship.repository}
+                    rel="noopener noreferrer"
+                    target="_blank"
+                  >
+                    {internship.repository}
+                  </a>
+                ) : (
+                  value
+                )}
+              </dd>
             </div>
           ))}
         </div>
