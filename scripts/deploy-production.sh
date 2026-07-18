@@ -9,6 +9,7 @@ COMPOSE_FILE="${COMPOSE_FILE:-${DEPLOY_ROOT}/docker-compose.prod.yml}"
 COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-credit-scoring-prod}"
 PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-http://127.0.0.1}"
 HEALTH_TIMEOUT_SECONDS="${HEALTH_TIMEOUT_SECONDS:-120}"
+FORCE_POST_DEPLOY_FAILURE="${FORCE_POST_DEPLOY_FAILURE:-false}"
 LOCK_DIR="${STATE_DIR}/deploy.lock"
 
 timestamp() {
@@ -41,6 +42,13 @@ validate_image() {
   case "$1" in
     *[!abcdefghijklmnopqrstuvwxyz0123456789./_:@-]* ) return 1 ;;
     *".."* | *"//"* | *" "* ) return 1 ;;
+  esac
+}
+
+validate_boolean() {
+  case "${1:-}" in
+    true | false) return 0 ;;
+    *) return 1 ;;
   esac
 }
 
@@ -133,16 +141,32 @@ rollback_to_previous() {
     return 1
   fi
 
-  log "Rolling back to ${previous_image}"
+  log "Rollback start: restoring previous good image ${previous_image}"
   WEBSITE_IMAGE="${previous_image}"
   DEPLOY_SHA="${previous_sha}"
-  deploy_image "${WEBSITE_IMAGE}"
-  wait_for_health
-  verify_endpoint "${PUBLIC_BASE_URL%/}/"
-  verify_endpoint "${PUBLIC_BASE_URL%/}/health/"
-  verify_version
+  if ! deploy_image "${WEBSITE_IMAGE}"; then
+    log "Rollback deploy command failed for restored image: ${previous_image}"
+    return 1
+  fi
+  if ! wait_for_health; then
+    log "Restored image health check failed: ${previous_image}"
+    return 1
+  fi
+  log "Restored image health check passed: ${previous_image}"
+  if ! verify_endpoint "${PUBLIC_BASE_URL%/}/"; then
+    log "Restored root endpoint check failed: ${previous_image}"
+    return 1
+  fi
+  if ! verify_endpoint "${PUBLIC_BASE_URL%/}/health/"; then
+    log "Restored health endpoint check failed: ${previous_image}"
+    return 1
+  fi
+  if ! verify_version; then
+    log "Restored version endpoint check failed for ${previous_sha}."
+    return 1
+  fi
   write_state "${STATE_DIR}/current.env" "${WEBSITE_IMAGE}" "${DEPLOY_SHA}"
-  log "Rollback completed: ${previous_image}"
+  log "Final rollback result: restored ${previous_image}"
 }
 
 main() {
@@ -151,6 +175,7 @@ main() {
   [ -n "${DEPLOY_SHA:-}" ] || fail "DEPLOY_SHA is required."
   validate_image "${WEBSITE_IMAGE}" || fail "WEBSITE_IMAGE must be a lowercase ghcr.io image with a tag."
   validate_sha "${DEPLOY_SHA}" || fail "DEPLOY_SHA must be a full 40-character lowercase Git commit SHA."
+  validate_boolean "${FORCE_POST_DEPLOY_FAILURE}" || fail "FORCE_POST_DEPLOY_FAILURE must be true or false."
 
   require_command docker
   require_command curl
@@ -175,10 +200,16 @@ main() {
   current_image="$(read_state_value "${current_file}" WEBSITE_IMAGE)"
   current_sha="$(read_state_value "${current_file}" DEPLOY_SHA)"
 
-  log "Starting deployment for ${WEBSITE_IMAGE}"
+  log "Starting deployment for candidate image: ${WEBSITE_IMAGE}"
   if [ -n "${current_image}" ] && [ "${current_image}" != "${WEBSITE_IMAGE}" ]; then
+    validate_image "${current_image}" || fail "Current WEBSITE_IMAGE is invalid; refusing to update rollback state."
+    validate_sha "${current_sha}" || fail "Current DEPLOY_SHA is invalid; refusing to update rollback state."
     write_state "${previous_file}" "${current_image}" "${current_sha}"
-    log "Recorded previous successful image: ${current_image}"
+    log "Recorded previous good image: ${current_image}"
+  elif [ -n "${current_image}" ]; then
+    log "Current image already matches candidate: ${current_image}"
+  else
+    log "No current successful image recorded before this deployment."
   fi
 
   if ! deploy_image "${WEBSITE_IMAGE}"; then
@@ -193,6 +224,7 @@ main() {
     rollback_to_previous || fail "Health check failed and rollback failed."
     fail "Health check failed; rollback completed."
   fi
+  log "Health check passed for candidate image: ${WEBSITE_IMAGE}"
 
   if ! verify_endpoint "${PUBLIC_BASE_URL%/}/"; then
     log "Root endpoint check failed."
@@ -210,6 +242,12 @@ main() {
     log "Version endpoint does not match ${DEPLOY_SHA}."
     rollback_to_previous || fail "Version mismatch and rollback failed."
     fail "Version mismatch; rollback completed."
+  fi
+
+  if [ "${FORCE_POST_DEPLOY_FAILURE}" = "true" ]; then
+    log "Forced post-deploy failure requested for rollback verification."
+    rollback_to_previous || fail "Forced post-deploy failure triggered and rollback failed."
+    fail "Forced post-deploy failure triggered; rollback completed."
   fi
 
   write_state "${current_file}" "${WEBSITE_IMAGE}" "${DEPLOY_SHA}"
