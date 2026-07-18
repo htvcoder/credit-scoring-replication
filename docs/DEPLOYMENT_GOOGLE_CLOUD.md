@@ -225,6 +225,85 @@ docker logs credit-scoring-website-prod --tail=200
 
 Nếu rollback cũng lỗi, workflow fail và log nêu rõ nguyên nhân.
 
+## Runbook kiểm thử rollback
+
+Manual rollback production đã PASS thì có thể ghi evidence bằng workflow dispatch:
+
+- `action`: `rollback`
+
+Workflow sẽ SSH vào VM và gọi:
+
+```bash
+DEPLOY_ROOT=/opt/credit-scoring-deploy \
+  /opt/credit-scoring-deploy/scripts/rollback-production.sh
+```
+
+Sau rollback, xác minh production vẫn healthy:
+
+```bash
+curl -fsS http://34.142.206.15/ >/dev/null
+curl -fsS http://34.142.206.15/health/
+curl -fsS http://34.142.206.15/version/
+```
+
+Kiểm tra state trên VM:
+
+```bash
+cat /opt/credit-scoring-deploy/state/current.env
+cat /opt/credit-scoring-deploy/state/previous.env
+ls -lt /opt/credit-scoring-deploy/logs
+tail -n 200 /opt/credit-scoring-deploy/logs/rollback-*.log
+```
+
+### Forced automatic rollback test
+
+Chỉ dùng test hook này qua manual `workflow_dispatch`. Không bật test hook này trong automatic push vào `main`.
+
+Chạy workflow `.github/workflows/deploy-production.yml` thủ công:
+
+- `action`: `deploy`
+- `deploy_sha`: full 40-character commit SHA cần build/deploy.
+- `image_tag`: để trống để dùng `deploy_sha`, hoặc nhập Docker tag hợp lệ.
+- `force_post_deploy_failure`: `true`
+
+`force_post_deploy_failure` không phải secret. Workflow validate giá trị boolean và automatic deployment từ push vào `main` luôn resolve thành `false`.
+
+Expected result khi `force_post_deploy_failure=true`:
+
+1. Build image pass.
+2. Smoke test image pass, gồm `/`, `/health/`, và `/version/` khớp `deploy_sha`.
+3. Push image pass.
+4. Copy deployment bundle pass.
+5. VM pull candidate image pass.
+6. Candidate container start pass.
+7. Production health/version validation pass.
+8. Log có marker: `Forced post-deploy failure requested for rollback verification.`
+9. Automatic rollback start.
+10. Previous good image được restore.
+11. Restored image health/version validation pass.
+12. `current.env` quay lại previous good image.
+13. Workflow kết thúc failure để phản ánh candidate deployment không thành công.
+14. Production vẫn chạy previous good image.
+
+Log deploy cần có các dòng về candidate image, previous good image, health-check result, forced failure marker, rollback start, restored image health result, và final rollback result. Không log GHCR token, private key, hoặc secret values.
+
+Sau test, xác minh state trên VM:
+
+```bash
+cat /opt/credit-scoring-deploy/state/current.env
+cat /opt/credit-scoring-deploy/state/previous.env
+tail -n 200 /opt/credit-scoring-deploy/logs/deploy-*.log
+```
+
+`current.env` phải trỏ về previous good image. Bad/test candidate image không được ghi thành successful current state. Nếu test được tạo trên branch riêng, dọn branch test sau khi evidence đã được ghi nhận:
+
+```bash
+git branch -d <test-branch>
+git push origin --delete <test-branch>
+```
+
+Không đánh dấu Phase 1 Completed cho đến khi manual rollback production và forced automatic rollback test đều PASS trên production thật.
+
 ## Image retention
 
 P1C không chạy:

@@ -29,6 +29,11 @@ on:
         description: "Optional GHCR tag to push/deploy. Defaults to deploy_sha."
         required: false
         type: string
+      force_post_deploy_failure:
+        description: "Force a post-deploy failure after VM health checks to verify automatic rollback."
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -52,6 +57,7 @@ jobs:
           ACTION_INPUT: ${{ github.event.inputs.action }}
           DEPLOY_SHA_INPUT: ${{ github.event.inputs.deploy_sha }}
           IMAGE_TAG_INPUT: ${{ github.event.inputs.image_tag }}
+          FORCE_POST_DEPLOY_FAILURE_INPUT: ${{ github.event.inputs.force_post_deploy_failure }}
         run: |
           set -euo pipefail
 
@@ -73,6 +79,24 @@ jobs:
             exit 1
           fi
 
+          force_post_deploy_failure="false"
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            force_post_deploy_failure="${FORCE_POST_DEPLOY_FAILURE_INPUT:-false}"
+          fi
+          if [[ "${force_post_deploy_failure}" != "true" && "${force_post_deploy_failure}" != "false" ]]; then
+            echo "force_post_deploy_failure must be true or false." >&2
+            exit 1
+          fi
+          if [[ "${action}" != "deploy" && "${force_post_deploy_failure}" = "true" ]]; then
+            echo "force_post_deploy_failure can only be used with action=deploy." >&2
+            exit 1
+          fi
+          if [ "${force_post_deploy_failure}" = "true" ]; then
+            echo "::notice::Forced post-deploy failure mode is enabled for rollback verification."
+          else
+            echo "Forced post-deploy failure mode: false"
+          fi
+
           repository_lower="$(printf '%s' "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')"
           image="ghcr.io/${repository_lower}-website:${image_tag}"
 
@@ -81,6 +105,7 @@ jobs:
             echo "deploy_sha=${deploy_sha}"
             echo "image_tag=${image_tag}"
             echo "image=${image}"
+            echo "force_post_deploy_failure=${force_post_deploy_failure}"
           } >> "${GITHUB_OUTPUT}"
 
       - name: Checkout
@@ -261,6 +286,7 @@ jobs:
           ACTION: ${{ steps.resolve.outputs.action }}
           WEBSITE_IMAGE: ${{ steps.resolve.outputs.image }}
           DEPLOY_SHA: ${{ steps.resolve.outputs.deploy_sha }}
+          FORCE_POST_DEPLOY_FAILURE: ${{ steps.resolve.outputs.force_post_deploy_failure }}
         run: |
           set -euo pipefail
 
@@ -283,7 +309,7 @@ jobs:
             ssh "${ssh_opts[@]}" "${remote}" 'DEPLOY_ROOT=/opt/credit-scoring-deploy /opt/credit-scoring-deploy/scripts/rollback-production.sh'
           else
             ssh "${ssh_opts[@]}" "${remote}" \
-              "WEBSITE_IMAGE='${WEBSITE_IMAGE}' DEPLOY_SHA='${DEPLOY_SHA}' DEPLOY_ROOT=/opt/credit-scoring-deploy /opt/credit-scoring-deploy/scripts/deploy-production.sh"
+              "WEBSITE_IMAGE='${WEBSITE_IMAGE}' DEPLOY_SHA='${DEPLOY_SHA}' FORCE_POST_DEPLOY_FAILURE='${FORCE_POST_DEPLOY_FAILURE}' DEPLOY_ROOT=/opt/credit-scoring-deploy /opt/credit-scoring-deploy/scripts/deploy-production.sh"
           fi
 
       - name: Verify public endpoint
