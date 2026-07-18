@@ -11,7 +11,7 @@ work_scope:
   - "Thực hiện so sánh thống kê, robustness/sensitivity analysis, tổng hợp báo cáo, limitation, deviation register và kết quả đã được kiểm chứng."
   - "Dùng website để báo cáo tiến độ, mô tả phương pháp và công bố kết quả aggregated đã được duyệt; không công bố raw data hoặc prediction cấp bản ghi."
 student: "Hoàng Trọng Vĩnh (26ai.vinhht@vinuni.edu.vn)"
-supervisor: "Trần Công Phú Khánh (v.dir.fintech.rwa.data.ai@vinsmartfuture.tech)"
+supervisor: "Trần Công Phú Khánh"
 unit_or_program: "Vinsmart Future - Fintech"
 timeframe: "16/07/2026 - 26/08/2026"
 repository: "https://github.com/htvcoder/credit-scoring-replication"

@@ -1,14 +1,16 @@
 :root {
-  --bg: #f7f7f4;
+  --bg: #ffffff;
   --surface: #ffffff;
-  --surface-muted: #eef2ef;
-  --text: #151515;
-  --muted: #3f4642;
-  --line: #d9dfda;
-  --accent: #2f6f61;
-  --accent-dark: #184a40;
-  --gold: #6f4c13;
-  --danger-soft: #f6e8de;
+  --surface-muted: #fafafa;
+  --text: #111111;
+  --charcoal: #1f2933;
+  --muted: #5f6368;
+  --line: #e5e7eb;
+  --accent: #e30613;
+  --accent-dark: #b80916;
+  --accent-soft: #fff1f2;
+  --accent-line: #fecdd3;
+  --danger-soft: #fff1f2;
   --shadow: 0 14px 36px rgba(17, 17, 17, 0.07);
 }
 
@@ -20,10 +22,12 @@ html {
   background: var(--bg);
   color: var(--text);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  overflow-x: hidden;
 }
 
 body {
   margin: 0;
+  overflow-x: hidden;
 }
 
 a {
@@ -45,7 +49,7 @@ strong {
 }
 
 .site-header {
-  background: rgba(247, 247, 244, 0.94);
+  background: rgba(255, 255, 255, 0.96);
   border-bottom: 1px solid var(--line);
   position: sticky;
   top: 0;
@@ -59,15 +63,23 @@ strong {
   justify-content: space-between;
   margin: 0 auto;
   max-width: 1180px;
-  padding: 18px 24px;
+  padding: 5px 24px;
 }
 
 .brand {
+  align-items: center;
   color: var(--text);
-  font-weight: 800;
-  line-height: 1.25;
-  max-width: 520px;
+  display: block;
+  max-width: 100%;
   text-decoration: none;
+  width: 240px;
+}
+
+.brand-logo {
+  display: block;
+  height: auto;
+  object-fit: contain;
+  width: 100%;
 }
 
 .site-nav {
@@ -75,26 +87,41 @@ strong {
   flex-wrap: wrap;
   gap: 6px;
   justify-content: flex-end;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .site-nav a {
   border-radius: 999px;
-  color: var(--text);
+  color: var(--charcoal);
+  flex: 0 0 auto;
   font-size: 0.92rem;
   padding: 8px 12px;
   text-decoration: none;
 }
 
-.site-nav a.active,
 .site-nav a:hover {
-  background: var(--surface-muted);
+  background: var(--accent-soft);
   color: var(--accent-dark);
+}
+
+.site-nav a.active {
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+}
+
+.site-nav a:focus-visible,
+.brand:focus-visible,
+.button:focus-visible,
+.text-link:focus-visible {
+  outline: 3px solid rgba(227, 6, 19, 0.32);
+  outline-offset: 3px;
 }
 
 .page {
   margin: 0 auto;
   max-width: 1180px;
-  padding: 34px 24px 72px;
+  padding: 4px 24px 48px;
 }
 
 .page.narrow {
@@ -102,12 +129,31 @@ strong {
 }
 
 .hero {
-  align-items: stretch;
+  align-items: center;
   display: grid;
-  gap: 28px;
-  grid-template-columns: minmax(0, 1.7fr) minmax(280px, 0.8fr);
-  min-height: 330px;
-  padding: 26px 0 24px;
+  gap: 42px;
+  grid-template-columns: minmax(240px, 1fr) minmax(0, 2fr);
+  min-height: 360px;
+  padding: 0px 0 0px;
+}
+
+.hero-brand {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+}
+
+.hero-logo {
+  display: block;
+  height: auto;
+  max-width: min(360px, 100%);
+  object-fit: contain;
+  width: 100%;
+}
+
+.hero-copy {
+  min-width: 0;
 }
 
 .hero h1,
@@ -125,7 +171,7 @@ strong {
 }
 
 .eyebrow {
-  color: var(--gold);
+  color: var(--accent-dark);
   font-size: 0.8rem;
   font-weight: 800;
   letter-spacing: 0;
@@ -133,33 +179,12 @@ strong {
   text-transform: uppercase;
 }
 
-.hero-panel,
 .notice {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 8px;
   box-shadow: var(--shadow);
   padding: 28px;
-}
-
-.hero-panel {
-  align-self: center;
-}
-
-.hero-panel strong {
-  display: block;
-  font-size: 1.45rem;
-  line-height: 1.25;
-  margin: 12px 0;
-}
-
-.panel-label {
-  background: var(--accent-dark);
-  border-radius: 999px;
-  color: white;
-  display: inline-flex;
-  font-weight: 800;
-  padding: 6px 10px;
 }
 
 .actions {
@@ -181,9 +206,18 @@ strong {
   color: white;
 }
 
+.button.primary:hover {
+  background: var(--accent-dark);
+}
+
 .button.secondary {
   border: 1px solid var(--line);
   color: var(--accent-dark);
+}
+
+.button.secondary:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
 }
 
 section {
@@ -218,8 +252,20 @@ section {
 
 .text-link {
   color: var(--accent-dark);
-  font-weight: 800;
-  text-decoration: none;
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: var(--accent-line);
+  text-underline-offset: 3px;
+}
+
+.text-link:hover {
+  color: var(--accent);
+  text-decoration-color: var(--accent);
+}
+
+.repository-link {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .rq-list {
@@ -275,18 +321,19 @@ section {
 }
 
 .status-completed {
-  background: #dceee8;
-  color: #155646;
+  background: #111111;
+  color: #ffffff;
 }
 
 .status-in-progress {
-  background: #fff0cc;
-  color: #7a5300;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  color: var(--accent-dark);
 }
 
 .status-planned {
-  background: #e8ebef;
-  color: #45505b;
+  background: #f3f4f6;
+  color: var(--charcoal);
 }
 
 .page-title {
@@ -364,6 +411,7 @@ section {
 
 .caveat {
   background: var(--danger-soft);
+  border-left: 4px solid var(--accent);
   border-radius: 8px;
   padding: 12px 14px;
 }
@@ -412,9 +460,9 @@ section {
 }
 
 .command-list pre {
-  background: #1f2624;
+  background: var(--charcoal);
   border-radius: 8px;
-  color: #f4f6f2;
+  color: #ffffff;
   overflow-x: auto;
   padding: 18px;
 }
@@ -422,12 +470,12 @@ section {
 .site-footer {
   border-top: 1px solid var(--line);
   color: var(--muted);
-  padding: 24px;
+  padding: 14px 24px;
   text-align: center;
 }
 
 .site-footer p {
-  margin: 4px 0;
+  margin: 0;
 }
 
 .build-version {
@@ -448,20 +496,28 @@ section {
 
 @media (max-width: 860px) {
   .header-inner {
-    align-items: flex-start;
-    flex-direction: column;
+    align-items: center;
+    flex-wrap: wrap;
   }
 
   .site-nav {
     justify-content: flex-start;
   }
 
-  .hero,
   .section-grid,
   .intro-layout,
   .dataset-grid,
   .phase-preview {
     grid-template-columns: 1fr;
+  }
+
+  .hero {
+    gap: 30px;
+    grid-template-columns: minmax(200px, 0.8fr) minmax(0, 1.2fr);
+  }
+
+  .hero-logo {
+    max-width: 300px;
   }
 
   .dataset-strip {
@@ -480,7 +536,38 @@ section {
   }
 
   .header-inner {
+    align-items: flex-start;
+    flex-direction: column;
     padding: 14px 16px;
+  }
+
+  .site-nav {
+    column-gap: 6px;
+    display: grid;
+    grid-template-columns: repeat(3, max-content);
+    row-gap: 6px;
+    width: 100%;
+  }
+
+  .brand {
+    width: min(190px, 100%);
+  }
+
+  .hero {
+    gap: 22px;
+    grid-template-columns: 1fr;
+    min-height: 0;
+    padding: 20px 0 18px;
+  }
+
+  .hero-logo {
+    max-width: 100%;
+  }
+
+  .hero-brand {
+    margin: 0 auto;
+    max-width: min(200px, 86vw);
+    width: 100%;
   }
 
   .hero h1,

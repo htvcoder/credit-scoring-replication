@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 450" role="img" aria-labelledby="title desc">
+  <title id="title">CSR Credit Scoring Replication full logo</title>
+  <desc id="desc">Full CSR logo with shield mark, English name and Vietnamese project name.</desc>
+  <defs>
+    <linearGradient id="red" x1="74" x2="166" y1="54" y2="184" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F01824"/>
+      <stop offset="1" stop-color="#D90416"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(140 18) scale(.78)">
+    <path d="M128 18C104.5 34.2 78.5 45.1 45 52.7v65.6c0 54.5 32.8 99.1 83 119.7 50.2-20.6 83-65.2 83-119.7V52.7C177.5 45.1 151.5 34.2 128 18Z" fill="#14212B"/>
+    <path d="M128 41.4C109 53.2 89.5 61 66.4 66.6v51.7c0 42.3 23.6 76.7 61.6 94.2 38-17.5 61.6-51.9 61.6-94.2V66.6C166.5 61 147 53.2 128 41.4Z" fill="#FFFFFF"/>
+    <path d="M66.4 118.3V66.6C89.5 61 109 53.2 128 41.4c19 11.8 38.5 19.6 61.6 25.2v51.7c0 42.3-23.6 76.7-61.6 94.2-38-17.5-61.6-51.9-61.6-94.2Z" fill="none" stroke="#14212B" stroke-width="7"/>
+    <path d="M82 148h27v49.7a76.7 76.7 0 0 1-27-21.2V148Z" fill="url(#red)"/>
+    <path d="M118 113h27v93.2a80.3 80.3 0 0 1-27-1.3V113Z" fill="url(#red)"/>
+    <path d="M154 78h27v96.8a95.8 95.8 0 0 1-27 23.7V78Z" fill="url(#red)"/>
+    <path d="M74 184c29.2 15.8 75.4 12 112-26-6.3 23.9-27.1 43.4-58 54.5-21.6-7.9-39.9-18.9-54-28.5Z" fill="#14212B"/>
+    <circle cx="162" cy="176" r="44" fill="#FFFFFF"/>
+    <circle cx="162" cy="176" r="35" fill="url(#red)"/>
+    <path d="M143 175.5 155.3 188 183 157.9" fill="none" stroke="#FFFFFF" stroke-linecap="square" stroke-width="12"/>
+  </g>
+  <text x="240" y="258" text-anchor="middle" fill="#14212B" font-family="Inter, Arial, sans-serif" font-size="88" font-weight="900" letter-spacing="4">CSR</text>
+  <path d="M156 285h168" stroke="#E30613" stroke-linecap="round" stroke-width="5"/>
+  <text x="240" y="326" text-anchor="middle" fill="#14212B" font-family="Inter, Arial, sans-serif" font-size="25" font-weight="800" letter-spacing="2.5" textLength="300" lengthAdjust="spacingAndGlyphs">CREDIT SCORING</text>
+  <text x="240" y="363" text-anchor="middle" fill="#E30613" font-family="Inter, Arial, sans-serif" font-size="25" font-weight="800" letter-spacing="3.5" textLength="260" lengthAdjust="spacingAndGlyphs">REPLICATION</text>
+  <text x="240" y="405" text-anchor="middle" fill="#1F2933" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="500">Tái lập và đánh giá lại mô hình</text>
+  <text x="240" y="432" text-anchor="middle" fill="#1F2933" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="500">tính điểm tín dụng</text>
+</svg>

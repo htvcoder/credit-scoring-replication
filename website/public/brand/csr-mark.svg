@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">CSR shield mark</title>
+  <desc id="desc">Black shield with three red growth bars and a white check mark in a red circle.</desc>
+  <defs>
+    <linearGradient id="red" x1="84" x2="174" y1="70" y2="188" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F01824"/>
+      <stop offset="1" stop-color="#D90416"/>
+    </linearGradient>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="145%">
+      <feDropShadow dx="0" dy="6" stdDeviation="5" flood-color="#111111" flood-opacity=".14"/>
+    </filter>
+  </defs>
+  <path
+    d="M128 18C104.5 34.2 78.5 45.1 45 52.7v65.6c0 54.5 32.8 99.1 83 119.7 50.2-20.6 83-65.2 83-119.7V52.7C177.5 45.1 151.5 34.2 128 18Z"
+    fill="#14212B"
+    filter="url(#softShadow)"
+  />
+  <path
+    d="M128 41.4C109 53.2 89.5 61 66.4 66.6v51.7c0 42.3 23.6 76.7 61.6 94.2 38-17.5 61.6-51.9 61.6-94.2V66.6C166.5 61 147 53.2 128 41.4Z"
+    fill="#FFFFFF"
+  />
+  <path
+    d="M66.4 118.3V66.6C89.5 61 109 53.2 128 41.4c19 11.8 38.5 19.6 61.6 25.2v51.7c0 42.3-23.6 76.7-61.6 94.2-38-17.5-61.6-51.9-61.6-94.2Z"
+    fill="none"
+    stroke="#14212B"
+    stroke-width="7"
+  />
+  <path d="M82 148h27v49.7a76.7 76.7 0 0 1-27-21.2V148Z" fill="url(#red)"/>
+  <path d="M118 113h27v93.2a80.3 80.3 0 0 1-27-1.3V113Z" fill="url(#red)"/>
+  <path d="M154 78h27v96.8a95.8 95.8 0 0 1-27 23.7V78Z" fill="url(#red)"/>
+  <path
+    d="M74 184c29.2 15.8 75.4 12 112-26-6.3 23.9-27.1 43.4-58 54.5-21.6-7.9-39.9-18.9-54-28.5Z"
+    fill="#14212B"
+  />
+  <circle cx="162" cy="176" r="44" fill="#FFFFFF"/>
+  <circle cx="162" cy="176" r="35" fill="url(#red)"/>
+  <path d="M143 175.5 155.3 188 183 157.9" fill="none" stroke="#FFFFFF" stroke-linecap="square" stroke-width="12"/>
+</svg>

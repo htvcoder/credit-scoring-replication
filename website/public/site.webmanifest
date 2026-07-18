@@ -1,0 +1,20 @@
+{
+  "name": "Tái lập và đánh giá lại mô hình tính điểm tín dụng",
+  "short_name": "CSR",
+  "description": "Website báo cáo tiến độ và công bố kết quả kiểm chứng của đề tài tính điểm tín dụng.",
+  "icons": [
+    {
+      "src": "/brand/csr-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/brand/csr-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "theme_color": "#E30613",
+  "background_color": "#FFFFFF",
+  "display": "standalone"
+}
