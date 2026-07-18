@@ -10,8 +10,8 @@ export default function ProgressPage() {
         <p className="eyebrow">Roadmap</p>
         <h1>Tiến độ các phase</h1>
         <p className="lead">
-          Phase 1 đã vận hành production trên public IP, nhưng vẫn chưa đánh
-          dấu Completed cho đến khi rollback production được kiểm thử thật. Các
+          Phase 1 đã Completed với website production trên public IP, CI/CD,
+          manual rollback và automatic failed-deployment rollback đều PASS. Các
           phase sau vẫn Planned cho đến khi có bằng chứng nghiệm thu.
         </p>
       </section>
@@ -46,7 +46,7 @@ export default function ProgressPage() {
                   </ul>
                   {phase.checkpoints?.length ? (
                     <div className="phase-checkpoints">
-                      <h3>Checkpoint còn lại</h3>
+                      <h3>Checkpoint</h3>
                       <ul className="phase-list">
                         {phase.checkpoints.map((checkpoint) => (
                           <li key={checkpoint}>{checkpoint}</li>
