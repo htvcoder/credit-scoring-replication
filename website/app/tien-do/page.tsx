@@ -10,9 +10,9 @@ export default function ProgressPage() {
         <p className="eyebrow">Roadmap</p>
         <h1>Tiến độ các phase</h1>
         <p className="lead">
-          Phase 1 đã Completed với website production trên public IP, CI/CD,
-          manual rollback và automatic failed-deployment rollback đều PASS. Các
-          phase sau vẫn Planned cho đến khi có bằng chứng nghiệm thu.
+          Phase 1 đã Completed với website production và CI/CD. Phase 2 đã
+          Completed ở mức experiment foundation; Phase 3 là bước tiếp theo để
+          hoàn thiện preprocessing protocol chống leakage.
         </p>
       </section>
 

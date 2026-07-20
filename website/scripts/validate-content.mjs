@@ -41,7 +41,9 @@ const paper = parse(read(path.join(websiteRoot, "content", "paper.yaml")));
 const publicDatasets = JSON.parse(read(path.join(websiteRoot, "content", "datasets.public.json")));
 const phase0 = progress.phases.find((phase) => phase.id === "Phase 0");
 const phase1 = progress.phases.find((phase) => phase.id === "Phase 1");
-const allowedStatuses = new Set(["Completed", "In progress", "Planned"]);
+const phase2 = progress.phases.find((phase) => phase.id === "Phase 2");
+const phase3 = progress.phases.find((phase) => phase.id === "Phase 3");
+const allowedStatuses = new Set(["Completed", "In progress", "Next", "Planned"]);
 const expectedPhaseOrder = Array.from({ length: 12 }, (_, index) => `Phase ${index}`);
 
 if (phase0?.status !== "Completed") {
@@ -50,6 +52,14 @@ if (phase0?.status !== "Completed") {
 
 if (phase1?.status !== "Completed") {
   fail("Phase 1 must be Completed after production rollback verification passed.");
+}
+
+if (phase2?.status !== "Completed") {
+  fail("Phase 2 must be Completed after P2A/P2B/P2C acceptance passed.");
+}
+
+if (phase3?.status !== "Next") {
+  fail("Phase 3 must be marked Next after Phase 2 completion.");
 }
 
 if (progress.phases.length !== expectedPhaseOrder.length) {
@@ -84,7 +94,7 @@ for (const phase of progress.phases) {
   }
 }
 
-for (const phase of progress.phases.slice(2)) {
+for (const phase of progress.phases.slice(4)) {
   if (phase.status !== "Planned") {
     fail(`${phase.id} must remain Planned until implementation evidence exists.`);
   }

@@ -1,6 +1,6 @@
-# Hợp đồng split và experiment artifact P2B
+# Hợp đồng split và experiment artifact Phase 2
 
-Tài liệu này mô tả phần **P2B - Deterministic split và experiment artifact contract**. P2B chỉ tạo split và artifact metadata phục vụ reproducibility; không train model, không tính metric, không sinh prediction và không chạy smoke experiment P2C.
+Tài liệu này mô tả contract artifact của **Phase 2**. P2B tạo split và artifact metadata phục vụ reproducibility; P2C mở rộng contract bằng smoke metrics, predictions, model metadata, prediction hash và cờ `publishable: false`. Smoke metrics chỉ dùng để nghiệm thu kỹ thuật, không phải kết quả nghiên cứu chính thức.
 
 ## Config split
 

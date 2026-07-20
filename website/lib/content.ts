@@ -49,7 +49,7 @@ export type PaperContent = {
   reported_findings: string[];
 };
 
-export type PhaseStatus = "Completed" | "In progress" | "Planned";
+export type PhaseStatus = "Completed" | "In progress" | "Next" | "Planned";
 
 export type Phase = {
   id: string;

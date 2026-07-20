@@ -371,7 +371,7 @@ Các deviation hiện đã biết hoặc rất có khả năng cần chấp nh�
 
 **Kết luận cập nhật sau Phase 0:** **Khả thi có điều kiện** cho partial replication trên 6 dataset công khai; vẫn không khả thi cho full replication vì thiếu Bene1, Bene2, Bene3 và UK.
 
-Không nên bắt đầu triển khai thực nghiệm đầy đủ ngay trước khi chốt pipeline chống leakage. Theo roadmap hiện hành, bước thực nghiệm kế tiếp sau khi Phase 1 Completed là Phase 2 smoke experiment. Phase 0 acceptance hiện đã có registry tập trung, checksum portable, target mapping đủ 6 dataset, numeric/categorical/identifier metadata, data cards, dependency pin, reusable TH02 conversion và verifier chạy độc lập current working directory. Blocker dữ liệu HMEQ/TH02 đã được xử lý ở mức verification: HMEQ full pass validation, TH02 pass validation sau conversion. Blocker còn lại trước core experiment là thiết kế WOE/VIF theo fold, quyết định implementation C4.5 hoặc deviation CART, và xác định EMP là exact hay approximate.
+Không nên bắt đầu triển khai thực nghiệm đầy đủ ngay trước khi chốt pipeline chống leakage. Theo roadmap hiện hành, Phase 2 experiment foundation đã Completed với loader, deterministic split, artifact contract và smoke runner; bước kế tiếp là Phase 3 preprocessing chống leakage. Phase 0 acceptance hiện đã có registry tập trung, checksum portable, target mapping đủ 6 dataset, numeric/categorical/identifier metadata, data cards, dependency pin, reusable TH02 conversion và verifier chạy độc lập current working directory. Blocker dữ liệu HMEQ/TH02 đã được xử lý ở mức verification: HMEQ full pass validation, TH02 pass validation sau conversion. Blocker còn lại trước core experiment là thiết kế WOE/VIF theo fold, quyết định implementation C4.5 hoặc deviation CART, và xác định EMP là exact hay approximate.
 
 Dataset nên dùng cho smoke test đầu tiên: **GC** cho dataset nhỏ vì schema và mapping nhãn rõ, sau đó **TC** cho dataset vừa/lớn vì khớp paper và có ID cần loại đúng. Model nên triển khai đầu tiên: **Logistic Regression** và **XGBoost**.
 
@@ -386,5 +386,5 @@ Nên giữ nguyên `N x 2` CV của paper cho dataset Must nếu compute cho ph�
 - Số dataset đủ điều kiện ngay: 6 dataset công khai sau remediation; HMEQ dùng `hmeq_full.csv`, TH02 dùng conversion artifact.
 - Blocker chính: thiếu 4 dataset độc quyền, HMEQ full chưa khớp checksum SAS kỳ vọng, C4.5/EMP/WOE/VIF cần implementation chống leakage.
 - Protocol đề xuất: Protocol A làm chính, Protocol B làm sensitivity/modern reassessment phụ.
-- Phase tiếp theo: triển khai Phase 2 smoke experiment với GC và TC, Logistic Regression và XGBoost trong một nhiệm vụ riêng; Phase 2 hiện vẫn Planned.
+- Phase tiếp theo: triển khai Phase 3 preprocessing chống leakage trong một nhiệm vụ riêng; Phase 2 smoke experiment với GC và TC, Logistic Regression và XGBoost đã Completed ở mức nghiệm thu kỹ thuật.
 - File báo cáo đã tạo: `docs/EXPERIMENT_FEASIBILITY_ASSESSMENT.md`.

@@ -219,7 +219,7 @@ Cấu trúc nội dung chính:
 - `website/content/paper.yaml`: thông tin paper gốc, thiết kế thực nghiệm và kết quả chính do paper báo cáo.
 - `website/content/background.md`: bối cảnh và mục đích của đề tài thực tập.
 - `website/content/limitations.md`: hạn chế của paper và hạn chế khi tái thực hiện.
-- `website/content/progress.yaml`: source of truth cho trạng thái phase; Phase 0 là `Completed`, Phase 1 là `Completed`, Phase 2 đến Phase 11 là `Planned`.
+- `website/content/progress.yaml`: source of truth cho trạng thái phase; Phase 0, Phase 1 và Phase 2 là `Completed`, Phase 3 là `Next`, Phase 4 đến Phase 11 là `Planned`.
 - `website/content/methods.md`: phương pháp dự kiến.
 - `website/content/deviations.md`: deviation và giới hạn hiện tại.
 - `data/datasets.yaml`: source of truth cho metadata dataset hiển thị trên website.
@@ -542,4 +542,4 @@ Remove-Item -Recurse -Force .venv-clean
 - Phase 0: Completed với 6 dataset công khai đã xác minh; giữ caveat provenance HMEQ.
 - Phase 1: Completed; P1A Completed, P1B Completed, P1C Completed; production deployment operational tại `http://34.142.206.15`; manual rollback production PASS và automatic failed-deployment rollback PASS.
 - Phase 2: P2A Completed; P2B Completed; P2C Completed ở mức smoke validation; smoke metrics không phải kết quả nghiên cứu.
-- Phase 3 đến Phase 11: Planned; chưa có preprocessing protocol khoa học đầy đủ, benchmark đầy đủ hoặc kết quả khoa học chính thức.
+- Phase 3: Next; Phase 4 đến Phase 11: Planned; chưa có preprocessing protocol khoa học đầy đủ, benchmark đầy đủ hoặc kết quả khoa học chính thức.

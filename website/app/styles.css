@@ -348,6 +348,12 @@ section {
   color: var(--accent-dark);
 }
 
+.status-next {
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  color: var(--accent-dark);
+}
+
 .status-planned {
   background: #f3f4f6;
   color: var(--charcoal);

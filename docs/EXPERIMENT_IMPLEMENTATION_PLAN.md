@@ -346,7 +346,7 @@ Trạng thái hiện tại của checkpoint:
 | Manual rollback production | Passed |
 | Automatic failed-deployment rollback | Passed |
 
-Phase 1 ở trạng thái **Completed**. Bước tiếp theo là Phase 2 - nền tảng thực nghiệm và smoke test; Phase 2 vẫn Planned cho đến khi bắt đầu triển khai riêng.
+Phase 1 ở trạng thái **Completed**. Phase 2 - nền tảng thực nghiệm và smoke test cũng đã **Completed** sau P2A/P2B/P2C. Bước tiếp theo là Phase 3 - preprocessing chống leakage.
 
 ### Phase 2 - Nền tảng thực nghiệm và smoke test
 
@@ -360,7 +360,7 @@ Ghi chú cập nhật sau P2C: **P2A - package, configuration và dataset loader
 | Đầu vào | Phase 1 CI/CD, Phase 0 registry/data cards/verifier. |
 | Đầu ra | P2A: package `src/creditrep/`, dataset registry contract, loader CLI inspect. P2B: config split, deterministic splitter, checksum/config/split hash, `manifest.json`, `config.yaml`, `split.json`, `split.csv`, CLI `create_split_artifact`. P2C: smoke configs, train-only preprocessing, LR/XGBoost factory, metrics, predictions, `model_metadata.json`, CLI `run_experiment`. |
 | Nhiệm vụ chi tiết | P2A Completed: implement registry loader; map target về 0/1; loại `ID`/`Unnamed: 0`; fail-fast schema/path/target. P2B Completed: tạo stratified split; lưu split hash; tạo artifact JSON/CSV; validate split definition; ghi Git/checksum/config provenance. P2C Completed: chạy GC LR, GC XGBoost và TC LR smoke; lưu metrics/predictions non-publishable. |
-| File dự kiến tạo/sửa | P2A/P2B đã tạo/sửa `src/creditrep/datasets/`, `src/creditrep/config/`, `src/creditrep/splitting/`, `src/creditrep/artifacts/`, `configs/experiments/split_*.yaml`, `scripts/inspect_dataset.py`, `scripts/create_split_artifact.py`, tests và docs tương ứng. P2C sau này dự kiến thêm `src/creditrep/runners/`, `configs/experiments/smoke_*.yaml`, `scripts/run_experiment.py`, tests tương ứng. |
+| File dự kiến tạo/sửa | P2A/P2B đã tạo/sửa `src/creditrep/datasets/`, `src/creditrep/config/`, `src/creditrep/splitting/`, `src/creditrep/artifacts/`, `configs/experiments/split_*.yaml`, `scripts/inspect_dataset.py`, `scripts/create_split_artifact.py`, tests và docs tương ứng. P2C đã thêm `src/creditrep/preprocessing/`, `src/creditrep/models/`, `src/creditrep/evaluation/`, `src/creditrep/experiments/`, `configs/experiments/smoke_*.yaml`, `scripts/run_experiment.py` và tests tương ứng. |
 | Test | P2A/P2B/P2C có unit target mapping, loader, identifier removal, portable path, fail-fast registry/schema/config tests, split determinism, hash stability, artifact serialization, split validation, checksum mismatch, preprocessing leakage checks, model probability checks, metrics tests, runner/CLI fixture tests. |
 | Acceptance criteria | Completed: smoke GC LR, GC XGBoost và TC LR tạo predictions/metrics hợp lệ; artifact có Git commit, config hash, dataset checksum, seed; preprocessing fit train-only; smoke metrics đánh dấu non-publishable. |
 | Dependency | Phase 1. |
@@ -995,7 +995,7 @@ Domain + HTTPS:
 
 ## 22. Giai đoạn tiếp theo
 
-**Giai đoạn tiếp theo được đề xuất:** bắt đầu **Phase 2 - Nền tảng thực nghiệm và smoke test** trong một nhiệm vụ riêng. Phase 2 vẫn Planned, chưa có artifact thực nghiệm.
+**Giai đoạn tiếp theo được đề xuất:** bắt đầu **Phase 3 - Pipeline tiền xử lý chống leakage** trong một nhiệm vụ riêng. Phase 2 đã Completed ở mức experiment foundation; smoke metrics vẫn non-publishable và không phải kết quả nghiên cứu chính thức.
 
 Các quyết định Phase 1 đã chốt hoặc đã vận hành:
 
