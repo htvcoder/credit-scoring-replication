@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "credit-scoring-replication"
+version = "0.2.0"
+description = "Credit scoring replication experiment foundation."
+requires-python = ">=3.11"
+dependencies = [
+  "pandas==3.0.3",
+  "numpy==2.4.6",
+  "xlrd==2.0.2",
+  "PyYAML==6.0.3",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

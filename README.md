@@ -130,6 +130,8 @@ DBN là mô hình có trong nghiên cứu gốc, nhưng không được tái l�
 ├── paper/
 ├── results/
 ├── scripts/
+├── src/
+│   └── creditrep/
 ├── tests/
 └── website/
 ```
@@ -153,6 +155,7 @@ Thiết lập môi trường sạch:
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
 .\.venv\Scripts\pip.exe install -r requirements-dev.txt
+.\.venv\Scripts\pip.exe install -e .
 ```
 
 ## Website local P1A
@@ -397,6 +400,32 @@ Verify toàn bộ checksum:
 
 Script tự xác định repository root theo vị trí script, nên có thể chạy từ root hoặc thư mục khác. Kết quả `pass: true` nghĩa là file tồn tại, checksum khớp, schema/target/class count/default rate/metadata feature set đều khớp registry.
 
+## Dataset loader P2A
+
+Phase 2A bổ sung package Python `creditrep` trong `src/` để các phase thực nghiệm sau dùng chung một interface load dataset:
+
+```python
+from creditrep.datasets import load_dataset
+
+loaded = load_dataset("GC")
+loaded.dataset_id
+loaded.features
+loaded.target
+loaded.metadata
+```
+
+`data/datasets.yaml` tiếp tục là source of truth. Mỗi dataset khai báo `active_file`, `reader`, `target.mapping_to_binary`, `identifier_columns`, `ignored_columns`, `numeric_columns` và `categorical_columns`. Loader đọc file active, validate schema, chuẩn hóa target về `0 = good/non-default` và `1 = bad/default`, rồi loại target cùng identifier/ignored columns khỏi `features`.
+
+Kiểm tra nhanh một dataset mà không in raw records:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\inspect_dataset.py --dataset GC
+.\.venv\Scripts\python.exe scripts\inspect_dataset.py --dataset TC
+.\.venv\Scripts\python.exe scripts\inspect_dataset.py --dataset GMC
+```
+
+P2A không thực hiện imputation, encoding, scaling, WOE, VIF, train/test split, cross-validation, training model, metrics hoặc ghi experiment artifact. Các phần đó thuộc các bước P2B/P2C và phase sau.
+
 ## Target mapping
 
 | Dataset | Target | Mapping dùng trong pipeline |
@@ -432,7 +461,8 @@ python -m venv .venv
 .\.venv\Scripts\python.exe scripts\convert_th02.py --input data/raw/th02/public.xls --output data/processed/th02/th02.csv
 .\.venv\Scripts\python.exe scripts\verify_credit_datasets.py --dataset all --checksums-only
 .\.venv\Scripts\python.exe scripts\verify_credit_datasets.py --dataset all
-.\.venv\Scripts\python.exe -m pytest tests/test_verify_credit_datasets.py
+.\.venv\Scripts\python.exe scripts\inspect_dataset.py --dataset GC
+.\.venv\Scripts\python.exe -m pytest
 ```
 
 ## Trạng thái hiện tại
@@ -444,7 +474,8 @@ python -m venv .venv
 - Đã chuyển `data/checksums-sha256.csv` sang relative portable paths.
 - Đã tạo `data/datasets.yaml` làm registry metadata chính.
 - Đã có script kiểm tra dữ liệu `scripts/verify_credit_datasets.py`.
+- Đã triển khai P2A dataset loader trong `src/creditrep/datasets/`, kèm CLI `scripts/inspect_dataset.py` và unit test fixture độc lập raw data.
 - Phase 0: Completed với 6 dataset công khai đã xác minh; giữ caveat provenance HMEQ.
 - Phase 1: Completed; P1A Completed, P1B Completed, P1C Completed; production deployment operational tại `http://34.142.206.15`; manual rollback production PASS và automatic failed-deployment rollback PASS.
-- Phase 2 đến Phase 11: Planned; chưa chạy model, chưa có pipeline smoke experiment và chưa có kết quả khoa học.
-- Bước tiếp theo là Phase 2 - nền tảng thực nghiệm và smoke test; Phase 2 vẫn Planned, chưa bắt đầu.
+- Phase 2: P2A Completed; P2B deterministic split/artifact contract và P2C smoke experiment runner chưa triển khai.
+- Phase 3 đến Phase 11: Planned; chưa chạy model, chưa có pipeline smoke experiment và chưa có kết quả khoa học.

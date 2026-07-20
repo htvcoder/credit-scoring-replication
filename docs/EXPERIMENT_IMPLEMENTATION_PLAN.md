@@ -350,16 +350,18 @@ Phase 1 ở trạng thái **Completed**. Bước tiếp theo là Phase 2 - nền
 
 ### Phase 2 - Nền tảng thực nghiệm và smoke test
 
+Ghi chú cập nhật sau P2A: trong nhiệm vụ hiện tại chỉ triển khai **P2A - package, configuration và dataset loader**. P2B deterministic split/artifact contract và P2C smoke experiment runner vẫn chưa triển khai, chưa có model run, metric hay experiment artifact.
+
 | Mục | Nội dung |
 |---|---|
 | Phân loại | Must |
 | Mục tiêu | Xây nền tảng config, loader, split, artifact contract và smoke test tối thiểu. |
-| Phạm vi | Dataset loader, target normalization, identifier removal, split deterministic, artifact writer, Logistic Regression, XGBoost, smoke test GC và TC. |
+| Phạm vi | P2A đã hoàn thành dataset loader, target normalization và identifier removal. P2B/P2C vẫn còn split deterministic, artifact writer, Logistic Regression, XGBoost, smoke test GC và TC. |
 | Đầu vào | Phase 1 CI/CD, Phase 0 registry/data cards/verifier. |
-| Đầu ra | Skeleton `src/creditrep/`, configs smoke, runner CLI, smoke artifacts nội bộ. |
-| Nhiệm vụ chi tiết | Implement registry loader; map target về 0/1; loại `ID`/`Unnamed: 0`; tạo stratified split; lưu split hash; tạo artifact JSON/CSV; chạy GC LR/XGBoost smoke và TC LR smoke. |
-| File dự kiến tạo/sửa | `src/creditrep/datasets/`, `src/creditrep/splitting/`, `src/creditrep/artifacts/`, `src/creditrep/runners/`, `configs/experiments/smoke_*.yaml`, `scripts/run_experiment.py`, tests tương ứng. |
-| Test | Unit target mapping, loader, identifier removal, split determinism, artifact serialization; integration smoke fixture; CI không cần raw data hoặc skip rõ. |
+| Đầu ra | P2A: package `src/creditrep/`, dataset registry contract, loader CLI inspect. P2B/P2C còn lại: configs smoke, runner CLI, smoke artifacts nội bộ. |
+| Nhiệm vụ chi tiết | P2A Completed: implement registry loader; map target về 0/1; loại `ID`/`Unnamed: 0`; fail-fast schema/path/target. Còn lại: tạo stratified split; lưu split hash; tạo artifact JSON/CSV; chạy GC LR/XGBoost smoke và TC LR smoke. |
+| File dự kiến tạo/sửa | P2A đã tạo/sửa `src/creditrep/datasets/`, `scripts/inspect_dataset.py`, `tests/test_dataset_loader.py`, `pyproject.toml`, `pytest.ini`, `data/datasets.yaml`, `README.md`. P2B/P2C sau này dự kiến thêm `src/creditrep/splitting/`, `src/creditrep/artifacts/`, `src/creditrep/runners/`, `configs/experiments/smoke_*.yaml`, `scripts/run_experiment.py`, tests tương ứng. |
+| Test | P2A đã có unit target mapping, loader, identifier removal, portable path và fail-fast registry/schema tests. Còn lại: split determinism, artifact serialization, integration smoke fixture; CI không cần raw data hoặc skip rõ. |
 | Acceptance criteria | Smoke GC và TC tạo predictions/metrics hợp lệ; artifact có Git commit, config hash, dataset checksum, seed; không có leakage cơ bản. |
 | Dependency | Phase 1. |
 | Rủi ro | XGBoost dependency nặng, artifact contract quá phức tạp, raw data thiếu trong môi trường CI. |
@@ -368,6 +370,19 @@ Phase 1 ở trạng thái **Completed**. Bước tiếp theo là Phase 2 - nền
 | Commit đề xuất | `feat(experiments): add foundation and smoke-test runner` |
 | Tag đề xuất | `p2-experiment-foundation` |
 | Website cần cập nhật | Phase 2 Completed/In progress; không công bố metrics smoke như kết quả khoa học. |
+
+#### P2A - Package, configuration và dataset loader
+
+Trạng thái: **Completed**.
+
+- `data/datasets.yaml` là source of truth cho active file, reader, target mapping, identifier/ignored columns và feature metadata.
+- Loader chính: `creditrep.datasets.load_dataset(dataset_id)`.
+- Contract trả về: `LoadedDataset(dataset_id, features, target, metadata, source_path)`.
+- `target` luôn được chuẩn hóa về `0 = good/non-default` và `1 = bad/default`.
+- `features` loại bỏ target, `identifier_columns` và `ignored_columns`.
+- Metadata tối thiểu gồm dataset ID, source file/path portable, target column, target mapping, removed columns, row count, feature count, class counts và default rate.
+- CLI inspect: `python scripts/inspect_dataset.py --dataset GC`.
+- Không có split, split hash, artifact writer, model training, metric, WOE, VIF, imputation, encoding hoặc scaling trong P2A.
 
 ### Phase 3 - Pipeline tiền xử lý chống leakage
 
@@ -579,7 +594,7 @@ Phase 1 ở trạng thái **Completed**. Bước tiếp theo là Phase 2 - nền
 
 | Module | Trách nhiệm | Input | Output | Test |
 |---|---|---|---|---|
-| Dataset loading | Đọc registry và active file | `data/datasets.yaml` | DataFrame + metadata | Loader tests |
+| Dataset loading | Đọc registry và active file | `data/datasets.yaml` | `LoadedDataset(features, target, metadata)` | Loader tests |
 | Schema validation | Verify schema/checksum trước run | DataFrame, registry | Validation report | Bad schema tests |
 | Target normalization | Map target về 0/1 | Series, mapping | Binary target | Mapping tests |
 | Split generation | Holdout/k-fold/Nx2/nested-lite | Target, seed | Fold definitions | Determinism tests |

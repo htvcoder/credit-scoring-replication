@@ -2,6 +2,7 @@ datasets:
   ac:
     id: ac
     full_name: Australian Credit Approval
+    active_file: data/raw/ac/australian.dat
     raw_file: data/raw/ac/australian.dat
     processed_file:
     dictionary_files:
@@ -75,6 +76,7 @@ datasets:
   gc:
     id: gc
     full_name: German Credit Data
+    active_file: data/raw/gc/german.data
     raw_file: data/raw/gc/german.data
     processed_file:
     dictionary_files:
@@ -159,6 +161,7 @@ datasets:
   hmeq:
     id: hmeq
     full_name: Home Equity Loan
+    active_file: data/raw/hmeq/hmeq_full.csv
     raw_file: data/raw/hmeq/hmeq_full.csv
     processed_file:
     dictionary_files: []
@@ -212,6 +215,7 @@ datasets:
   th02:
     id: th02
     full_name: Thomas et al. 2002 public credit scoring data
+    active_file: data/processed/th02/th02.csv
     raw_file: data/raw/th02/public.xls
     processed_file: data/processed/th02/th02.csv
     dictionary_files:
@@ -267,6 +271,7 @@ datasets:
   tc:
     id: tc
     full_name: Default of Credit Card Clients
+    active_file: data/raw/tc/default of credit card clients.xls
     raw_file: data/raw/tc/default of credit card clients.xls
     processed_file:
     dictionary_files: []
@@ -332,6 +337,7 @@ datasets:
   gmc:
     id: gmc
     full_name: Give Me Some Credit
+    active_file: data/raw/gmc/cs-training.csv
     raw_file: data/raw/gmc/cs-training.csv
     processed_file:
     dictionary_files:
