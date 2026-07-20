@@ -146,16 +146,29 @@ DBN là mô hình có trong nghiên cứu gốc, nhưng không được tái l�
 ## Yêu cầu môi trường
 
 - Python: đã kiểm tra với Python `3.11.0`.
-- Runtime dependencies: `requirements.txt`.
-- Test/development dependencies: `requirements-dev.txt`.
+- Runtime dependencies: khai báo trong `pyproject.toml` và đồng bộ trong `requirements.txt`.
+- Test/development dependencies: optional extra `test` trong `pyproject.toml`.
 
-Thiết lập môi trường sạch:
+Cài package chỉ để sử dụng runtime:
+
+```powershell
+python -m pip install -e .
+```
+
+Cài package để phát triển và chạy test:
+
+```powershell
+python -m pip install -e ".[test]"
+```
+
+`pip install -e .` chỉ cài runtime dependencies. `pip install -e ".[test]"` cài thêm dependency dùng để chạy test, nên không cần chạy `pip install pytest` thủ công sau đó.
+
+Thiết lập môi trường phát triển:
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\pip.exe install -r requirements-dev.txt
-.\.venv\Scripts\pip.exe install -e .
+.\.venv\Scripts\python.exe -m pip install -e ".[test]"
 ```
 
 ## Website local P1A
@@ -448,6 +461,22 @@ Chi tiết contract nằm trong `docs/EXPERIMENT_ARTIFACT_CONTRACT.md`.
 
 P2B không train model, không tính metrics, không sinh predictions và không chạy smoke experiment. Các phần đó thuộc P2C và phase sau.
 
+## Smoke experiment runner P2C
+
+Phase 2C bổ sung runner end-to-end tối thiểu để xác nhận pipeline có thể load dataset, kiểm tra checksum, tái dùng deterministic split P2B, fit preprocessing train-only, train Logistic Regression hoặc XGBoost, sinh probability test set, tính metrics tối thiểu và ghi artifact.
+
+Ba config bắt buộc:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_experiment.py --config configs\experiments\smoke_gc_lr.yaml
+.\.venv\Scripts\python.exe scripts\run_experiment.py --config configs\experiments\smoke_gc_xgb.yaml
+.\.venv\Scripts\python.exe scripts\run_experiment.py --config configs\experiments\smoke_tc_lr.yaml
+```
+
+Smoke artifacts mở rộng P2B với `metrics.json`, `predictions.csv` và `model_metadata.json`. `predictions.csv` chỉ chứa `row_position,partition,y_true,y_score,y_pred`, không chứa raw features. Mọi smoke run có `publishable: false` và `result_scope: smoke_validation`; các metric này chỉ dùng để xác minh pipeline, không phải kết quả nghiên cứu và không đưa lên website như kết quả khoa học.
+
+Chi tiết runner nằm trong `docs/SMOKE_EXPERIMENT_RUNNER.md`.
+
 ## Target mapping
 
 | Dataset | Target | Mapping dùng trong pipeline |
@@ -477,16 +506,26 @@ Numeric/categorical/identifier metadata đầy đủ nằm trong `data/datasets.
 Sau khi clone và đặt raw data đúng vị trí:
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\pip.exe install -r requirements-dev.txt
-.\.venv\Scripts\python.exe scripts\convert_th02.py --input data/raw/th02/public.xls --output data/processed/th02/th02.csv
-.\.venv\Scripts\python.exe scripts\verify_credit_datasets.py --dataset all --checksums-only
-.\.venv\Scripts\python.exe scripts\verify_credit_datasets.py --dataset all
-.\.venv\Scripts\python.exe scripts\inspect_dataset.py --dataset GC
-.\.venv\Scripts\python.exe scripts\create_split_artifact.py --config configs\experiments\split_gc.yaml
-.\.venv\Scripts\python.exe -m pytest
+py -3.11 -m venv .venv-clean
+.\.venv-clean\Scripts\Activate.ps1
+
+python -m pip install --upgrade pip
+python -m pip install -e ".[test]"
+
+python scripts\convert_th02.py --input data/raw/th02/public.xls --output data/processed/th02/th02.csv
+python scripts\verify_credit_datasets.py --dataset all --checksums-only
+python scripts\verify_credit_datasets.py --dataset all
+python scripts\inspect_dataset.py --dataset GC
+python scripts\create_split_artifact.py --config configs\experiments\split_gc.yaml
+python scripts\run_experiment.py --config configs\experiments\smoke_gc_lr.yaml
+python -m pytest
+python -m pip check
+
+deactivate
+Remove-Item -Recurse -Force .venv-clean
 ```
+
+`.venv-clean` chỉ là môi trường kiểm tra tạm thời và không được commit. Số lượng test có thể tăng theo thời gian; tiêu chí dài hạn là toàn bộ test suite hiện hành phải pass.
 
 ## Trạng thái hiện tại
 
@@ -499,7 +538,8 @@ python -m venv .venv
 - Đã có script kiểm tra dữ liệu `scripts/verify_credit_datasets.py`.
 - Đã triển khai P2A dataset loader trong `src/creditrep/datasets/`, kèm CLI `scripts/inspect_dataset.py` và unit test fixture độc lập raw data.
 - Đã triển khai P2B deterministic split và artifact contract trong `src/creditrep/config/`, `src/creditrep/splitting/`, `src/creditrep/artifacts/`, kèm CLI `scripts/create_split_artifact.py`.
+- Đã triển khai P2C smoke experiment runner trong `src/creditrep/preprocessing/`, `src/creditrep/models/`, `src/creditrep/evaluation/`, `src/creditrep/experiments/`, kèm CLI `scripts/run_experiment.py`.
 - Phase 0: Completed với 6 dataset công khai đã xác minh; giữ caveat provenance HMEQ.
 - Phase 1: Completed; P1A Completed, P1B Completed, P1C Completed; production deployment operational tại `http://34.142.206.15`; manual rollback production PASS và automatic failed-deployment rollback PASS.
-- Phase 2: P2A Completed; P2B Completed; P2C smoke experiment runner chưa triển khai.
-- Phase 3 đến Phase 11: Planned; chưa chạy model, chưa có pipeline smoke experiment và chưa có kết quả khoa học.
+- Phase 2: P2A Completed; P2B Completed; P2C Completed ở mức smoke validation; smoke metrics không phải kết quả nghiên cứu.
+- Phase 3 đến Phase 11: Planned; chưa có preprocessing protocol khoa học đầy đủ, benchmark đầy đủ hoặc kết quả khoa học chính thức.

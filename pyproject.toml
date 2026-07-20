@@ -12,6 +12,13 @@ dependencies = [
   "numpy==2.4.6",
   "xlrd==2.0.2",
   "PyYAML==6.0.3",
+  "scikit-learn==1.9.0",
+  "xgboost==3.0.5",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8,<9",
 ]
 
 [tool.setuptools.packages.find]

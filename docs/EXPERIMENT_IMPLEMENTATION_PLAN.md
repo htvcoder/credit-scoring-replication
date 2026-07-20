@@ -350,26 +350,26 @@ Phase 1 ở trạng thái **Completed**. Bước tiếp theo là Phase 2 - nền
 
 ### Phase 2 - Nền tảng thực nghiệm và smoke test
 
-Ghi chú cập nhật sau P2B: **P2A - package, configuration và dataset loader** và **P2B - deterministic split và experiment artifact contract** đã hoàn thành. P2C smoke experiment runner vẫn chưa triển khai, chưa có model run, metric nghiên cứu hoặc prediction artifact.
+Ghi chú cập nhật sau P2C: **P2A - package, configuration và dataset loader**, **P2B - deterministic split và experiment artifact contract** và **P2C - smoke experiment runner** đã hoàn thành. Smoke metrics chỉ dùng để xác minh pipeline, không phải kết quả nghiên cứu chính thức.
 
 | Mục | Nội dung |
 |---|---|
 | Phân loại | Must |
 | Mục tiêu | Xây nền tảng config, loader, split, artifact contract và smoke test tối thiểu. |
-| Phạm vi | P2A đã hoàn thành dataset loader, target normalization và identifier removal. P2B đã hoàn thành deterministic stratified split, checksum/config/split hash và split artifact contract. P2C vẫn còn Logistic Regression, XGBoost, smoke test GC và TC. |
+| Phạm vi | P2A đã hoàn thành dataset loader, target normalization và identifier removal. P2B đã hoàn thành deterministic stratified split, checksum/config/split hash và split artifact contract. P2C đã hoàn thành smoke runner với GC LR, GC XGBoost và TC LR. |
 | Đầu vào | Phase 1 CI/CD, Phase 0 registry/data cards/verifier. |
-| Đầu ra | P2A: package `src/creditrep/`, dataset registry contract, loader CLI inspect. P2B: config split, deterministic splitter, checksum/config/split hash, `manifest.json`, `config.yaml`, `split.json`, `split.csv`, CLI `create_split_artifact`. P2C còn lại: model runner và smoke artifacts có metrics/predictions. |
-| Nhiệm vụ chi tiết | P2A Completed: implement registry loader; map target về 0/1; loại `ID`/`Unnamed: 0`; fail-fast schema/path/target. P2B Completed: tạo stratified split; lưu split hash; tạo artifact JSON/CSV; validate split definition; ghi Git/checksum/config provenance. Còn lại P2C: chạy GC LR/XGBoost smoke và TC LR smoke. |
+| Đầu ra | P2A: package `src/creditrep/`, dataset registry contract, loader CLI inspect. P2B: config split, deterministic splitter, checksum/config/split hash, `manifest.json`, `config.yaml`, `split.json`, `split.csv`, CLI `create_split_artifact`. P2C: smoke configs, train-only preprocessing, LR/XGBoost factory, metrics, predictions, `model_metadata.json`, CLI `run_experiment`. |
+| Nhiệm vụ chi tiết | P2A Completed: implement registry loader; map target về 0/1; loại `ID`/`Unnamed: 0`; fail-fast schema/path/target. P2B Completed: tạo stratified split; lưu split hash; tạo artifact JSON/CSV; validate split definition; ghi Git/checksum/config provenance. P2C Completed: chạy GC LR, GC XGBoost và TC LR smoke; lưu metrics/predictions non-publishable. |
 | File dự kiến tạo/sửa | P2A/P2B đã tạo/sửa `src/creditrep/datasets/`, `src/creditrep/config/`, `src/creditrep/splitting/`, `src/creditrep/artifacts/`, `configs/experiments/split_*.yaml`, `scripts/inspect_dataset.py`, `scripts/create_split_artifact.py`, tests và docs tương ứng. P2C sau này dự kiến thêm `src/creditrep/runners/`, `configs/experiments/smoke_*.yaml`, `scripts/run_experiment.py`, tests tương ứng. |
-| Test | P2A/P2B đã có unit target mapping, loader, identifier removal, portable path, fail-fast registry/schema/config tests, split determinism, hash stability, artifact serialization, split validation, checksum mismatch và CLI fixture tests. Còn lại P2C: model runner và smoke integration; CI không cần raw data hoặc skip rõ. |
-| Acceptance criteria | Smoke GC và TC tạo predictions/metrics hợp lệ; artifact có Git commit, config hash, dataset checksum, seed; không có leakage cơ bản. |
+| Test | P2A/P2B/P2C có unit target mapping, loader, identifier removal, portable path, fail-fast registry/schema/config tests, split determinism, hash stability, artifact serialization, split validation, checksum mismatch, preprocessing leakage checks, model probability checks, metrics tests, runner/CLI fixture tests. |
+| Acceptance criteria | Completed: smoke GC LR, GC XGBoost và TC LR tạo predictions/metrics hợp lệ; artifact có Git commit, config hash, dataset checksum, seed; preprocessing fit train-only; smoke metrics đánh dấu non-publishable. |
 | Dependency | Phase 1. |
 | Rủi ro | XGBoost dependency nặng, artifact contract quá phức tạp, raw data thiếu trong môi trường CI. |
 | Go/no-go | Go Phase 3 khi smoke runner deterministic và artifact schema ổn định. |
 | Ngoài phạm vi | WOE/VIF đầy đủ, full nested CV, MLP, statistical analysis. |
 | Commit đề xuất | `feat(experiments): add foundation and smoke-test runner` |
 | Tag đề xuất | `p2-experiment-foundation` |
-| Website cần cập nhật | Phase 2 Completed/In progress; không công bố metrics smoke như kết quả khoa học. |
+| Website cần cập nhật | Có thể cập nhật trạng thái Phase 2 Completed nếu muốn, nhưng không công bố metrics smoke như kết quả khoa học. |
 
 #### P2A - Package, configuration và dataset loader
 
@@ -398,6 +398,23 @@ Trạng thái: **Completed**.
 - CLI: `python scripts/create_split_artifact.py --config configs/experiments/split_gc.yaml`.
 - Tài liệu kỹ thuật: `docs/EXPERIMENT_ARTIFACT_CONTRACT.md`.
 - Không có Logistic Regression, XGBoost, model training, metrics, predictions hoặc smoke experiment trong P2B.
+
+#### P2C - Smoke experiment runner
+
+Trạng thái: **Completed**.
+
+- Config bắt buộc: `smoke_gc_lr.yaml`, `smoke_gc_xgb.yaml`, `smoke_tc_lr.yaml`.
+- Runner chính: `creditrep.experiments.run_smoke_experiment(config_path)`.
+- CLI: `python scripts/run_experiment.py --config configs/experiments/smoke_gc_lr.yaml`.
+- Preprocessing smoke baseline fit train-only: median imputation cho numeric, Logistic Regression thêm StandardScaler; categorical dùng most-frequent imputation và one-hot encoding `handle_unknown=ignore`.
+- Model factory chỉ hỗ trợ `logistic_regression` và `xgboost`.
+- Metrics test set: ROC AUC, accuracy, precision, recall, F1, log loss, Brier score, confusion matrix và predicted positive rate.
+- Prediction artifact: `predictions.csv` với `row_position,partition,y_true,y_score,y_pred`, chỉ chứa test rows.
+- Smoke artifact có `publishable: false` và `result_scope: smoke_validation`.
+- Tài liệu kỹ thuật: `docs/SMOKE_EXPERIMENT_RUNNER.md`.
+- Không có WOE, VIF, feature engineering, nested CV, tuning, statistical testing, benchmark sáu dataset hoặc result publishing trong P2C.
+
+Phase 2 hiện đủ điều kiện đánh dấu **Completed** ở mức experiment foundation. Phase 3 là bước tiếp theo: preprocessing protocol khoa học chống leakage đầy đủ. Smoke metrics không phải experimental scientific results.
 
 ### Phase 3 - Pipeline tiền xử lý chống leakage
 

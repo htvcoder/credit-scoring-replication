@@ -106,3 +106,17 @@ Validation kiểm tra duplicate row position, partition không hợp lệ, missi
 ## Ngoài phạm vi P2B
 
 P2B không làm imputation, encoding, scaling, WOE, VIF, model training, hyperparameter tuning, metric, prediction artifact, nested CV hoặc website result publishing. Các phần này thuộc P2C và các phase sau.
+
+## Mở rộng P2C
+
+P2C smoke runner tái sử dụng cấu trúc artifact trên và bổ sung:
+
+```text
+metrics.json
+predictions.csv
+model_metadata.json
+```
+
+Manifest P2C chuyển `status` sang `completed`, thêm `result_scope: smoke_validation`, `publishable: false`, model type/parameters và đường dẫn tới metrics/predictions/model metadata. `predictions.csv` chỉ chứa test row positions, true label, probability class 1 và prediction theo threshold; không chứa raw features.
+
+Smoke metrics không phải kết quả nghiên cứu, không được publish lên website như scientific results.
