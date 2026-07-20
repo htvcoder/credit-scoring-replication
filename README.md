@@ -426,6 +426,28 @@ Kiểm tra nhanh một dataset mà không in raw records:
 
 P2A không thực hiện imputation, encoding, scaling, WOE, VIF, train/test split, cross-validation, training model, metrics hoặc ghi experiment artifact. Các phần đó thuộc các bước P2B/P2C và phase sau.
 
+## Split và artifact P2B
+
+Phase 2B bổ sung deterministic stratified holdout split và experiment artifact contract. Config mẫu nằm trong:
+
+- `configs/experiments/split_gc.yaml`
+- `configs/experiments/split_tc.yaml`
+
+Tạo split artifact:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\create_split_artifact.py --config configs\experiments\split_gc.yaml
+.\.venv\Scripts\python.exe scripts\create_split_artifact.py --config configs\experiments\split_tc.yaml
+```
+
+CLI load config, load dataset bằng P2A, kiểm tra checksum từ `data/checksums-sha256.csv`, tạo split deterministic và ghi artifact vào `artifacts/experiments/<experiment_id>/`. Artifact gồm `manifest.json`, `config.yaml`, `split.json` và `split.csv`. `split.csv` chỉ lưu `row_position,partition`, không lưu feature values hoặc target values.
+
+`config_hash` là SHA-256 trên config đã parse/normalize. `split_hash` là SHA-256 trên payload canonical gồm dataset ID, source file portable, checksum active file, strategy, test size, seed, train indices và test indices. Cùng dataset/config/seed tạo cùng `split_hash`; timestamp chỉ ảnh hưởng `experiment_id`, không ảnh hưởng `split_hash`.
+
+Chi tiết contract nằm trong `docs/EXPERIMENT_ARTIFACT_CONTRACT.md`.
+
+P2B không train model, không tính metrics, không sinh predictions và không chạy smoke experiment. Các phần đó thuộc P2C và phase sau.
+
 ## Target mapping
 
 | Dataset | Target | Mapping dùng trong pipeline |
@@ -462,6 +484,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe scripts\verify_credit_datasets.py --dataset all --checksums-only
 .\.venv\Scripts\python.exe scripts\verify_credit_datasets.py --dataset all
 .\.venv\Scripts\python.exe scripts\inspect_dataset.py --dataset GC
+.\.venv\Scripts\python.exe scripts\create_split_artifact.py --config configs\experiments\split_gc.yaml
 .\.venv\Scripts\python.exe -m pytest
 ```
 
@@ -475,7 +498,8 @@ python -m venv .venv
 - Đã tạo `data/datasets.yaml` làm registry metadata chính.
 - Đã có script kiểm tra dữ liệu `scripts/verify_credit_datasets.py`.
 - Đã triển khai P2A dataset loader trong `src/creditrep/datasets/`, kèm CLI `scripts/inspect_dataset.py` và unit test fixture độc lập raw data.
+- Đã triển khai P2B deterministic split và artifact contract trong `src/creditrep/config/`, `src/creditrep/splitting/`, `src/creditrep/artifacts/`, kèm CLI `scripts/create_split_artifact.py`.
 - Phase 0: Completed với 6 dataset công khai đã xác minh; giữ caveat provenance HMEQ.
 - Phase 1: Completed; P1A Completed, P1B Completed, P1C Completed; production deployment operational tại `http://34.142.206.15`; manual rollback production PASS và automatic failed-deployment rollback PASS.
-- Phase 2: P2A Completed; P2B deterministic split/artifact contract và P2C smoke experiment runner chưa triển khai.
+- Phase 2: P2A Completed; P2B Completed; P2C smoke experiment runner chưa triển khai.
 - Phase 3 đến Phase 11: Planned; chưa chạy model, chưa có pipeline smoke experiment và chưa có kết quả khoa học.

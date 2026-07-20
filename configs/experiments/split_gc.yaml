@@ -1,0 +1,14 @@
+experiment:
+  name: gc_split_validation
+
+dataset:
+  id: GC
+
+split:
+  strategy: stratified_holdout
+  test_size: 0.2
+  random_seed: 42
+  shuffle: true
+
+output:
+  root_dir: artifacts/experiments

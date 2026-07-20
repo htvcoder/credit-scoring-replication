@@ -350,18 +350,18 @@ Phase 1 ở trạng thái **Completed**. Bước tiếp theo là Phase 2 - nền
 
 ### Phase 2 - Nền tảng thực nghiệm và smoke test
 
-Ghi chú cập nhật sau P2A: trong nhiệm vụ hiện tại chỉ triển khai **P2A - package, configuration và dataset loader**. P2B deterministic split/artifact contract và P2C smoke experiment runner vẫn chưa triển khai, chưa có model run, metric hay experiment artifact.
+Ghi chú cập nhật sau P2B: **P2A - package, configuration và dataset loader** và **P2B - deterministic split và experiment artifact contract** đã hoàn thành. P2C smoke experiment runner vẫn chưa triển khai, chưa có model run, metric nghiên cứu hoặc prediction artifact.
 
 | Mục | Nội dung |
 |---|---|
 | Phân loại | Must |
 | Mục tiêu | Xây nền tảng config, loader, split, artifact contract và smoke test tối thiểu. |
-| Phạm vi | P2A đã hoàn thành dataset loader, target normalization và identifier removal. P2B/P2C vẫn còn split deterministic, artifact writer, Logistic Regression, XGBoost, smoke test GC và TC. |
+| Phạm vi | P2A đã hoàn thành dataset loader, target normalization và identifier removal. P2B đã hoàn thành deterministic stratified split, checksum/config/split hash và split artifact contract. P2C vẫn còn Logistic Regression, XGBoost, smoke test GC và TC. |
 | Đầu vào | Phase 1 CI/CD, Phase 0 registry/data cards/verifier. |
-| Đầu ra | P2A: package `src/creditrep/`, dataset registry contract, loader CLI inspect. P2B/P2C còn lại: configs smoke, runner CLI, smoke artifacts nội bộ. |
-| Nhiệm vụ chi tiết | P2A Completed: implement registry loader; map target về 0/1; loại `ID`/`Unnamed: 0`; fail-fast schema/path/target. Còn lại: tạo stratified split; lưu split hash; tạo artifact JSON/CSV; chạy GC LR/XGBoost smoke và TC LR smoke. |
-| File dự kiến tạo/sửa | P2A đã tạo/sửa `src/creditrep/datasets/`, `scripts/inspect_dataset.py`, `tests/test_dataset_loader.py`, `pyproject.toml`, `pytest.ini`, `data/datasets.yaml`, `README.md`. P2B/P2C sau này dự kiến thêm `src/creditrep/splitting/`, `src/creditrep/artifacts/`, `src/creditrep/runners/`, `configs/experiments/smoke_*.yaml`, `scripts/run_experiment.py`, tests tương ứng. |
-| Test | P2A đã có unit target mapping, loader, identifier removal, portable path và fail-fast registry/schema tests. Còn lại: split determinism, artifact serialization, integration smoke fixture; CI không cần raw data hoặc skip rõ. |
+| Đầu ra | P2A: package `src/creditrep/`, dataset registry contract, loader CLI inspect. P2B: config split, deterministic splitter, checksum/config/split hash, `manifest.json`, `config.yaml`, `split.json`, `split.csv`, CLI `create_split_artifact`. P2C còn lại: model runner và smoke artifacts có metrics/predictions. |
+| Nhiệm vụ chi tiết | P2A Completed: implement registry loader; map target về 0/1; loại `ID`/`Unnamed: 0`; fail-fast schema/path/target. P2B Completed: tạo stratified split; lưu split hash; tạo artifact JSON/CSV; validate split definition; ghi Git/checksum/config provenance. Còn lại P2C: chạy GC LR/XGBoost smoke và TC LR smoke. |
+| File dự kiến tạo/sửa | P2A/P2B đã tạo/sửa `src/creditrep/datasets/`, `src/creditrep/config/`, `src/creditrep/splitting/`, `src/creditrep/artifacts/`, `configs/experiments/split_*.yaml`, `scripts/inspect_dataset.py`, `scripts/create_split_artifact.py`, tests và docs tương ứng. P2C sau này dự kiến thêm `src/creditrep/runners/`, `configs/experiments/smoke_*.yaml`, `scripts/run_experiment.py`, tests tương ứng. |
+| Test | P2A/P2B đã có unit target mapping, loader, identifier removal, portable path, fail-fast registry/schema/config tests, split determinism, hash stability, artifact serialization, split validation, checksum mismatch và CLI fixture tests. Còn lại P2C: model runner và smoke integration; CI không cần raw data hoặc skip rõ. |
 | Acceptance criteria | Smoke GC và TC tạo predictions/metrics hợp lệ; artifact có Git commit, config hash, dataset checksum, seed; không có leakage cơ bản. |
 | Dependency | Phase 1. |
 | Rủi ro | XGBoost dependency nặng, artifact contract quá phức tạp, raw data thiếu trong môi trường CI. |
@@ -383,6 +383,21 @@ Trạng thái: **Completed**.
 - Metadata tối thiểu gồm dataset ID, source file/path portable, target column, target mapping, removed columns, row count, feature count, class counts và default rate.
 - CLI inspect: `python scripts/inspect_dataset.py --dataset GC`.
 - Không có split, split hash, artifact writer, model training, metric, WOE, VIF, imputation, encoding hoặc scaling trong P2A.
+
+#### P2B - Deterministic split và artifact contract
+
+Trạng thái: **Completed**.
+
+- Config contract: `ExperimentConfig` đọc từ YAML trong `configs/experiments/`.
+- Splitter chính: `creditrep.splitting.create_split(dataset, strategy, test_size, random_seed, shuffle)`.
+- Split hiện hỗ trợ `stratified_holdout`, giữ class balance theo target nhị phân và dùng `row_position` làm provenance.
+- `config_hash` và `split_hash` dùng SHA-256 trên JSON canonical, không dùng Python built-in `hash()`.
+- Dataset checksum tái sử dụng `data/checksums-sha256.csv`; checksum mismatch fail-fast.
+- Artifact contract: `manifest.json`, `config.yaml`, `split.json`, `split.csv` trong `artifacts/experiments/<experiment_id>/`.
+- Writer ghi atomic qua temporary directory và không overwrite artifact đã tồn tại.
+- CLI: `python scripts/create_split_artifact.py --config configs/experiments/split_gc.yaml`.
+- Tài liệu kỹ thuật: `docs/EXPERIMENT_ARTIFACT_CONTRACT.md`.
+- Không có Logistic Regression, XGBoost, model training, metrics, predictions hoặc smoke experiment trong P2B.
 
 ### Phase 3 - Pipeline tiền xử lý chống leakage
 
@@ -597,12 +612,12 @@ Trạng thái: **Completed**.
 | Dataset loading | Đọc registry và active file | `data/datasets.yaml` | `LoadedDataset(features, target, metadata)` | Loader tests |
 | Schema validation | Verify schema/checksum trước run | DataFrame, registry | Validation report | Bad schema tests |
 | Target normalization | Map target về 0/1 | Series, mapping | Binary target | Mapping tests |
-| Split generation | Holdout/k-fold/Nx2/nested-lite | Target, seed | Fold definitions | Determinism tests |
+| Split generation | Stratified holdout trong P2B; k-fold/Nx2/nested-lite thuộc phase sau | Target, seed | Split definitions | Determinism tests |
 | Preprocessing | Impute, WOE, VIF, scaling train-only | Fold data | Transformed data | Leakage tests |
 | Model factory | Tạo estimator theo config | Model config | Estimator wrapper | `predict_proba` tests |
 | Hyperparameter search | Inner CV hoặc fixed/reduced grid | Model, grid | Best params | No test-fold access |
 | Metrics | AUC, Brier, Partial Gini, EMP | y_true, y_prob | Metrics dict | Toy/reference tests |
-| Artifact storage | Lưu config, split, prediction, metrics | Run objects | JSON/CSV/Parquet | Schema tests |
+| Artifact storage | P2B lưu config, manifest và split; prediction/metrics thuộc P2C trở đi | Run objects | JSON/CSV | Schema tests |
 | Aggregation | Fold-level sang dataset-level | Raw metrics | Aggregated tables | Fixture tests |
 | Statistical analysis | Rank, Friedman, Rom, Bayesian | Aggregated metrics | Statistical tables | Known examples |
 | Reporting | Sinh Markdown/HTML reports | Aggregated outputs | Reports | Regeneration smoke |
