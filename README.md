@@ -130,6 +130,8 @@ DBN là mô hình có trong nghiên cứu gốc, nhưng không được tái l�
 ├── paper/
 ├── results/
 ├── scripts/
+├── src/
+│   └── creditrep/
 ├── tests/
 └── website/
 ```
@@ -144,15 +146,29 @@ DBN là mô hình có trong nghiên cứu gốc, nhưng không được tái l�
 ## Yêu cầu môi trường
 
 - Python: đã kiểm tra với Python `3.11.0`.
-- Runtime dependencies: `requirements.txt`.
-- Test/development dependencies: `requirements-dev.txt`.
+- Runtime dependencies: khai báo trong `pyproject.toml` và đồng bộ trong `requirements.txt`.
+- Test/development dependencies: optional extra `test` trong `pyproject.toml`.
 
-Thiết lập môi trường sạch:
+Cài package chỉ để sử dụng runtime:
+
+```powershell
+python -m pip install -e .
+```
+
+Cài package để phát triển và chạy test:
+
+```powershell
+python -m pip install -e ".[test]"
+```
+
+`pip install -e .` chỉ cài runtime dependencies. `pip install -e ".[test]"` cài thêm dependency dùng để chạy test, nên không cần chạy `pip install pytest` thủ công sau đó.
+
+Thiết lập môi trường phát triển:
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\pip.exe install -r requirements-dev.txt
+.\.venv\Scripts\python.exe -m pip install -e ".[test]"
 ```
 
 ## Website local P1A
@@ -203,7 +219,7 @@ Cấu trúc nội dung chính:
 - `website/content/paper.yaml`: thông tin paper gốc, thiết kế thực nghiệm và kết quả chính do paper báo cáo.
 - `website/content/background.md`: bối cảnh và mục đích của đề tài thực tập.
 - `website/content/limitations.md`: hạn chế của paper và hạn chế khi tái thực hiện.
-- `website/content/progress.yaml`: source of truth cho trạng thái phase; Phase 0 là `Completed`, Phase 1 là `Completed`, Phase 2 đến Phase 11 là `Planned`.
+- `website/content/progress.yaml`: source of truth cho trạng thái phase; Phase 0, Phase 1 và Phase 2 là `Completed`, Phase 3 là `Next`, Phase 4 đến Phase 11 là `Planned`.
 - `website/content/methods.md`: phương pháp dự kiến.
 - `website/content/deviations.md`: deviation và giới hạn hiện tại.
 - `data/datasets.yaml`: source of truth cho metadata dataset hiển thị trên website.
@@ -397,6 +413,70 @@ Verify toàn bộ checksum:
 
 Script tự xác định repository root theo vị trí script, nên có thể chạy từ root hoặc thư mục khác. Kết quả `pass: true` nghĩa là file tồn tại, checksum khớp, schema/target/class count/default rate/metadata feature set đều khớp registry.
 
+## Dataset loader P2A
+
+Phase 2A bổ sung package Python `creditrep` trong `src/` để các phase thực nghiệm sau dùng chung một interface load dataset:
+
+```python
+from creditrep.datasets import load_dataset
+
+loaded = load_dataset("GC")
+loaded.dataset_id
+loaded.features
+loaded.target
+loaded.metadata
+```
+
+`data/datasets.yaml` tiếp tục là source of truth. Mỗi dataset khai báo `active_file`, `reader`, `target.mapping_to_binary`, `identifier_columns`, `ignored_columns`, `numeric_columns` và `categorical_columns`. Loader đọc file active, validate schema, chuẩn hóa target về `0 = good/non-default` và `1 = bad/default`, rồi loại target cùng identifier/ignored columns khỏi `features`.
+
+Kiểm tra nhanh một dataset mà không in raw records:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\inspect_dataset.py --dataset GC
+.\.venv\Scripts\python.exe scripts\inspect_dataset.py --dataset TC
+.\.venv\Scripts\python.exe scripts\inspect_dataset.py --dataset GMC
+```
+
+P2A không thực hiện imputation, encoding, scaling, WOE, VIF, train/test split, cross-validation, training model, metrics hoặc ghi experiment artifact. Các phần đó thuộc các bước P2B/P2C và phase sau.
+
+## Split và artifact P2B
+
+Phase 2B bổ sung deterministic stratified holdout split và experiment artifact contract. Config mẫu nằm trong:
+
+- `configs/experiments/split_gc.yaml`
+- `configs/experiments/split_tc.yaml`
+
+Tạo split artifact:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\create_split_artifact.py --config configs\experiments\split_gc.yaml
+.\.venv\Scripts\python.exe scripts\create_split_artifact.py --config configs\experiments\split_tc.yaml
+```
+
+CLI load config, load dataset bằng P2A, kiểm tra checksum từ `data/checksums-sha256.csv`, tạo split deterministic và ghi artifact vào `artifacts/experiments/<experiment_id>/`. Artifact gồm `manifest.json`, `config.yaml`, `split.json` và `split.csv`. `split.csv` chỉ lưu `row_position,partition`, không lưu feature values hoặc target values.
+
+`config_hash` là SHA-256 trên config đã parse/normalize. `split_hash` là SHA-256 trên payload canonical gồm dataset ID, source file portable, checksum active file, strategy, test size, seed, train indices và test indices. Cùng dataset/config/seed tạo cùng `split_hash`; timestamp chỉ ảnh hưởng `experiment_id`, không ảnh hưởng `split_hash`.
+
+Chi tiết contract nằm trong `docs/EXPERIMENT_ARTIFACT_CONTRACT.md`.
+
+P2B không train model, không tính metrics, không sinh predictions và không chạy smoke experiment. Các phần đó thuộc P2C và phase sau.
+
+## Smoke experiment runner P2C
+
+Phase 2C bổ sung runner end-to-end tối thiểu để xác nhận pipeline có thể load dataset, kiểm tra checksum, tái dùng deterministic split P2B, fit preprocessing train-only, train Logistic Regression hoặc XGBoost, sinh probability test set, tính metrics tối thiểu và ghi artifact.
+
+Ba config bắt buộc:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_experiment.py --config configs\experiments\smoke_gc_lr.yaml
+.\.venv\Scripts\python.exe scripts\run_experiment.py --config configs\experiments\smoke_gc_xgb.yaml
+.\.venv\Scripts\python.exe scripts\run_experiment.py --config configs\experiments\smoke_tc_lr.yaml
+```
+
+Smoke artifacts mở rộng P2B với `metrics.json`, `predictions.csv` và `model_metadata.json`. `predictions.csv` chỉ chứa `row_position,partition,y_true,y_score,y_pred`, không chứa raw features. Mọi smoke run có `publishable: false` và `result_scope: smoke_validation`; các metric này chỉ dùng để xác minh pipeline, không phải kết quả nghiên cứu và không đưa lên website như kết quả khoa học.
+
+Chi tiết runner nằm trong `docs/SMOKE_EXPERIMENT_RUNNER.md`.
+
 ## Target mapping
 
 | Dataset | Target | Mapping dùng trong pipeline |
@@ -426,14 +506,26 @@ Numeric/categorical/identifier metadata đầy đủ nằm trong `data/datasets.
 Sau khi clone và đặt raw data đúng vị trí:
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\pip.exe install -r requirements-dev.txt
-.\.venv\Scripts\python.exe scripts\convert_th02.py --input data/raw/th02/public.xls --output data/processed/th02/th02.csv
-.\.venv\Scripts\python.exe scripts\verify_credit_datasets.py --dataset all --checksums-only
-.\.venv\Scripts\python.exe scripts\verify_credit_datasets.py --dataset all
-.\.venv\Scripts\python.exe -m pytest tests/test_verify_credit_datasets.py
+py -3.11 -m venv .venv-clean
+.\.venv-clean\Scripts\Activate.ps1
+
+python -m pip install --upgrade pip
+python -m pip install -e ".[test]"
+
+python scripts\convert_th02.py --input data/raw/th02/public.xls --output data/processed/th02/th02.csv
+python scripts\verify_credit_datasets.py --dataset all --checksums-only
+python scripts\verify_credit_datasets.py --dataset all
+python scripts\inspect_dataset.py --dataset GC
+python scripts\create_split_artifact.py --config configs\experiments\split_gc.yaml
+python scripts\run_experiment.py --config configs\experiments\smoke_gc_lr.yaml
+python -m pytest
+python -m pip check
+
+deactivate
+Remove-Item -Recurse -Force .venv-clean
 ```
+
+`.venv-clean` chỉ là môi trường kiểm tra tạm thời và không được commit. Số lượng test có thể tăng theo thời gian; tiêu chí dài hạn là toàn bộ test suite hiện hành phải pass.
 
 ## Trạng thái hiện tại
 
@@ -444,7 +536,10 @@ python -m venv .venv
 - Đã chuyển `data/checksums-sha256.csv` sang relative portable paths.
 - Đã tạo `data/datasets.yaml` làm registry metadata chính.
 - Đã có script kiểm tra dữ liệu `scripts/verify_credit_datasets.py`.
+- Đã triển khai P2A dataset loader trong `src/creditrep/datasets/`, kèm CLI `scripts/inspect_dataset.py` và unit test fixture độc lập raw data.
+- Đã triển khai P2B deterministic split và artifact contract trong `src/creditrep/config/`, `src/creditrep/splitting/`, `src/creditrep/artifacts/`, kèm CLI `scripts/create_split_artifact.py`.
+- Đã triển khai P2C smoke experiment runner trong `src/creditrep/preprocessing/`, `src/creditrep/models/`, `src/creditrep/evaluation/`, `src/creditrep/experiments/`, kèm CLI `scripts/run_experiment.py`.
 - Phase 0: Completed với 6 dataset công khai đã xác minh; giữ caveat provenance HMEQ.
 - Phase 1: Completed; P1A Completed, P1B Completed, P1C Completed; production deployment operational tại `http://34.142.206.15`; manual rollback production PASS và automatic failed-deployment rollback PASS.
-- Phase 2 đến Phase 11: Planned; chưa chạy model, chưa có pipeline smoke experiment và chưa có kết quả khoa học.
-- Bước tiếp theo là Phase 2 - nền tảng thực nghiệm và smoke test; Phase 2 vẫn Planned, chưa bắt đầu.
+- Phase 2: P2A Completed; P2B Completed; P2C Completed ở mức smoke validation; smoke metrics không phải kết quả nghiên cứu.
+- Phase 3: Next; Phase 4 đến Phase 11: Planned; chưa có preprocessing protocol khoa học đầy đủ, benchmark đầy đủ hoặc kết quả khoa học chính thức.

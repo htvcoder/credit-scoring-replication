@@ -10,11 +10,13 @@ data/processed/*
 # Experiment outputs
 results/*
 !results/.gitkeep
+artifacts/experiments/
 
 # Python
 __pycache__/
 *.py[cod]
 .venv/
+.venv-clean/
 venv/
 .pytest_cache/
 .mypy_cache/
@@ -51,3 +53,5 @@ kaggle.json
 *credentials*
 service-account*.json
 client_secret*.json
+
+*.egg-info/

@@ -1,0 +1,29 @@
+experiment:
+  name: smoke_gc_lr
+  purpose: smoke_validation
+  publishable: false
+
+dataset:
+  id: GC
+
+split:
+  strategy: stratified_holdout
+  test_size: 0.2
+  random_seed: 42
+  shuffle: true
+
+preprocessing:
+  mode: smoke_baseline
+
+model:
+  type: logistic_regression
+  parameters:
+    max_iter: 1000
+    solver: liblinear
+    random_state: 42
+
+evaluation:
+  classification_threshold: 0.5
+
+output:
+  root_dir: artifacts/experiments

@@ -37,6 +37,7 @@ def test_registry_has_all_required_datasets_and_fields():
     required = {
         "id",
         "full_name",
+        "active_file",
         "raw_file",
         "target",
         "expected",

@@ -85,7 +85,7 @@ export default function InternshipPage() {
           <div>
             <dt>DOI</dt>
             <dd>
-              <a className="text-link" href={paper.official_link}>
+              <a className="text-link" href={paper.official_link} rel="noopener noreferrer" target="_blank">
                 {paper.doi}
               </a>
             </dd>

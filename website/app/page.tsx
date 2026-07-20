@@ -87,6 +87,10 @@ export default function Home() {
           <div>
             <p className="eyebrow">Tiến độ</p>
             <h2>Trạng thái phase</h2>
+            <p className="muted">
+              Phase 2 đã hoàn thành nền tảng experiment; Phase 3 là bước tiếp
+              theo. Chưa có kết quả nghiên cứu chính thức để công bố.
+            </p>
           </div>
           <Link className="text-link" href="/tien-do/">
             Xem roadmap
