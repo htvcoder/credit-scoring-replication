@@ -418,6 +418,8 @@ Phase 2 hiện đủ điều kiện đánh dấu **Completed** ở mức experim
 
 ### Phase 3 - Pipeline tiền xử lý chống leakage
 
+Phase 3 hiện **Completed** ở mức preprocessing/nested-CV foundation. Checkpoint **P3A - Completed** bổ sung nền tảng contract train-only cho Protocol A: mean imputation cho numeric, most-frequent/mode imputation cho categorical, tie-break deterministic, reserved token cho unseen category, schema validation và metadata JSON-serializable. Checkpoint **P3B - Completed** bổ sung WOE categorical train-only, iterative VIF train-only và optional standard scaling train-only. P3B không triển khai numeric supervised binning vì paper không đặc tả đủ rõ. Checkpoint **P3C - Completed** bổ sung deterministic repeated stratified two-fold outer CV, inner stratified k-fold, fold persistence, per-fold preprocessing fitting, tuning-isolation harness và non-publishable preprocessing-validation artifacts. Phase 3 chưa tạo scientific results, chưa chạy core replication và chưa thay thế Phase 4 metric validation; bước tiếp theo là Phase 4.
+
 | Mục | Nội dung |
 |---|---|
 | Phân loại | Must |
@@ -431,7 +433,7 @@ Phase 2 hiện đủ điều kiện đánh dấu **Completed** ở mức experim
 | Acceptance criteria | Mọi transformer fit chỉ trên training fold; selected features lưu theo fold; test leakage pass. |
 | Dependency | Phase 2. |
 | Rủi ro | WOE smoothing và VIF order không được paper mô tả đủ; AC đã source-imputed; VIF có thể không ổn định. |
-| Go/no-go | Go Phase 4/5 khi Protocol A frozen. |
+| Go/no-go | Go Phase 4/5 chỉ sau khi toàn bộ Phase 3 hoàn tất, gồm P3B WOE/VIF/scaling và P3C nested CV/fold persistence/tích hợp Protocol A. |
 | Ngoài phạm vi | Model grid đầy đủ, metric business, modern Protocol B. |
 | Commit đề xuất | `feat(preprocessing): add leakage-safe replication protocol` |
 | Tag đề xuất | `p3-leakage-safe-preprocessing` |
