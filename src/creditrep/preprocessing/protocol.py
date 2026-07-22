@@ -41,10 +41,22 @@ class ProtocolAConfig:
     """Validated configuration for Protocol A preprocessing."""
 
     protocol_name: str = PROTOCOL_A_NAME
+    protocol_version: str = "p3b-v1"
     numeric_imputation_strategy: str = "mean"
     categorical_imputation_strategy: str = "most_frequent"
     unseen_category_strategy: str = "reserved_token"
     unknown_token: str = UNKNOWN_CATEGORY_TOKEN
+    woe_enabled: bool = False
+    woe_scope: str = "categorical"
+    woe_smoothing: float = 0.5
+    woe_unknown_value: float = 0.0
+    woe_sign_convention: str = "good_over_bad"
+    vif_enabled: bool = False
+    vif_threshold: float = 10.0
+    vif_minimum_features_to_keep: int = 1
+    vif_tie_break: str = "feature_order"
+    scaling_enabled: bool = False
+    scaling_strategy: str = "standard"
 
 
 def _ensure_dataframe(X: pd.DataFrame) -> pd.DataFrame:

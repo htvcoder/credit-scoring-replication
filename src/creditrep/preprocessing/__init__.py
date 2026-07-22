@@ -10,6 +10,10 @@ from creditrep.preprocessing.protocol import (
     ProtocolAConfig,
     features_from_dataset_metadata,
 )
+from creditrep.preprocessing.pipeline import ProtocolAPreprocessingPipeline
+from creditrep.preprocessing.scaling import TrainOnlyStandardScaler
+from creditrep.preprocessing.vif import IterativeVIFSelector
+from creditrep.preprocessing.woe import WeightOfEvidenceEncoder
 
 __all__ = [
     "LeakageSafePreprocessor",
@@ -17,6 +21,10 @@ __all__ = [
     "PreprocessingProtocol",
     "ProtocolAConfig",
     "UNKNOWN_CATEGORY_TOKEN",
+    "IterativeVIFSelector",
+    "ProtocolAPreprocessingPipeline",
+    "TrainOnlyStandardScaler",
+    "WeightOfEvidenceEncoder",
     "build_smoke_preprocessor",
     "features_from_dataset_metadata",
     "load_protocol_a_config",

@@ -1,5 +1,6 @@
 protocol:
   name: protocol_a
+  version: p3b-v1
   numeric_imputation:
     strategy: mean
   categorical_imputation:
@@ -7,3 +8,17 @@ protocol:
   unseen_category:
     strategy: reserved_token
     token: "__UNKNOWN__"
+  woe:
+    enabled: true
+    scope: categorical
+    smoothing: 0.5
+    unknown_value: 0.0
+    sign_convention: good_over_bad
+  vif:
+    enabled: true
+    threshold: 10.0
+    minimum_features_to_keep: 1
+    tie_break: feature_order
+  scaling:
+    enabled: false
+    strategy: standard
