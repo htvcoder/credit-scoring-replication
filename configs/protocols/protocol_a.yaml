@@ -1,0 +1,9 @@
+protocol:
+  name: protocol_a
+  numeric_imputation:
+    strategy: mean
+  categorical_imputation:
+    strategy: most_frequent
+  unseen_category:
+    strategy: reserved_token
+    token: "__UNKNOWN__"
