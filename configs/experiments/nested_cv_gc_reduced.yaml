@@ -1,0 +1,34 @@
+experiment:
+  name: nested_cv_gc_reduced
+  result_scope: preprocessing_validation
+  publishable: false
+
+dataset:
+  id: GC
+
+cross_validation:
+  outer:
+    strategy: repeated_stratified_2fold
+    n_repeats: 1
+    n_splits: 2
+    shuffle: true
+    random_seed: 42
+  inner:
+    strategy: stratified_kfold
+    n_splits: 2
+    shuffle: true
+    random_seed_policy: derived_from_outer
+
+preprocessing:
+  protocol_config: configs/protocols/protocol_a.yaml
+
+tuning:
+  purpose: infrastructure_validation
+  candidates:
+    - name: neutral
+      bias: 0.0
+    - name: conservative
+      bias: 0.1
+
+output:
+  root_dir: artifacts/experiments

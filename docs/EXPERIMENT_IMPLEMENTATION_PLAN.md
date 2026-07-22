@@ -418,7 +418,7 @@ Phase 2 hiện đủ điều kiện đánh dấu **Completed** ở mức experim
 
 ### Phase 3 - Pipeline tiền xử lý chống leakage
 
-Phase 3 hiện **In Progress**. Checkpoint **P3A - Completed** bổ sung nền tảng contract train-only cho Protocol A: mean imputation cho numeric, most-frequent/mode imputation cho categorical, tie-break deterministic, reserved token cho unseen category, schema validation và metadata JSON-serializable. Checkpoint **P3B - Completed** bổ sung WOE categorical train-only, iterative VIF train-only và optional standard scaling train-only. P3B không triển khai numeric supervised binning vì paper không đặc tả đủ rõ. **P3C - Pending** vẫn gồm nested CV, fold persistence, per-fold pipeline fitting và artifact integration. Không đánh dấu toàn bộ Phase 3 Completed trước khi P3C hoàn tất.
+Phase 3 hiện **Completed** ở mức preprocessing/nested-CV foundation. Checkpoint **P3A - Completed** bổ sung nền tảng contract train-only cho Protocol A: mean imputation cho numeric, most-frequent/mode imputation cho categorical, tie-break deterministic, reserved token cho unseen category, schema validation và metadata JSON-serializable. Checkpoint **P3B - Completed** bổ sung WOE categorical train-only, iterative VIF train-only và optional standard scaling train-only. P3B không triển khai numeric supervised binning vì paper không đặc tả đủ rõ. Checkpoint **P3C - Completed** bổ sung deterministic repeated stratified two-fold outer CV, inner stratified k-fold, fold persistence, per-fold preprocessing fitting, tuning-isolation harness và non-publishable preprocessing-validation artifacts. Phase 3 chưa tạo scientific results, chưa chạy core replication và chưa thay thế Phase 4 metric validation; bước tiếp theo là Phase 4.
 
 | Mục | Nội dung |
 |---|---|
