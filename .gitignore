@@ -55,3 +55,4 @@ service-account*.json
 client_secret*.json
 
 *.egg-info/
+presentations
