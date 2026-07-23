@@ -165,7 +165,9 @@ Không in dữ liệu cá nhân hoặc toàn bộ nội dung dataset. Các số 
 
 ### 4.3. Checksum
 
-`data/checksums-sha256.csv` có checksum cho các file raw sau: AC, GC, GMC, HMEQ, TC, TH02. Sau remediation, file này cũng ghi `data/raw/hmeq/hmeq_full.csv` và `data/processed/th02/th02.csv`. Checksum của `publicdict.xls` đã được sửa theo hash hiện tại trên đĩa: `639DBECD784A62D4BFEF16154FEB71BDE71E11D7DEE8626E23CAA76B31B0A62F`.
+`data/checksums-sha256.csv` có checksum cho các file raw sau: AC, GC, GMC, HMEQ, TC, TH02. Sau remediation, file này cũng ghi `data/raw/hmeq/hmeq_full.csv` và `data/processed/th02/th02.csv`.
+
+Ghi chú provenance TH02 ngày 2026-07-23: chỉ checksum của file data dictionary phụ trợ `data/raw/th02/publicdict.xls` được re-baseline từ checksum cũ `639DBECD784A62D4BFEF16154FEB71BDE71E11D7DEE8626E23CAA76B31B0A62F` sang artifact hiện đang được phân phối từ cùng nguồn công khai, SHA-256 `DDCF7ABB426521DCCB51A9A081D81890632BAAA2CEC0F5253863751545B5A7C5`. Artifact mang checksum cũ không còn khả dụng. `publicdict.xls` không được `scripts/convert_th02.py` sử dụng để tạo processed dataset; `data/processed/th02/th02.csv` vẫn giữ SHA-256 `C9CB96394DDE17CF82C3ABC5D8FFE465DC1F68CE442D680E868A7B9224AD59B7`. Shape, schema, target mapping, class counts và default rate của TH02 vẫn pass; thay đổi này không ảnh hưởng dữ liệu active, target mapping hoặc schema. Sau cập nhật, toàn bộ verifier và pytest đã pass.
 
 ### 4.4. Trả lời các câu hỏi dữ liệu bắt buộc
 

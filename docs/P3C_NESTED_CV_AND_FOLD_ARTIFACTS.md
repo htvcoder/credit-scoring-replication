@@ -89,13 +89,13 @@ Unsupported CV strategies, invalid split counts, insufficient minority-class row
 
 ## Known Checksum Issues
 
-The local raw-data full suite still has pre-existing checksum mismatches for:
+At the time of P3C, the local raw-data full suite still had pre-existing checksum mismatches for:
 
 - `data/raw/gmc/Data Dictionary.xls`
 - `data/raw/tc/default of credit card clients.xls`
 - `data/raw/th02/publicdict.xls`
 
-These are not P3C regressions and are not remediated here.
+These are not P3C regressions and were not remediated in P3C. The TH02 auxiliary dictionary checksum was re-baselined on 2026-07-23 to the currently distributed public artifact; see `docs/data-cards/TH02.md`.
 
 ## Out Of Scope
 

@@ -80,13 +80,13 @@ P3B includes tests for hand-computed WOE, finite smoothing, unknown category fal
 
 ## Known Checksum Issues
 
-The local full raw-data suite still has three pre-existing checksum mismatches unrelated to P3B:
+At the time of P3B, the local full raw-data suite still had three pre-existing checksum mismatches unrelated to P3B:
 
 - `data/raw/gmc/Data Dictionary.xls`
 - `data/raw/tc/default of credit card clients.xls`
 - `data/raw/th02/publicdict.xls`
 
-These were reproduced at `p2-experiment-foundation-complete` with the same local data. P3B does not modify raw data or `data/checksums-sha256.csv`.
+These were reproduced at `p2-experiment-foundation-complete` with the same local data. The TH02 auxiliary dictionary checksum was re-baselined on 2026-07-23 to the currently distributed public artifact; see `docs/data-cards/TH02.md`. P3B itself did not modify raw data or `data/checksums-sha256.csv`.
 
 ## Remaining P3C Work
 
