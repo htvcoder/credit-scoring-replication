@@ -35,7 +35,7 @@ Free-form status values are not allowed.
 
 Only one phase may be `in_progress`. Only one phase may be `next`. A completed phase must have a milestone tag unless an explicit documented exception is added. A phase with required checkpoints cannot be `completed` unless those checkpoints are `completed`. `last_completed_phase`, `current_phase`, and `next_phase` must match the phase list.
 
-Phase 3 is completed with tag `p3-leakage-safe-preprocessing-complete`. Phase 4 - Metric validation may be `next` before work starts or `in_progress` while Phase 4 checkpoints are active.
+Phase 3 is completed with tag `p3-leakage-safe-preprocessing-complete`. Phase 4 - Metric validation may be `next` before work starts, `in_progress` while P4 checkpoints are active, or `completed` once P4A/P4B/P4C all pass. After Phase 4 completion, Phase 5 must be `next`.
 
 ## Commands
 
@@ -51,7 +51,7 @@ Check without writing:
 python scripts/sync_project_status.py --check
 ```
 
-Use `--skip-tag-existence` in shallow clones that do not have tags fetched. This still validates tag names.
+Local tag existence checks are skipped by default so synchronization can pass before a reviewed milestone tag is actually created. Use `--check-tag-existence` only when you intentionally want to require local tag existence as well as tag-name validation.
 
 ## Generated Files
 
@@ -78,7 +78,7 @@ The rest of README, implementation docs, feasibility reports, P3A/P3B/P3C docs, 
 CI runs:
 
 ```bash
-python scripts/sync_project_status.py --check --skip-tag-existence
+python scripts/sync_project_status.py --check
 ```
 
 This check does not require raw datasets, production secrets, or network access.
@@ -108,7 +108,7 @@ Move at most one phase to `next` or `in_progress`. Keep `project.current_phase` 
 
 ## Milestone Tags
 
-Completed phases should record tags such as `p3-leakage-safe-preprocessing-complete`. The harness validates tag format and can validate local existence when full Git history/tags are available.
+Completed phases should record tags such as `p3-leakage-safe-preprocessing-complete`. The harness validates tag format by default and can optionally validate local tag existence when full Git history/tags are available.
 
 ## Historical Text
 
@@ -132,6 +132,15 @@ Phase 4 `planned` to `next` or `in_progress`:
 - Set Phase 4 `status: next` before implementation starts, or `status: in_progress` once a Phase 4 checkpoint is being worked.
 - Set `project.current_phase: 4`.
 - Set `project.next_phase: 4`.
+
+Phase 4 `in_progress` to `completed`:
+
+- Set Phase 4 `status: completed`.
+- Add `tag: p4-metric-validation-complete`.
+- Set P4A, P4B, and P4C checkpoints to `completed`.
+- Set `project.last_completed_phase: 4`.
+- Set `project.current_phase: 5`.
+- Set `project.next_phase: 5`.
 
 ## Phase Completion Checklist
 

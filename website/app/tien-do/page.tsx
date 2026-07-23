@@ -10,9 +10,10 @@ export default function ProgressPage() {
         <p className="eyebrow">Roadmap</p>
         <h1>Tiến độ các phase</h1>
         <p className="lead">
-          Phase 3 đã Completed ở mức preprocessing và nested-CV foundation.
-          Phase 4 - Metric validation là bước tiếp theo; website chưa công bố
-          scientific metrics hoặc core replication results.
+          Phase 4 đã Completed ở mức metric-validation artifact
+          non-publishable. Phase 5 - Mô hình truyền thống và ensemble là bước
+          tiếp theo; website chưa công bố scientific metrics hoặc core
+          replication results.
         </p>
       </section>
 

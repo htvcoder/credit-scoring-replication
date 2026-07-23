@@ -539,13 +539,14 @@ Remove-Item -Recurse -Force .venv-clean
 - Đã triển khai P2A dataset loader trong `src/creditrep/datasets/`, kèm CLI `scripts/inspect_dataset.py` và unit test fixture độc lập raw data.
 - Đã triển khai P2B deterministic split và artifact contract trong `src/creditrep/config/`, `src/creditrep/splitting/`, `src/creditrep/artifacts/`, kèm CLI `scripts/create_split_artifact.py`.
 - Đã triển khai P2C smoke experiment runner trong `src/creditrep/preprocessing/`, `src/creditrep/models/`, `src/creditrep/evaluation/`, `src/creditrep/experiments/`, kèm CLI `scripts/run_experiment.py`.
+- Đã hoàn tất Phase 4 metric validation: ROC AUC, Brier Score và Partial Gini có production implementation/reference validation; EMP được chốt ở trạng thái `unsupported` có provenance rõ ràng; metric config registry, nested-CV integration và metric-validation artifacts đã có ở mức non-publishable.
 
 <!-- PROJECT_STATUS:BEGIN -->
 Generated from website/content/progress.yaml. Do not edit manually.
 
-- Last completed phase: Phase 3
-- Current phase: Phase 4
-- Next phase: Phase 4 - Metric validation
+- Last completed phase: Phase 4
+- Current phase: Phase 5
+- Next phase: Phase 5 - Classical and ensemble models
 - Updated at: 2026-07-23
 
 | Phase | Status | Milestone tag |
@@ -554,8 +555,8 @@ Generated from website/content/progress.yaml. Do not edit manually.
 | Phase 1 - Website production foundation | Completed | p1-website-production-complete |
 | Phase 2 - Experiment foundation | Completed | p2-experiment-foundation-complete |
 | Phase 3 - Leakage-safe preprocessing | Completed | p3-leakage-safe-preprocessing-complete |
-| Phase 4 - Metric validation | In Progress | - |
-| Phase 5 - Mô hình truyền thống và ensemble | Planned | - |
+| Phase 4 - Metric validation | Completed | p4-metric-validation-complete |
+| Phase 5 - Classical and ensemble models | Next | - |
 | Phase 6 - MLP depth replication | Planned | - |
 | Phase 7 - Core replication run | Planned | - |
 | Phase 8 - Modern reassessment | Planned | - |
@@ -571,12 +572,11 @@ Phase 3 checkpoints:
 Phase 4 checkpoints:
 - P4A: Completed - Metric specification và metric contract.
 - P4B: Completed - ROC AUC, Brier Score và Partial Gini implementation/reference validation.
-- P4C: Planned - EMP, integration và metric-validation harness.
+- P4C: Completed - EMP unsupported có provenance, metric config registry, nested-CV integration và metric-validation harness.
 
-Phase 3 scope limits:
-- Completed preprocessing and nested-CV foundation only.
-- No validated scientific metrics yet.
+Current scope limits:
 - Core replication has not run.
-- Smoke/reduced artifacts remain non-publishable validation artifacts.
-- Phase 4 - Metric validation is next/in progress until metric validation completes.
+- Smoke, reduced, fake, preprocessing-validation, and metric-validation artifacts remain non-publishable validation artifacts.
+- Website still must not present validation artifacts as scientific results.
+- Phase 4 completed metric validation for AUC, Brier Score, Partial Gini, and EMP unsupported handling; Phase 5 is next.
 <!-- PROJECT_STATUS:END -->

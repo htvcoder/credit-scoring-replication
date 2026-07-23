@@ -177,9 +177,18 @@ def validate_status_schema(status: dict[str, Any], check_tags: bool = True) -> V
         result.add("Phase 3 must be completed.")
     if by_number.get(3, {}).get("tag") != "p3-leakage-safe-preprocessing-complete":
         result.add("Phase 3 tag must be p3-leakage-safe-preprocessing-complete.")
-    if by_number.get(4, {}).get("status") not in {"next", "in_progress"}:
-        result.add("Phase 4 must be next or in_progress.")
-    if project.get("last_completed_phase") == 3 and project.get("next_phase") != 4:
+    phase4_status = by_number.get(4, {}).get("status")
+    phase5_status = by_number.get(5, {}).get("status")
+    if phase4_status not in {"next", "in_progress", "completed"}:
+        result.add("Phase 4 must be next, in_progress, or completed.")
+    if phase4_status == "completed":
+        if project.get("last_completed_phase") != 4:
+            result.add("project.last_completed_phase must be 4 when Phase 4 is completed.")
+        if phase5_status != "next":
+            result.add("Phase 5 must be next after Phase 4 completion.")
+        if project.get("current_phase") != 5 or project.get("next_phase") != 5:
+            result.add("project.current_phase and project.next_phase must both be 5 after Phase 4 completion.")
+    elif project.get("last_completed_phase") == 3 and project.get("next_phase") != 4:
         result.add("Phase 4 must be the next phase after Phase 3.")
 
     if check_tags:
@@ -219,7 +228,7 @@ def render_managed_section(status: dict[str, Any]) -> str:
         "",
         f"- Last completed phase: Phase {project['last_completed_phase']}",
         f"- Current phase: Phase {project['current_phase']}",
-        f"- Next phase: Phase {project['next_phase']} - {by_number[project['next_phase']]['name']}",
+        f"- Next phase: Phase {project['next_phase']} - {by_number[project['next_phase']].get('name', by_number[project['next_phase']]['title'])}",
         f"- Updated at: {project['updated_at']}",
         "",
         "| Phase | Status | Milestone tag |",
@@ -242,12 +251,16 @@ def render_managed_section(status: dict[str, Any]) -> str:
     lines.extend(
         [
             "",
-            "Phase 3 scope limits:",
-            "- Completed preprocessing and nested-CV foundation only.",
-            "- No validated scientific metrics yet.",
+            "Current scope limits:",
             "- Core replication has not run.",
-            "- Smoke/reduced artifacts remain non-publishable validation artifacts.",
-            "- Phase 4 - Metric validation is next/in progress until metric validation completes.",
+            "- Smoke, reduced, fake, preprocessing-validation, and metric-validation artifacts remain non-publishable validation artifacts.",
+            "- Website still must not present validation artifacts as scientific results.",
+            (
+                "- Phase 4 completed metric validation for AUC, Brier Score, Partial Gini, and EMP unsupported handling; "
+                "Phase 5 is next."
+                if by_number[4]["status"] == "completed"
+                else "- Phase 4 - Metric validation is next/in progress until metric validation completes."
+            ),
             END,
         ]
     )
@@ -365,10 +378,15 @@ def main() -> int:
     parser.add_argument(
         "--skip-tag-existence",
         action="store_true",
-        help="Validate tag names but skip local tag existence checks for shallow clones.",
+        help="Retained for compatibility; local tag existence checks are skipped by default.",
+    )
+    parser.add_argument(
+        "--check-tag-existence",
+        action="store_true",
+        help="Also verify that completed-phase milestone tags exist locally.",
     )
     args = parser.parse_args()
-    return run(check=args.check, skip_tag_existence=args.skip_tag_existence)
+    return run(check=args.check, skip_tag_existence=not args.check_tag_existence)
 
 
 if __name__ == "__main__":

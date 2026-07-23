@@ -53,6 +53,7 @@ def test_duplicate_checkpoint_id_fails() -> None:
 
 def test_two_in_progress_phases_fail() -> None:
     status = load_status()
+    status["phases"][4]["status"] = "in_progress"
     status["phases"][5]["status"] = "in_progress"
     assert_invalid(status, "Only one phase may be in_progress")
 
@@ -83,10 +84,22 @@ def test_phase3_stale_website_text_fails(tmp_path: Path) -> None:
     assert any("Stale current status" in error for error in result.errors)
 
 
-def test_phase4_not_next_or_in_progress_fails() -> None:
+def test_phase4_planned_still_fails() -> None:
     status = load_status()
     status["phases"][4]["status"] = "planned"
-    assert_invalid(status, "Phase 4 must be next or in_progress")
+    assert_invalid(status, "Phase 4 must be next, in_progress, or completed")
+
+
+def test_phase4_completed_requires_phase5_next_and_project_pointer_updates() -> None:
+    status = load_status()
+    status["project"]["last_completed_phase"] = 4
+    status["project"]["current_phase"] = 5
+    status["project"]["next_phase"] = 5
+    status["phases"][4]["status"] = "completed"
+    status["phases"][4]["tag"] = "p4-metric-validation-complete"
+    status["phases"][4]["checkpoints"][2]["status"] = "completed"
+    status["phases"][5]["status"] = "next"
+    assert sync.validate_status_schema(status, check_tags=False).ok
 
 
 def test_website_derivative_matches_source_policy() -> None:
@@ -170,7 +183,7 @@ def test_phase_status_update_updates_rendered_status() -> None:
     status = load_status()
     status["phases"][4]["status"] = "in_progress"
     rendered = sync.render_managed_section(status)
-    assert "| Phase 4 - Metric validation | In Progress | - |" in rendered
+    assert "| Phase 4 - Metric validation | In Progress | p4-metric-validation-complete |" in rendered
 
 
 def test_historical_text_is_not_misread_as_stale(tmp_path: Path) -> None:

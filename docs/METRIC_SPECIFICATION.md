@@ -16,12 +16,12 @@ Target chuẩn toàn dự án là `0 = good / non-default` và `1 = bad / defaul
 
 | Metric | Implementation hiện tại | Nơi dùng | Trạng thái | Thiếu | Backward compatibility |
 |---|---|---|---|---|---|
-| ROC AUC | `src/creditrep/metrics/discrimination.py::compute_roc_auc`; smoke adapter trong `src/creditrep/evaluation/metrics.py` tái sử dụng implementation này | P2C smoke runner, `metrics.json`, CLI summary, P4 metric module | Implemented và reference-validated trong P4B | Chưa có fold-level scientific artifact integration đầy đủ của P4C | Giữ flat key `roc_auc` trong smoke `test_metrics` |
-| Brier Score | `src/creditrep/metrics/calibration.py::compute_brier_score`; smoke adapter tái sử dụng implementation này | P2C smoke runner, `metrics.json`, P4 metric module | Implemented và hand/reference-validated trong P4B | Chưa có fold-level scientific artifact integration đầy đủ của P4C | Giữ flat key `brier_score` |
+| ROC AUC | `src/creditrep/metrics/discrimination.py::compute_roc_auc`; smoke adapter trong `src/creditrep/evaluation/metrics.py` tái sử dụng implementation này | P2C smoke runner, `metrics.json`, P4 metric module, P4C metric-validation harness | Implemented và reference-validated trong P4B | Không publish như scientific result ở Phase 4 | Giữ flat key `roc_auc` trong smoke `test_metrics` |
+| Brier Score | `src/creditrep/metrics/calibration.py::compute_brier_score`; smoke adapter tái sử dụng implementation này | P2C smoke runner, `metrics.json`, P4 metric module, P4C metric-validation harness | Implemented và hand/reference-validated trong P4B | Không publish như scientific result ở Phase 4 | Giữ flat key `brier_score` |
 | Accuracy/precision/recall/F1/log loss/confusion matrix | `compute_binary_metrics` | P2C smoke validation | Technical smoke only | Không thuộc metric core của paper, không dùng scientific reporting chính | Giữ để smoke runner không vỡ |
 | Classification threshold | `evaluation.classification_threshold` trong smoke config | `build_prediction_frame`, metrics payload | Fixed config value, mặc định fixture là `0.5` | Chưa có nguồn tham số metric/business rõ cho Phase 4 | Giữ behavior hiện tại |
-| Partial Gini | `src/creditrep/metrics/discrimination.py::compute_partial_gini` | P4 metric module | Implemented và reference-validated trong P4B | Chưa tích hợp metric-validation harness/artifact của P4C | Không ảnh hưởng smoke runner nếu chưa bật integration |
-| EMP | Chưa implemented | Chưa dùng | `not_implemented_due_to_insufficient_specification` trong P4A | Thiếu business parameters/distribution và threshold policy | Không ảnh hưởng smoke runner |
+| Partial Gini | `src/creditrep/metrics/discrimination.py::compute_partial_gini` | P4 metric module, P4C metric-validation harness | Implemented và reference-validated trong P4B | Chỉ mới validated ở mức non-publishable artifact | Không ảnh hưởng smoke runner |
+| EMP | `src/creditrep/metrics/profit.py::compute_emp` | P4C metric-validation harness | Implemented dưới dạng explicit unsupported adapter | Thiếu business parameters/distribution và threshold policy để tính numeric value | Không ảnh hưởng smoke runner |
 
 ## 3. Quy ước chung
 
@@ -111,7 +111,7 @@ Chính sách API P4B:
 | Edge cases | `undefined` nếu vùng `y_score <= b` không có quan sát hoặc không còn đủ hai class; ties deterministic theo ROC AUC rank convention; invalid `b` hoặc input invalid trả `failed` |
 | Parameters | `b`, `positive_label: 1`, `score_region: y_score <= b`, `normalization: 2 * roc_auc(subset) - 1` |
 | Exactness | `exact` theo specification P4B đã chốt |
-| Scientific reporting | Có thể dùng sau P4B validation; P4C còn thiếu integration vào metric-validation artifact |
+| Scientific reporting | Có thể dùng sau P4B validation; P4C đã nối vào metric-validation artifact non-publishable |
 
 P4A không triển khai công thức Partial Gini production. Quyết định chi tiết nằm ở `docs/decisions/P4A_PARTIAL_GINI_AND_EMP.md`.
 
@@ -123,14 +123,14 @@ P4A không triển khai công thức Partial Gini production. Quyết định ch
 | Metric ID | `emp` |
 | Mục đích | Ước lượng profit business tối đa kỳ vọng khi áp dụng classifier |
 | Input | `y_true`, `y_score`, business parameters/distribution |
-| Output | scalar profit hoặc unsupported |
+| Output | `unsupported` trong Phase 4, không có numeric value |
 | Công thức/nguồn | Paper dẫn Verbraken et al. (2014) và trình bày công thức MP/EMP tổng quát |
 | Direction | `maximize` |
 | Miền kỳ vọng | Phụ thuộc business parameters; không ép về `[0, 1]` nếu là profit |
-| Edge cases | `unsupported` nếu thiếu business parameters/distribution; `undefined` nếu threshold set không hợp lệ |
-| Parameters | `b1`, `c0`, `c_star`, distribution hoặc reference parameter source |
-| Exactness | `not_applicable` trong P4A vì chưa implemented; decision status là `not_implemented_due_to_insufficient_specification` |
-| Scientific reporting | Chưa, chỉ sau P4C và phải label exact/approximate rõ |
+| Edge cases | `unsupported` nếu thiếu business parameters/distribution hoặc threshold policy có provenance; không tự bịa tham số để đổi unsupported thành approximate |
+| Parameters | P4C adapter ghi `missing_parameters = [b1, c0, c_star, h(b1,c0), threshold_selection_policy]` |
+| Exactness | `not_applicable`; decision status cuối của P4C là `unsupported_due_to_insufficient_specification` |
+| Scientific reporting | Không; final report phải nêu đây là limitation thay vì replication thành công |
 
 ## 5. Artifact contract
 
@@ -161,7 +161,7 @@ Smoke runner P2C vẫn giữ `metrics.json.test_metrics` dạng flat dictionary 
 
 ## 6. Config contract
 
-Config Phase 4 nên khai báo:
+Config Phase 4/P4C khai báo:
 
 ```yaml
 evaluation:
@@ -172,15 +172,15 @@ evaluation:
       parameters:
         b: 0.4
     - id: emp
-      parameters:
-        parameter_source: reference_or_config
+  validation_model: deterministic_probability_estimator
 ```
 
 Rules:
 
 - Metric IDs phải thuộc registry được validate.
-- Partial Gini phải khai báo `b = 0.4` nếu dùng paper-aligned Protocol A.
-- EMP phải khai báo nguồn business parameters; không tự bịa tham số.
+- Partial Gini inject default `b = 0.4` nếu không khai báo.
+- Registry reject duplicate metric, unknown metric ID và unknown parameter.
+- EMP hiện không nhận business parameter tùy ý trong Phase 4; adapter luôn trả unsupported có provenance, không tự bịa tham số.
 - Threshold hoặc business parameters không được chọn bằng outer test labels.
 - Artifact phải lưu `metric_version`, `parameters`, `exactness`, `status` và `warnings`.
 

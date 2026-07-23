@@ -8,7 +8,7 @@ P4B triển khai production implementation và reference validation cho ba metri
 - Brier Score
 - Partial Gini với tham số mặc định `b = 0.4`
 
-P4B không triển khai EMP, không tạo scientific results và không tạo metric-validation artifacts publishable. Phase 4 sau P4B vẫn ở trạng thái `in_progress`; P4C còn phần EMP, config/integration và artifact harness.
+P4B không triển khai EMP, không tạo scientific results và không tạo metric-validation artifacts publishable. P4C sau đó đã hoàn tất phần EMP decision, config/integration và artifact harness; tài liệu này giữ vai trò historical record cho riêng checkpoint P4B.
 
 ## 2. Tóm tắt implementation
 
@@ -84,9 +84,9 @@ Chính sách xử lý lỗi:
 - EMP vẫn chưa được triển khai.
 - Decision hiện tại cho Partial Gini dựa trên wording của paper và Lessmann et al. (2015); nếu P4C hoặc nhiệm vụ sau tìm được primary source mạnh hơn mâu thuẫn với định nghĩa này, cần mở decision update thay vì sửa im lặng.
 
-## 7. P4C còn lại
+## 7. Cập nhật từ P4C
 
-- Chốt policy exact/approximate/unsupported cho EMP.
-- Mở rộng config validation cho metric selection/business parameters.
-- Tích hợp typed metric results vào metric-validation artifacts.
-- Nối metric-validation harness với nested-CV/fold-level evaluation mà không tạo publishable artifacts.
+- EMP được chốt ở trạng thái `unsupported` có provenance rõ ràng, không tạo numeric value giả.
+- Metric config registry đã hỗ trợ `roc_auc`, `brier_score`, `partial_gini` và `emp`, với default `b = 0.4` cho Partial Gini.
+- Typed `MetricResult` đã được tích hợp vào metric-validation artifacts non-publishable.
+- Metric-validation harness đã nối với nested-CV/fold-level evaluation mà không tạo publishable artifacts.

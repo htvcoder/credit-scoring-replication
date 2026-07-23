@@ -1,8 +1,8 @@
 schema_version: 1
 project:
-  last_completed_phase: 3
-  current_phase: 4
-  next_phase: 4
+  last_completed_phase: 4
+  current_phase: 5
+  next_phase: 5
   updated_at: "2026-07-23"
 status_enum:
   - planned
@@ -111,19 +111,20 @@ phases:
     numeric_id: 4
     title: "Metric và đánh giá kinh doanh"
     name: "Metric validation"
-    status: "in_progress"
-    summary: "Phase này xác minh các metric dự báo và metric kinh doanh trước khi chạy core experiment quy mô lớn. P4A đã chốt metric specification, typed metric result contract và decision record cho Partial Gini/EMP. P4B đã hoàn tất production implementation và reference validation cho ROC AUC, Brier Score và Partial Gini; P4C vẫn còn EMP, config/integration và metric-validation harness. Phase 4 chưa Completed và chưa có scientific results."
+    status: "completed"
+    tag: "p4-metric-validation-complete"
+    summary: "Phase này đã hoàn tất xác minh metric dự báo và metric kinh doanh ở mức validation artifact, không phải scientific result. P4A chốt specification và typed contract; P4B hoàn tất production implementation/reference validation cho ROC AUC, Brier Score và Partial Gini; P4C chốt EMP ở trạng thái unsupported do thiếu business specification, bổ sung metric config registry, nested-CV integration và non-publishable metric-validation artifacts."
     tasks:
       - "P4A: audit metric/evaluation hiện có, chốt specification và metric contract."
       - "P4A: ghi decision record cho Partial Gini b = 0.4 và EMP."
       - "P4B: implement/validate ROC AUC, Brier Score và Partial Gini với reference tests độc lập."
-      - "P4C: xác định EMP exact/approximate/unsupported và tích hợp metric-validation harness."
+      - "P4C: chốt EMP unsupported với provenance rõ ràng, tích hợp metric-validation harness và artifact non-publishable."
       - "Kiểm tra threshold hoặc business parameters không được chọn trên outer test fold."
     deliverables:
       - "Metric specification và decision record P4A."
       - "Typed metric result/specification contract."
       - "P4B validated metrics module cho ROC AUC, Brier Score và Partial Gini."
-      - "Evaluation engine, metric validation suite và fold-level results schema hoàn chỉnh sau P4C."
+      - "Evaluation engine, metric validation suite và fold-level results schema non-publishable cho metric validation."
     checkpoints:
       - id: "P4A"
         status: "completed"
@@ -132,14 +133,15 @@ phases:
         status: "completed"
         summary: "ROC AUC, Brier Score và Partial Gini implementation/reference validation."
       - id: "P4C"
-        status: "planned"
-        summary: "EMP, integration và metric-validation harness."
-    caveat: "P4B chỉ xác minh implementation metric và giữ smoke artifacts ở trạng thái non-publishable. P4C vẫn còn EMP, config/integration và metric-validation harness; Phase 4 chưa completed và chưa có scientific results để công bố."
+        status: "completed"
+        summary: "EMP unsupported có provenance, metric config registry, nested-CV integration và metric-validation harness."
+    caveat: "Phase 4 đã completed ở mức metric validation và non-publishable artifacts. EMP không được tái lập thành metric số vì thiếu business parameters/distribution có provenance rõ ràng; Phase 5 mới là bước tiếp theo cho model factory và baseline models. Chưa có scientific results để công bố."
   - id: "Phase 5"
     numeric_id: 5
     title: "Mô hình truyền thống và ensemble"
-    status: "planned"
-    summary: "Phase này triển khai các baseline chính của paper bằng cùng preprocessing và evaluation protocol. Kết quả baseline là điều kiện để so sánh MLP, XGBoost và modern reassessment sau này."
+    name: "Classical and ensemble models"
+    status: "next"
+    summary: "Phase này sẽ triển khai các baseline chính của paper bằng cùng preprocessing và evaluation protocol. Kết quả baseline là điều kiện để so sánh MLP, XGBoost và modern reassessment sau này."
     tasks:
       - "Implement Logistic Regression, Decision Tree/CART hoặc C4.5 nếu khả thi."
       - "Implement Random Forest và XGBoost với probability output."

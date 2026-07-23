@@ -1,6 +1,6 @@
 # Phương pháp dự kiến
 
-Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái nghiệm thu kỹ thuật. Phase 3 đã hoàn thành nền tảng preprocessing và nested CV chống leakage, nhưng chưa có validated scientific metrics, core replication run hoặc kết quả nghiên cứu chính thức được công bố.
+Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái nghiệm thu kỹ thuật. Phase 4 đã hoàn thành metric validation cho ROC AUC, Brier Score, Partial Gini và EMP unsupported handling ở mức non-publishable validation artifact; core replication run và kết quả nghiên cứu chính thức vẫn chưa được công bố.
 
 ## Replication core
 
@@ -27,8 +27,8 @@ Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái 
 
 ## Bước tiếp theo
 
-- Phase 4 - Metric validation là bước tiếp theo.
-- Partial Gini, EMP và fold-level metric schema phải được validate trước core replication.
+- Phase 5 - Mô hình truyền thống và ensemble là bước tiếp theo.
+- Core replication chỉ được bắt đầu sau khi model factory và baseline models dùng lại đúng preprocessing, nested-CV và metric-validation foundation của Phase 3-4.
 
 ## Modern reassessment
 

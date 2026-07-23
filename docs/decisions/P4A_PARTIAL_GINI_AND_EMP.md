@@ -2,7 +2,7 @@
 
 ## Trạng thái
 
-Accepted for P4A specification. Đã được cập nhật bằng quyết định implementation production của P4B cho ROC AUC, Brier Score và Partial Gini. EMP vẫn chưa được implement.
+Accepted for P4A specification. Đã được cập nhật bằng quyết định implementation production của P4B cho ROC AUC, Brier Score và Partial Gini. Ngày 2026-07-23, P4C chốt EMP ở trạng thái `unsupported` có provenance rõ ràng thay vì triển khai công thức số thiếu business specification.
 
 ## Nguồn đã đối chiếu
 
@@ -161,6 +161,31 @@ P4C chỉ được tính EMP khi:
 - config validation reject missing/invalid parameters;
 - artifact ghi `publishable: false` và `result_scope: metric_validation`;
 - final report label exact/approximate/unsupported rõ ràng.
+
+### Cập nhật P4C ngày 2026-07-23
+
+Sau khi đối chiếu lại Gunnarsson et al. (2021) với primary source Verbraken et al. (2014), repository chốt quyết định cuối cho EMP như sau:
+
+- Metric name giữ là `emp`.
+- Positive class giữ `1 = bad/default`.
+- `y_score` giữ là `P(default)`.
+- Formula tổng quát paper nêu vẫn là:
+
+```text
+P(t; b1, c0, c*) = (b1 - c*) * pi1 * F1(t) - (c0 + c*) * pi0 * F0(t)
+MP = max_t P(t; b1, c0, c*)
+EMP = E_h[MP]
+```
+
+- Tuy nhiên Phase 4 không có đủ provenance cho:
+  - giá trị hay phân phối của `b1`;
+  - giá trị hay phân phối của `c0`;
+  - giá trị `c*`;
+  - joint density `h(b1,c0)`;
+  - threshold-selection policy phù hợp để tái lập metric mà không dùng outer-test leakage.
+- Vì vậy P4C **không** tự bịa business assumptions và **không** triển khai approximate EMP chỉ để trả về một con số.
+- Production adapter của `emp` trả `status = unsupported`, `value = null`, `exactness = not_applicable`, warning ổn định và danh sách tham số còn thiếu.
+- Artifact metric-validation vẫn lưu EMP như một record hợp lệ về provenance, nhưng không xem đây là scientific result và không dùng cho model comparison.
 
 ## Ảnh hưởng đến RQ và final report
 
