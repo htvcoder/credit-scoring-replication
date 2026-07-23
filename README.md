@@ -554,7 +554,7 @@ Generated from website/content/progress.yaml. Do not edit manually.
 | Phase 1 - Website production foundation | Completed | p1-website-production-complete |
 | Phase 2 - Experiment foundation | Completed | p2-experiment-foundation-complete |
 | Phase 3 - Leakage-safe preprocessing | Completed | p3-leakage-safe-preprocessing-complete |
-| Phase 4 - Metric validation | Next | - |
+| Phase 4 - Metric validation | In Progress | - |
 | Phase 5 - Mô hình truyền thống và ensemble | Planned | - |
 | Phase 6 - MLP depth replication | Planned | - |
 | Phase 7 - Core replication run | Planned | - |
@@ -568,10 +568,15 @@ Phase 3 checkpoints:
 - P3B: Completed - WOE, iterative VIF và train-only scaling.
 - P3C: Completed - Nested CV, fold persistence, per-fold preprocessing và tuning isolation.
 
+Phase 4 checkpoints:
+- P4A: Completed - Metric specification và metric contract.
+- P4B: Planned - AUC, Brier Score và Partial Gini implementation/reference validation.
+- P4C: Planned - EMP, integration và metric-validation harness.
+
 Phase 3 scope limits:
 - Completed preprocessing and nested-CV foundation only.
 - No validated scientific metrics yet.
 - Core replication has not run.
 - Smoke/reduced artifacts remain non-publishable validation artifacts.
-- Phase 4 - Metric validation is next.
+- Phase 4 - Metric validation is next/in progress until metric validation completes.
 <!-- PROJECT_STATUS:END -->

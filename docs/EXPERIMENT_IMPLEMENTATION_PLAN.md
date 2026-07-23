@@ -434,7 +434,7 @@ Generated from website/content/progress.yaml. Do not edit manually.
 | Phase 1 - Website production foundation | Completed | p1-website-production-complete |
 | Phase 2 - Experiment foundation | Completed | p2-experiment-foundation-complete |
 | Phase 3 - Leakage-safe preprocessing | Completed | p3-leakage-safe-preprocessing-complete |
-| Phase 4 - Metric validation | Next | - |
+| Phase 4 - Metric validation | In Progress | - |
 | Phase 5 - Mô hình truyền thống và ensemble | Planned | - |
 | Phase 6 - MLP depth replication | Planned | - |
 | Phase 7 - Core replication run | Planned | - |
@@ -448,12 +448,17 @@ Phase 3 checkpoints:
 - P3B: Completed - WOE, iterative VIF và train-only scaling.
 - P3C: Completed - Nested CV, fold persistence, per-fold preprocessing và tuning isolation.
 
+Phase 4 checkpoints:
+- P4A: Completed - Metric specification và metric contract.
+- P4B: Planned - AUC, Brier Score và Partial Gini implementation/reference validation.
+- P4C: Planned - EMP, integration và metric-validation harness.
+
 Phase 3 scope limits:
 - Completed preprocessing and nested-CV foundation only.
 - No validated scientific metrics yet.
 - Core replication has not run.
 - Smoke/reduced artifacts remain non-publishable validation artifacts.
-- Phase 4 - Metric validation is next.
+- Phase 4 - Metric validation is next/in progress until metric validation completes.
 <!-- PROJECT_STATUS:END -->
 
 | Mục | Nội dung |
@@ -484,7 +489,7 @@ Phase 3 scope limits:
 | Phạm vi | AUC, Brier Score, Partial Gini, EMP exact hoặc approximate, unit tests và reference tests. |
 | Đầu vào | Paper, Lessmann/Verbraken references cần đọc ở phase triển khai, toy predictions, artifact contract. |
 | Đầu ra | Metrics module đã test, metric docs, quyết định exact/approximate cho EMP. |
-| Nhiệm vụ chi tiết | Implement AUC/Brier; xác định công thức Partial Gini với `b=0.4`; xác định EMP exact/approximate; viết toy/reference tests; ghi rõ sign convention và tham số business. |
+| Nhiệm vụ chi tiết | P4A chốt metric specification và typed metric contract; P4B implement/validate AUC, Brier Score và Partial Gini với `b=0.4`; P4C xác định EMP exact/approximate/unsupported, integration và metric-validation harness; ghi rõ sign convention, edge cases và tham số business. |
 | File dự kiến tạo/sửa | `src/creditrep/metrics/`, `tests/test_metrics_*.py`, docs metric nếu cần. |
 | Test | Perfect/random/worst classifier toy, Brier hand-computed, Partial Gini reference, EMP toy/reference, threshold không chọn trên test fold. |
 | Acceptance criteria | Metric deterministic, finite, documented; Partial Gini pass reference; EMP không bị gọi là exact nếu chỉ approximate. |
@@ -495,6 +500,16 @@ Phase 3 scope limits:
 | Commit đề xuất | `feat(metrics): validate replication and business metrics` |
 | Tag đề xuất | `p4-metric-validation` |
 | Website cần cập nhật | Trang phương pháp ghi metric đã xác minh và EMP exact/approximate status. |
+
+Checkpoint nội bộ của Phase 4:
+
+| Checkpoint | Trạng thái | Phạm vi |
+|---|---|---|
+| P4A - Metric specification và metric contract | Completed | Audit metric hiện có, tài liệu `docs/METRIC_SPECIFICATION.md`, decision record Partial Gini/EMP và typed metric-result contract. |
+| P4B - AUC/Brier/Partial Gini reference validation | Planned | Implement/validate metric formulas, normalization, tie policy và toy/reference tests. |
+| P4C - EMP và metric-validation harness | Planned | Chốt EMP exact/approximate/unsupported, config validation, artifact integration và non-publishable metric-validation artifacts. |
+
+P4A không tạo scientific results, không chạy core replication và không công bố metric lên website.
 
 ### Phase 5 - Mô hình truyền thống và ensemble
 

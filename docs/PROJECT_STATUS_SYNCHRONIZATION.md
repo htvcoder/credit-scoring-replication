@@ -35,7 +35,7 @@ Free-form status values are not allowed.
 
 Only one phase may be `in_progress`. Only one phase may be `next`. A completed phase must have a milestone tag unless an explicit documented exception is added. A phase with required checkpoints cannot be `completed` unless those checkpoints are `completed`. `last_completed_phase`, `current_phase`, and `next_phase` must match the phase list.
 
-Phase 3 is completed with tag `p3-leakage-safe-preprocessing-complete`. Phase 4 - Metric validation is next.
+Phase 3 is completed with tag `p3-leakage-safe-preprocessing-complete`. Phase 4 - Metric validation may be `next` before work starts or `in_progress` while Phase 4 checkpoints are active.
 
 ## Commands
 
@@ -127,9 +127,9 @@ Phase 3 `in_progress` to `completed`:
 - Set P3A, P3B, and P3C checkpoints to `completed`.
 - Set `project.last_completed_phase: 3`.
 
-Phase 4 `planned` to `next`:
+Phase 4 `planned` to `next` or `in_progress`:
 
-- Set Phase 4 `status: next`.
+- Set Phase 4 `status: next` before implementation starts, or `status: in_progress` once a Phase 4 checkpoint is being worked.
 - Set `project.current_phase: 4`.
 - Set `project.next_phase: 4`.
 

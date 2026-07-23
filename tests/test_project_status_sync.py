@@ -53,13 +53,13 @@ def test_duplicate_checkpoint_id_fails() -> None:
 
 def test_two_in_progress_phases_fail() -> None:
     status = load_status()
-    status["phases"][4]["status"] = "in_progress"
     status["phases"][5]["status"] = "in_progress"
     assert_invalid(status, "Only one phase may be in_progress")
 
 
 def test_two_next_phases_fail() -> None:
     status = load_status()
+    status["phases"][4]["status"] = "next"
     status["phases"][5]["status"] = "next"
     assert_invalid(status, "Only one phase may be next")
 
@@ -83,10 +83,10 @@ def test_phase3_stale_website_text_fails(tmp_path: Path) -> None:
     assert any("Stale current status" in error for error in result.errors)
 
 
-def test_phase4_not_next_fails() -> None:
+def test_phase4_not_next_or_in_progress_fails() -> None:
     status = load_status()
     status["phases"][4]["status"] = "planned"
-    assert_invalid(status, "Phase 4 must be next")
+    assert_invalid(status, "Phase 4 must be next or in_progress")
 
 
 def test_website_derivative_matches_source_policy() -> None:

@@ -170,15 +170,15 @@ def validate_status_schema(status: dict[str, Any], check_tags: bool = True) -> V
         last_completed = max(completed_numbers)
         if project.get("last_completed_phase") != last_completed:
             result.add("project.last_completed_phase is inconsistent with completed phases.")
-    if project.get("current_phase") != project.get("next_phase"):
+    if in_progress_count == 0 and project.get("current_phase") != project.get("next_phase"):
         result.add("project.current_phase must match project.next_phase while no phase is in progress.")
     by_number = phases_by_number(status)
     if by_number.get(3, {}).get("status") != "completed":
         result.add("Phase 3 must be completed.")
     if by_number.get(3, {}).get("tag") != "p3-leakage-safe-preprocessing-complete":
         result.add("Phase 3 tag must be p3-leakage-safe-preprocessing-complete.")
-    if by_number.get(4, {}).get("status") != "next":
-        result.add("Phase 4 must be next.")
+    if by_number.get(4, {}).get("status") not in {"next", "in_progress"}:
+        result.add("Phase 4 must be next or in_progress.")
     if project.get("last_completed_phase") == 3 and project.get("next_phase") != 4:
         result.add("Phase 4 must be the next phase after Phase 3.")
 
@@ -230,10 +230,15 @@ def render_managed_section(status: dict[str, Any]) -> str:
         tag = phase.get("tag", "")
         lines.append(f"| Phase {number} - {phase.get('name', phase['title'])} | {status_label(phase['status'])} | {tag or '-'} |")
 
-    phase3 = by_number[3]
-    lines.extend(["", "Phase 3 checkpoints:"])
-    for checkpoint in phase3.get("checkpoints", []):
-        lines.append(f"- {checkpoint['id']}: {status_label(checkpoint['status'])} - {checkpoint.get('summary', '')}")
+    for number in sorted(by_number):
+        structured_checkpoints = [
+            checkpoint for checkpoint in by_number[number].get("checkpoints", []) if isinstance(checkpoint, dict)
+        ]
+        if not structured_checkpoints:
+            continue
+        lines.extend(["", f"Phase {number} checkpoints:"])
+        for checkpoint in structured_checkpoints:
+            lines.append(f"- {checkpoint['id']}: {status_label(checkpoint['status'])} - {checkpoint.get('summary', '')}")
     lines.extend(
         [
             "",
@@ -242,7 +247,7 @@ def render_managed_section(status: dict[str, Any]) -> str:
             "- No validated scientific metrics yet.",
             "- Core replication has not run.",
             "- Smoke/reduced artifacts remain non-publishable validation artifacts.",
-            "- Phase 4 - Metric validation is next.",
+            "- Phase 4 - Metric validation is next/in progress until metric validation completes.",
             END,
         ]
     )

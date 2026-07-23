@@ -67,8 +67,8 @@ if (phase3?.tag !== "p3-leakage-safe-preprocessing-complete") {
   fail("Phase 3 tag must be p3-leakage-safe-preprocessing-complete.");
 }
 
-if (phase4?.status !== "next") {
-  fail("Phase 4 must be marked Next after Phase 3 completion.");
+if (!["next", "in_progress"].includes(phase4?.status)) {
+  fail("Phase 4 must be marked Next or In progress after Phase 3 completion.");
 }
 
 if (progress.phases.length !== expectedPhaseOrder.length) {
