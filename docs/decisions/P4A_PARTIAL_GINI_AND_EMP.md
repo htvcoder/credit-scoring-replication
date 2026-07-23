@@ -2,7 +2,7 @@
 
 ## Trạng thái
 
-Accepted for P4A specification. Chưa phải implementation production.
+Accepted for P4A specification. Đã được cập nhật bằng quyết định implementation production của P4B cho ROC AUC, Brier Score và Partial Gini. EMP vẫn chưa được implement.
 
 ## Nguồn đã đối chiếu
 
@@ -39,7 +39,7 @@ Paper trong repository chưa nêu:
 
 ### Quyết định P4A
 
-P4A chốt metric ID:
+P4A tạm chốt metric ID:
 
 ```text
 partial_gini_b_0_4
@@ -56,6 +56,29 @@ positive_label: 1
 Direction là `maximize`.
 
 P4A chưa tuyên bố exact replication cho Partial Gini. Trạng thái exactness trong contract là `approximate` cho đến khi P4B có reference validation. Đây là implementation decision/deviation có kiểm soát, không phải khẳng định công thức nguyên bản của paper.
+
+### Cập nhật P4B ngày 2026-07-23
+
+P4B đọc lại wording của Gunnarsson et al. (2021) và Lessmann et al. (2015). Evidence mạnh nhất tìm được trong primary source là:
+
+- metric tập trung vào phần score distribution `p(+1|x) <= b`;
+- với `b = 0.4`;
+- và “compute the Gini index among the corresponding cases”.
+
+Từ evidence này, P4B chốt quyết định cuối:
+
+- Dùng metric ID production tổng quát `partial_gini`.
+- Giữ `b` là parameter bắt buộc trong `parameters`; paper-aligned default là `0.4`.
+- Lấy subset các quan sát thỏa `y_score <= b`.
+- Tính ROC AUC trên subset đó với positive class `1 = bad/default`.
+- Chuẩn hóa bằng `PartialGini = 2 * AUC_subset - 1`.
+- Direction là `maximize`.
+- Expected range là `[-1, 1]`.
+- Random/constant-score expectation là `0`.
+- Ties dùng đúng convention chuẩn của ROC AUC, nên deterministic và permutation-invariant.
+- Exactness được nâng từ `approximate` lên `exact` đối với specification P4B đã chốt.
+
+Quyết định provisional cũ `partial_gini_b_0_4` được thay bằng ID tổng quát `partial_gini` vì P4B cần test parameterization với nhiều giá trị `b`, không chỉ `0.4`. Đây là thay đổi có chủ đích để tránh metric ID mã hóa cứng parameter vào tên metric. Paper-aligned case vẫn được giữ bằng `metric_id = partial_gini` và `parameters.b = 0.4`.
 
 ### Tiêu chí cho P4B
 
@@ -142,6 +165,6 @@ P4C chỉ được tính EMP khi:
 ## Ảnh hưởng đến RQ và final report
 
 - AUC/Brier có thể dùng cho scientific reporting sau P4B.
-- Partial Gini chỉ dùng sau khi công thức và reference tests được chốt.
+- Partial Gini chỉ dùng sau khi công thức và reference tests được chốt; điều này đã được hoàn tất trong P4B theo specification nêu trên.
 - EMP nếu không exact thì không được dùng để overclaim replication; phải ghi là approximate hoặc unsupported.
 - Nếu EMP unsupported, RQ chính vẫn có thể trả lời bằng AUC/Brier/Partial Gini validated, nhưng limitation phải nêu rõ thiếu metric profit-based exact.

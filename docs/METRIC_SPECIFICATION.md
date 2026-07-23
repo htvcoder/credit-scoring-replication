@@ -16,11 +16,11 @@ Target chuẩn toàn dự án là `0 = good / non-default` và `1 = bad / defaul
 
 | Metric | Implementation hiện tại | Nơi dùng | Trạng thái | Thiếu | Backward compatibility |
 |---|---|---|---|---|---|
-| ROC AUC | `src/creditrep/evaluation/metrics.py::compute_binary_metrics` gọi `sklearn.metrics.roc_auc_score` | P2C smoke runner, `metrics.json`, CLI summary | Implemented cho smoke validation | Chưa có typed `MetricResult`, chưa có fold-level scientific contract | Giữ flat key `roc_auc` trong smoke `test_metrics` |
-| Brier Score | `brier_score_loss` trong `compute_binary_metrics` | P2C smoke runner, `metrics.json` | Implemented cho smoke validation | Chưa có version/exactness/warnings | Giữ flat key `brier_score` |
+| ROC AUC | `src/creditrep/metrics/discrimination.py::compute_roc_auc`; smoke adapter trong `src/creditrep/evaluation/metrics.py` tái sử dụng implementation này | P2C smoke runner, `metrics.json`, CLI summary, P4 metric module | Implemented và reference-validated trong P4B | Chưa có fold-level scientific artifact integration đầy đủ của P4C | Giữ flat key `roc_auc` trong smoke `test_metrics` |
+| Brier Score | `src/creditrep/metrics/calibration.py::compute_brier_score`; smoke adapter tái sử dụng implementation này | P2C smoke runner, `metrics.json`, P4 metric module | Implemented và hand/reference-validated trong P4B | Chưa có fold-level scientific artifact integration đầy đủ của P4C | Giữ flat key `brier_score` |
 | Accuracy/precision/recall/F1/log loss/confusion matrix | `compute_binary_metrics` | P2C smoke validation | Technical smoke only | Không thuộc metric core của paper, không dùng scientific reporting chính | Giữ để smoke runner không vỡ |
 | Classification threshold | `evaluation.classification_threshold` trong smoke config | `build_prediction_frame`, metrics payload | Fixed config value, mặc định fixture là `0.5` | Chưa có nguồn tham số metric/business rõ cho Phase 4 | Giữ behavior hiện tại |
-| Partial Gini | Chưa implemented | Chưa dùng | Specification only trong P4A | Cần định nghĩa tính, normalization, tie policy, reference tests | Không ảnh hưởng smoke runner |
+| Partial Gini | `src/creditrep/metrics/discrimination.py::compute_partial_gini` | P4 metric module | Implemented và reference-validated trong P4B | Chưa tích hợp metric-validation harness/artifact của P4C | Không ảnh hưởng smoke runner nếu chưa bật integration |
 | EMP | Chưa implemented | Chưa dùng | `not_implemented_due_to_insufficient_specification` trong P4A | Thiếu business parameters/distribution và threshold policy | Không ảnh hưởng smoke runner |
 
 ## 3. Quy ước chung
@@ -53,7 +53,12 @@ Mọi metric phải xử lý rõ:
 - metric không xác định;
 - business parameters thiếu hoặc không hợp lệ.
 
-Khi metric không xác định, `MetricResult.status` phải là `undefined`, `unsupported` hoặc `failed`; không được lặng lẽ trả về `0.0`.
+Chính sách API P4B:
+
+- Hàm metric typed trả về `MetricResult`.
+- Input invalid theo contract như rỗng, length mismatch, NaN/Infinity, label không nhị phân, probability ngoài `[0, 1]`, dimensionality sai hoặc `b` không hợp lệ được trả về với `status: failed` và `warnings` giải thích cụ thể.
+- Trường hợp metric đúng nghĩa toán học là không xác định, ví dụ ROC AUC với single-class fold hoặc Partial Gini khi vùng `y_score <= b` không còn đủ hai class, được trả về với `status: undefined`.
+- Không metric nào được silently convert thành giá trị có vẻ hợp lệ như `0.0` khi thực tế undefined hoặc invalid.
 
 ## 4. Specification từng metric
 
@@ -66,10 +71,10 @@ Khi metric không xác định, `MetricResult.status` phải là `undefined`, `u
 | Mục đích | Đo khả năng phân biệt default và non-default trên toàn score distribution |
 | Input | `y_true`, `y_score` |
 | Output | scalar float |
-| Công thức/nguồn | Area under ROC curve; paper mô tả là xác suất defaulter nhận score cao hơn non-defaulter |
+| Công thức/nguồn | Area under ROC curve; production implementation P4B dùng công thức rank-based tương đương xác suất một defaulter nhận score cao hơn một non-defaulter, với ties cho nửa điểm |
 | Direction | `maximize` |
 | Miền kỳ vọng | `[0, 1]` |
-| Edge cases | Undefined nếu fold chỉ có một class; ties theo implementation reference được chọn trong P4B |
+| Edge cases | `undefined` nếu fold chỉ có một class; ties theo average-rank/Mann-Whitney convention chuẩn của ROC AUC; invalid probability hoặc input invalid trả `failed` |
 | Parameters | `labels: [0, 1]` |
 | Exactness | `exact` nếu dùng reference implementation đã test |
 | Scientific reporting | Có, sau P4B validation |
@@ -96,17 +101,17 @@ Khi metric không xác định, `MetricResult.status` phải là `undefined`, `u
 | Trường | Nội dung |
 |---|---|
 | Tên chuẩn | Partial Gini at probability cutoff 0.4 |
-| Metric ID | `partial_gini_b_0_4` |
+| Metric ID | `partial_gini` |
 | Mục đích | Đo khả năng phân biệt trong vùng score thấp hơn ngưỡng chấp nhận của credit scoring |
 | Input | `y_true`, `y_score` |
 | Output | scalar float hoặc undefined |
-| Công thức/nguồn | Paper nói tập trung phần score distribution `p(+1\|x) <= b`, chọn `b = 0.4` theo Lessmann et al. (2015) |
+| Công thức/nguồn | Theo Lessmann et al. (2015), metric tập trung vào phần score distribution `p(+1\|x) <= b` và “compute the Gini index among the corresponding cases”. P4B chốt implementation là lấy subset `y_score <= b`, tính ROC AUC trên subset đó, rồi chuẩn hóa bằng `2 * AUC_subset - 1` |
 | Direction | `maximize` |
-| Miền kỳ vọng | Chưa chốt exact cho production; P4B phải ghi rõ normalization trước khi dùng scientific reporting |
-| Edge cases | Undefined nếu không còn đủ hai class trong vùng `y_score <= 0.4`; ties phải deterministic và documented |
-| Parameters | `b: 0.4`, `positive_label: 1`, `score_region: y_score <= b` |
-| Exactness | `approximate` cho đến khi P4B reference validation chốt normalization/tie policy |
-| Scientific reporting | Chưa, chỉ sau P4B |
+| Miền kỳ vọng | `[-1, 1]`; random/constant-score kỳ vọng `0`, perfect ranking `1`, perfect reversed ranking `-1` |
+| Edge cases | `undefined` nếu vùng `y_score <= b` không có quan sát hoặc không còn đủ hai class; ties deterministic theo ROC AUC rank convention; invalid `b` hoặc input invalid trả `failed` |
+| Parameters | `b`, `positive_label: 1`, `score_region: y_score <= b`, `normalization: 2 * roc_auc(subset) - 1` |
+| Exactness | `exact` theo specification P4B đã chốt |
+| Scientific reporting | Có thể dùng sau P4B validation; P4C còn thiếu integration vào metric-validation artifact |
 
 P4A không triển khai công thức Partial Gini production. Quyết định chi tiết nằm ở `docs/decisions/P4A_PARTIAL_GINI_AND_EMP.md`.
 
@@ -138,7 +143,7 @@ Metric-validation artifacts sau P4A nên dùng object:
   "value": 0.75,
   "direction": "maximize",
   "status": "valid",
-  "parameters": {"labels": [0, 1]},
+  "parameters": {"labels": [0, 1], "positive_label": 1, "score_type": "probability_class_1"},
   "exactness": "exact",
   "warnings": []
 }
@@ -163,7 +168,7 @@ evaluation:
   metrics:
     - id: roc_auc
     - id: brier_score
-    - id: partial_gini_b_0_4
+    - id: partial_gini
       parameters:
         b: 0.4
     - id: emp

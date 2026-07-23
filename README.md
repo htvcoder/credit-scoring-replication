@@ -570,7 +570,7 @@ Phase 3 checkpoints:
 
 Phase 4 checkpoints:
 - P4A: Completed - Metric specification và metric contract.
-- P4B: Planned - AUC, Brier Score và Partial Gini implementation/reference validation.
+- P4B: Completed - ROC AUC, Brier Score và Partial Gini implementation/reference validation.
 - P4C: Planned - EMP, integration và metric-validation harness.
 
 Phase 3 scope limits:
