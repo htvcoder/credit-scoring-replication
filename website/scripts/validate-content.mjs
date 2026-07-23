@@ -43,23 +43,32 @@ const phase0 = progress.phases.find((phase) => phase.id === "Phase 0");
 const phase1 = progress.phases.find((phase) => phase.id === "Phase 1");
 const phase2 = progress.phases.find((phase) => phase.id === "Phase 2");
 const phase3 = progress.phases.find((phase) => phase.id === "Phase 3");
-const allowedStatuses = new Set(["Completed", "In progress", "Next", "Planned"]);
+const phase4 = progress.phases.find((phase) => phase.id === "Phase 4");
+const allowedStatuses = new Set(["planned", "next", "in_progress", "completed", "blocked", "deferred"]);
 const expectedPhaseOrder = Array.from({ length: 12 }, (_, index) => `Phase ${index}`);
 
-if (phase0?.status !== "Completed") {
+if (phase0?.status !== "completed") {
   fail("Phase 0 must be Completed.");
 }
 
-if (phase1?.status !== "Completed") {
+if (phase1?.status !== "completed") {
   fail("Phase 1 must be Completed after production rollback verification passed.");
 }
 
-if (phase2?.status !== "Completed") {
+if (phase2?.status !== "completed") {
   fail("Phase 2 must be Completed after P2A/P2B/P2C acceptance passed.");
 }
 
-if (phase3?.status !== "Next") {
-  fail("Phase 3 must be marked Next after Phase 2 completion.");
+if (phase3?.status !== "completed") {
+  fail("Phase 3 must be marked Completed after P3A/P3B/P3C acceptance passed.");
+}
+
+if (phase3?.tag !== "p3-leakage-safe-preprocessing-complete") {
+  fail("Phase 3 tag must be p3-leakage-safe-preprocessing-complete.");
+}
+
+if (phase4?.status !== "next") {
+  fail("Phase 4 must be marked Next after Phase 3 completion.");
 }
 
 if (progress.phases.length !== expectedPhaseOrder.length) {
@@ -94,8 +103,8 @@ for (const phase of progress.phases) {
   }
 }
 
-for (const phase of progress.phases.slice(4)) {
-  if (phase.status !== "Planned") {
+for (const phase of progress.phases.slice(5)) {
+  if (phase.status !== "planned") {
     fail(`${phase.id} must remain Planned until implementation evidence exists.`);
   }
 }

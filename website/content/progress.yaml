@@ -1,7 +1,23 @@
+schema_version: 1
+project:
+  last_completed_phase: 3
+  current_phase: 4
+  next_phase: 4
+  updated_at: "2026-07-23"
+status_enum:
+  - planned
+  - next
+  - in_progress
+  - completed
+  - blocked
+  - deferred
 phases:
   - id: "Phase 0"
+    numeric_id: 0
     title: "Xác minh dữ liệu nền tảng"
-    status: "Completed"
+    name: "Data verification baseline"
+    status: "completed"
+    tag: "p0-data-verification-baseline"
     summary: "Phase này xác lập baseline dữ liệu verified cho 6 dataset công khai và chuẩn hóa metadata để các phase sau dùng cùng một nguồn sự thật. Công việc cũng ghi rõ caveat HMEQ và thiết lập guard để raw data, processed artifact và secret không lọt vào repository hoặc website."
     tasks:
       - "Kiểm kê 6 dataset công khai và đối chiếu shape, target, class distribution."
@@ -15,8 +31,11 @@ phases:
       - "Completed với caveat HMEQ; caveat này phải đi kèm khi diễn giải kết quả sau này."
     caveat: "HMEQ full khớp shape/schema/class distribution của paper nhưng checksum không phải checksum SAS artifact kỳ vọng; cần giữ caveat này khi diễn giải."
   - id: "Phase 1"
+    numeric_id: 1
     title: "Website và nền tảng công bố"
-    status: "Completed"
+    name: "Website production foundation"
+    status: "completed"
+    tag: "p1-website-production-complete"
     summary: "Hoàn thành website học thuật, Docker, CI/CD và triển khai production lên Google Cloud VM. Luồng deploy tự động, manual rollback và automatic failed-deployment rollback đã được kiểm thử thành công."
     tasks:
       - "Hoàn thiện website nội dung, health/version page và content validation."
@@ -36,8 +55,11 @@ phases:
       - "Domain và HTTPS Optional, không ảnh hưởng acceptance của Phase 1."
     caveat: "Manual rollback production và automatic failed-deployment rollback đã PASS. Domain và HTTPS vẫn Optional; website hiện dùng HTTP/public IP cho nội dung công khai, không có đăng nhập hoặc dữ liệu nhạy cảm."
   - id: "Phase 2"
+    numeric_id: 2
     title: "Nền tảng thực nghiệm và smoke test"
-    status: "Completed"
+    name: "Experiment foundation"
+    status: "completed"
+    tag: "p2-experiment-foundation-complete"
     summary: "Đã hoàn thiện nền tảng dữ liệu và thực nghiệm có khả năng tái tạo: loader cho sáu bộ dữ liệu công khai, chuẩn hóa nhãn, deterministic stratified split, kiểm tra checksum, experiment artifact contract và smoke runner với Logistic Regression/XGBoost."
     tasks:
       - "Hỗ trợ đầy đủ 6 public datasets qua registry và loader thống nhất."
@@ -57,22 +79,39 @@ phases:
       - "Smoke artifacts có publishable: false và result_scope: smoke_validation."
     caveat: "Các chỉ số từ smoke experiment chỉ dùng để xác minh pipeline kỹ thuật, chưa phải kết quả tái lập hoặc đánh giá mô hình chính thức."
   - id: "Phase 3"
+    numeric_id: 3
     title: "Preprocessing chống leakage"
-    status: "Next"
-    summary: "Phase này triển khai preprocessing fold-aware để mọi bước học từ dữ liệu chỉ fit trên training fold. Đây là nền tảng để metric và model sau đó không bị inflated bởi leakage."
+    name: "Leakage-safe preprocessing"
+    status: "completed"
+    tag: "p3-leakage-safe-preprocessing-complete"
+    summary: "Phase 3 đã hoàn thành nền tảng preprocessing và nested CV chống leakage. P3A bổ sung train-only numeric mean imputation, categorical mode imputation với tie-break deterministic, xử lý unseen category, fitted metadata immutable và transform diagnostics tách khỏi fitted state. P3B bổ sung WOE cho categorical features, numeric passthrough sau imputation vì paper không đặc tả numeric binning, smoothing mặc định 0.5, unknown WOE fallback 0.0, iterative VIF threshold mặc định 10.0, zero-variance filtering trước VIF và optional train-only standard scaling. P3C bổ sung deterministic repeated stratified two-fold outer CV, stratified inner CV, deterministic seed derivation, fold hashes, nested CV hash, fresh preprocessing pipeline cho từng fold, outer-test isolation, tuning chỉ dựa trên inner validation và non-publishable preprocessing-validation artifacts."
     tasks:
-      - "Fit imputation, encoding và scaling chỉ trên training fold."
-      - "Triển khai WOE với smoothing và xử lý category chưa thấy."
-      - "Triển khai VIF/feature filtering theo fold và lưu selected features."
-      - "Persist fold definition để nested CV tái tạo được."
-      - "Viết leakage tests cho train/test overlap và target leakage."
+      - "P3A: train-only numeric mean imputation và categorical mode imputation."
+      - "P3A: deterministic mode tie-break, unseen-category handling, immutable fitted preprocessing metadata và transform diagnostics tách khỏi fitted state."
+      - "P3B: categorical WOE, numeric passthrough sau imputation, smoothing 0.5, unknown fallback 0.0, iterative VIF threshold 10.0, zero-variance filtering và optional train-only standard scaling."
+      - "P3C: deterministic repeated stratified two-fold outer CV, stratified inner CV, deterministic seed derivation, fold hashes và nested CV hash."
+      - "P3C: fresh preprocessing pipeline cho từng fold, outer-test isolation và tuning chỉ dựa trên inner validation."
     deliverables:
-      - "Protocol A preprocessing pipeline fold-aware, leakage guard và preprocessing audit artifact."
+      - "Leakage-safe preprocessing contract P3A."
+      - "WOE, iterative VIF và optional train-only scaling P3B."
+      - "Nested CV, fold persistence, per-fold preprocessing và tuning-isolation foundation P3C."
+      - "Non-publishable preprocessing-validation artifacts."
     checkpoints:
-      - "Không chuyển sang core experiment nếu train-only fitting và leakage tests chưa pass."
+      - id: "P3A"
+        status: "completed"
+        summary: "Preprocessing contract và train-only imputation."
+      - id: "P3B"
+        status: "completed"
+        summary: "WOE, iterative VIF và train-only scaling."
+      - id: "P3C"
+        status: "completed"
+        summary: "Nested CV, fold persistence, per-fold preprocessing và tuning isolation."
+    caveat: "Phase 3 chỉ hoàn thành preprocessing và nested-CV foundation. Chưa có validated scientific metrics, chưa chạy core replication và chưa có kết quả khoa học để công bố. Smoke/reduced artifacts vẫn là non-publishable validation artifacts. Phase 4 - Metric validation là bước tiếp theo."
   - id: "Phase 4"
+    numeric_id: 4
     title: "Metric và đánh giá kinh doanh"
-    status: "Planned"
+    name: "Metric validation"
+    status: "next"
     summary: "Phase này xác minh các metric dự báo và metric kinh doanh trước khi chạy core experiment quy mô lớn. Partial Gini và EMP phải được ghi rõ exact hoặc approximate để tránh diễn giải sai."
     tasks:
       - "Implement AUC, Brier Score và Partial Gini với reference tests."
@@ -85,8 +124,9 @@ phases:
     checkpoints:
       - "AUC/Brier/Partial Gini phải pass; EMP không được gọi là exact nếu chỉ approximate."
   - id: "Phase 5"
+    numeric_id: 5
     title: "Mô hình truyền thống và ensemble"
-    status: "Planned"
+    status: "planned"
     summary: "Phase này triển khai các baseline chính của paper bằng cùng preprocessing và evaluation protocol. Kết quả baseline là điều kiện để so sánh MLP, XGBoost và modern reassessment sau này."
     tasks:
       - "Implement Logistic Regression, Decision Tree/CART hoặc C4.5 nếu khả thi."
@@ -99,8 +139,9 @@ phases:
     checkpoints:
       - "Không gọi Decision Tree là C4.5 nếu implementation thực tế là CART approximation."
   - id: "Phase 6"
+    numeric_id: 6
     title: "MLP depth replication"
-    status: "Planned"
+    status: "planned"
     summary: "Phase này kiểm tra ảnh hưởng của độ sâu MLP để trả lời RQ2 trong phạm vi partial replication. Các cấu hình MLP-1, MLP-3 và MLP-5 phải dùng training setup nhất quán và log đầy đủ."
     tasks:
       - "Implement MLP-1, MLP-3 và MLP-5 bằng cùng model contract."
@@ -113,8 +154,9 @@ phases:
     checkpoints:
       - "MLP-1/3/5 smoke phải pass và runtime phải được log trước Phase 7."
   - id: "Phase 7"
+    numeric_id: 7
     title: "Core replication run"
-    status: "Planned"
+    status: "planned"
     summary: "Phase này chạy core replication trên 6 dataset public đủ điều kiện với Protocol A và các model core. Chỉ fold-level/aggregated artifacts đã validate mới được dùng cho thống kê và website."
     tasks:
       - "Chạy dry run, smoke run và reduced/full approved run theo resource."
@@ -127,8 +169,9 @@ phases:
     checkpoints:
       - "Mỗi dataset-model Must phải có artifact hợp lệ hoặc failure status rõ; không tạo result giả."
   - id: "Phase 8"
+    numeric_id: 8
     title: "Modern reassessment"
-    status: "Planned"
+    status: "planned"
     summary: "Phase này đánh giá lại kết luận ưu tiên XGBoost bằng mô hình tabular hiện đại. CatBoost là minimum evidence bắt buộc cho RQ3; TabNet và FT-Transformer phụ thuộc resource checkpoint."
     tasks:
       - "Implement CatBoost trước với tuning budget so sánh được với XGBoost."
@@ -141,8 +184,9 @@ phases:
     checkpoints:
       - "CatBoost là bắt buộc cho RQ3; no-go của TabNet/FT không làm hỏng core scope nếu có lý do hợp lệ."
   - id: "Phase 9"
+    numeric_id: 9
     title: "So sánh thống kê"
-    status: "Planned"
+    status: "planned"
     summary: "Phase này tổng hợp fold-level result và chạy statistical comparison đúng đơn vị thống kê. Kết quả replication core và modern reassessment phải được phân tích riêng, đặc biệt khi Protocol A/B khác nhau."
     tasks:
       - "Aggregate per dataset/model và tính average rank."
@@ -155,8 +199,9 @@ phases:
     checkpoints:
       - "Phase 9 phụ thuộc Phase 7; nếu trả lời RQ3 đầy đủ thì cần CatBoost từ Phase 8."
   - id: "Phase 10"
+    numeric_id: 10
     title: "Robustness"
-    status: "Planned"
+    status: "planned"
     summary: "Phase này kiểm tra độ ổn định của kết luận với seed, preprocessing, metric, dataset caveat và protocol. Mục tiêu là phân biệt kết luận ổn định với kết luận phụ thuộc điều kiện."
     tasks:
       - "Chạy hoặc aggregate seed sensitivity và fold sensitivity."
@@ -169,8 +214,9 @@ phases:
     checkpoints:
       - "Sensitivity Must không được để lại blocker chưa xử lý trước Phase 11."
   - id: "Phase 11"
+    numeric_id: 11
     title: "Báo cáo cuối và website kết quả"
-    status: "Planned"
+    status: "planned"
     summary: "Phase này đóng gói kết quả cuối, cập nhật website bằng kết quả đã kiểm chứng và chuẩn bị reproducibility package. Website chỉ công bố aggregated/sanitized artifacts, không công bố row-level prediction hoặc dữ liệu nhạy cảm."
     tasks:
       - "Generate tables, figures, RQ summary, limitations và deviation register."

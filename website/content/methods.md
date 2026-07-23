@@ -1,6 +1,6 @@
 # Phương pháp dự kiến
 
-Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái nghiệm thu kỹ thuật. Phase 2 đã hoàn thành nền tảng experiment có thể tái tạo, nhưng chưa có kết quả nghiên cứu chính thức được công bố.
+Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái nghiệm thu kỹ thuật. Phase 3 đã hoàn thành nền tảng preprocessing và nested CV chống leakage, nhưng chưa có validated scientific metrics, core replication run hoặc kết quả nghiên cứu chính thức được công bố.
 
 ## Replication core
 
@@ -16,8 +16,19 @@ Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái 
 
 - Smoke runner đã chạy thành công với Logistic Regression và XGBoost để kiểm tra end-to-end pipeline.
 - Smoke preprocessing chỉ dùng để nghiệm thu runner, gồm imputation tối thiểu, one-hot encoding và scaling cho Logistic Regression khi cần.
-- Scientific preprocessing protocol chống leakage đầy đủ, bao gồm WOE/VIF và các quyết định protocol chính thức, sẽ được triển khai ở Phase 3.
 - Smoke metrics chỉ xác nhận artifact và prediction probability hợp lệ; không dùng để so sánh mô hình hoặc kết luận nghiên cứu.
+
+## Nền tảng Phase 3
+
+- P3A đã hoàn thành train-only numeric mean imputation, train-only categorical mode imputation, deterministic mode tie-break, unseen-category handling, immutable fitted preprocessing metadata và transform diagnostics tách khỏi fitted state.
+- P3B đã hoàn thành WOE cho categorical features, numeric passthrough sau imputation vì paper không đặc tả numeric binning, WOE smoothing mặc định `0.5`, unknown WOE fallback `0.0`, iterative VIF threshold mặc định `10.0`, zero-variance filtering trước VIF và optional train-only standard scaling.
+- P3C đã hoàn thành deterministic repeated stratified two-fold outer CV, stratified inner CV, deterministic seed derivation, fold hashes, nested CV hash, fresh preprocessing pipeline cho từng fold, outer-test isolation và tuning chỉ dựa trên inner validation.
+- P3C artifacts là non-publishable preprocessing-validation artifacts; chúng không phải scientific results.
+
+## Bước tiếp theo
+
+- Phase 4 - Metric validation là bước tiếp theo.
+- Partial Gini, EMP và fold-level metric schema phải được validate trước core replication.
 
 ## Modern reassessment
 

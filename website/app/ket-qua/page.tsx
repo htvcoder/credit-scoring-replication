@@ -5,9 +5,10 @@ export default function ResultsPage() {
         <p className="eyebrow">Kết quả</p>
         <h1>Kết quả thực nghiệm chưa được công bố</h1>
         <p className="lead">
-          Chưa có kết quả thực nghiệm chính thức để công bố. Phase 2 đã hoàn
-          thành nghiệm thu kỹ thuật cho pipeline và artifact, nhưng smoke metrics
-          không được xem là kết quả nghiên cứu.
+          Chưa có kết quả thực nghiệm chính thức để công bố. Phase 3 đã hoàn
+          thành preprocessing và nested-CV foundation, nhưng chưa có validated
+          scientific metrics, core replication run hoặc kết quả khoa học để công
+          bố.
         </p>
       </section>
 
@@ -28,6 +29,7 @@ export default function ResultsPage() {
           <li>Logistic Regression và XGBoost smoke runs đã chạy thành công.</li>
           <li>Prediction, metrics và model metadata artifacts hợp lệ.</li>
           <li>Reproducibility check đã pass cho smoke run kiểm chứng.</li>
+          <li>P3C preprocessing-validation artifacts là non-publishable.</li>
         </ul>
         <p className="caveat">
           Các kết quả này chỉ xác nhận hạ tầng thực nghiệm hoạt động đúng, không

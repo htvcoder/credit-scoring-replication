@@ -88,8 +88,9 @@ export default function Home() {
             <p className="eyebrow">Tiến độ</p>
             <h2>Trạng thái phase</h2>
             <p className="muted">
-              Phase 2 đã hoàn thành nền tảng experiment; Phase 3 là bước tiếp
-              theo. Chưa có kết quả nghiên cứu chính thức để công bố.
+              Phase 3 đã hoàn thành nền tảng preprocessing và nested CV chống
+              leakage; Phase 4 - Metric validation là bước tiếp theo. Chưa có
+              kết quả nghiên cứu chính thức để công bố.
             </p>
           </div>
           <Link className="text-link" href="/tien-do/">
@@ -97,7 +98,7 @@ export default function Home() {
           </Link>
         </div>
         <div className="phase-preview">
-          {progress.phases.slice(0, 3).map((phase) => (
+          {progress.phases.slice(0, 5).map((phase) => (
             <article className="phase-card" key={phase.id}>
               <div>
                 <span className="muted">{phase.id}</span>

@@ -219,7 +219,7 @@ Cấu trúc nội dung chính:
 - `website/content/paper.yaml`: thông tin paper gốc, thiết kế thực nghiệm và kết quả chính do paper báo cáo.
 - `website/content/background.md`: bối cảnh và mục đích của đề tài thực tập.
 - `website/content/limitations.md`: hạn chế của paper và hạn chế khi tái thực hiện.
-- `website/content/progress.yaml`: source of truth cho trạng thái phase; Phase 0, Phase 1 và Phase 2 là `Completed`, Phase 3 là `Next`, Phase 4 đến Phase 11 là `Planned`.
+- `website/content/progress.yaml`: source of truth cho trạng thái phase; Phase 0, Phase 1, Phase 2 và Phase 3 là `Completed`, Phase 4 là `Next`, Phase 5 đến Phase 11 là `Planned`.
 - `website/content/methods.md`: phương pháp dự kiến.
 - `website/content/deviations.md`: deviation và giới hạn hiện tại.
 - `data/datasets.yaml`: source of truth cho metadata dataset hiển thị trên website.
@@ -539,7 +539,39 @@ Remove-Item -Recurse -Force .venv-clean
 - Đã triển khai P2A dataset loader trong `src/creditrep/datasets/`, kèm CLI `scripts/inspect_dataset.py` và unit test fixture độc lập raw data.
 - Đã triển khai P2B deterministic split và artifact contract trong `src/creditrep/config/`, `src/creditrep/splitting/`, `src/creditrep/artifacts/`, kèm CLI `scripts/create_split_artifact.py`.
 - Đã triển khai P2C smoke experiment runner trong `src/creditrep/preprocessing/`, `src/creditrep/models/`, `src/creditrep/evaluation/`, `src/creditrep/experiments/`, kèm CLI `scripts/run_experiment.py`.
-- Phase 0: Completed với 6 dataset công khai đã xác minh; giữ caveat provenance HMEQ.
-- Phase 1: Completed; P1A Completed, P1B Completed, P1C Completed; production deployment operational tại `http://34.142.206.15`; manual rollback production PASS và automatic failed-deployment rollback PASS.
-- Phase 2: P2A Completed; P2B Completed; P2C Completed ở mức smoke validation; smoke metrics không phải kết quả nghiên cứu.
-- Phase 3: Next; Phase 4 đến Phase 11: Planned; chưa có preprocessing protocol khoa học đầy đủ, benchmark đầy đủ hoặc kết quả khoa học chính thức.
+
+<!-- PROJECT_STATUS:BEGIN -->
+Generated from website/content/progress.yaml. Do not edit manually.
+
+- Last completed phase: Phase 3
+- Current phase: Phase 4
+- Next phase: Phase 4 - Metric validation
+- Updated at: 2026-07-23
+
+| Phase | Status | Milestone tag |
+| --- | --- | --- |
+| Phase 0 - Data verification baseline | Completed | p0-data-verification-baseline |
+| Phase 1 - Website production foundation | Completed | p1-website-production-complete |
+| Phase 2 - Experiment foundation | Completed | p2-experiment-foundation-complete |
+| Phase 3 - Leakage-safe preprocessing | Completed | p3-leakage-safe-preprocessing-complete |
+| Phase 4 - Metric validation | Next | - |
+| Phase 5 - Mô hình truyền thống và ensemble | Planned | - |
+| Phase 6 - MLP depth replication | Planned | - |
+| Phase 7 - Core replication run | Planned | - |
+| Phase 8 - Modern reassessment | Planned | - |
+| Phase 9 - So sánh thống kê | Planned | - |
+| Phase 10 - Robustness | Planned | - |
+| Phase 11 - Báo cáo cuối và website kết quả | Planned | - |
+
+Phase 3 checkpoints:
+- P3A: Completed - Preprocessing contract và train-only imputation.
+- P3B: Completed - WOE, iterative VIF và train-only scaling.
+- P3C: Completed - Nested CV, fold persistence, per-fold preprocessing và tuning isolation.
+
+Phase 3 scope limits:
+- Completed preprocessing and nested-CV foundation only.
+- No validated scientific metrics yet.
+- Core replication has not run.
+- Smoke/reduced artifacts remain non-publishable validation artifacts.
+- Phase 4 - Metric validation is next.
+<!-- PROJECT_STATUS:END -->

@@ -49,20 +49,37 @@ export type PaperContent = {
   reported_findings: string[];
 };
 
-export type PhaseStatus = "Completed" | "In progress" | "Next" | "Planned";
+export type PhaseStatus = "planned" | "next" | "in_progress" | "completed" | "blocked" | "deferred";
+
+export type PhaseCheckpoint = {
+  id: string;
+  status: PhaseStatus;
+  summary?: string;
+};
 
 export type Phase = {
   id: string;
+  numeric_id?: number;
   title: string;
+  name?: string;
   status: PhaseStatus;
+  tag?: string;
   summary: string;
   tasks: string[];
   deliverables: string[];
-  checkpoints?: string[];
+  checkpoints?: Array<string | PhaseCheckpoint>;
   caveat?: string;
 };
 
 export type ProgressContent = {
+  schema_version: number;
+  project: {
+    last_completed_phase: number;
+    current_phase: number;
+    next_phase: number;
+    updated_at: string;
+  };
+  status_enum: PhaseStatus[];
   phases: Phase[];
 };
 

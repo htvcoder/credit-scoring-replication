@@ -10,9 +10,9 @@ export default function ProgressPage() {
         <p className="eyebrow">Roadmap</p>
         <h1>Tiến độ các phase</h1>
         <p className="lead">
-          Phase 1 đã Completed với website production và CI/CD. Phase 2 đã
-          Completed ở mức experiment foundation; Phase 3 là bước tiếp theo để
-          hoàn thiện preprocessing protocol chống leakage.
+          Phase 3 đã Completed ở mức preprocessing và nested-CV foundation.
+          Phase 4 - Metric validation là bước tiếp theo; website chưa công bố
+          scientific metrics hoặc core replication results.
         </p>
       </section>
 
@@ -49,7 +49,13 @@ export default function ProgressPage() {
                       <h3>Checkpoint</h3>
                       <ul className="phase-list">
                         {phase.checkpoints.map((checkpoint) => (
-                          <li key={checkpoint}>{checkpoint}</li>
+                          <li key={typeof checkpoint === "string" ? checkpoint : checkpoint.id}>
+                            {typeof checkpoint === "string"
+                              ? checkpoint
+                              : `${checkpoint.id} ${checkpoint.status.replace("_", " ")}${
+                                  checkpoint.summary ? ` - ${checkpoint.summary}` : ""
+                                }`}
+                          </li>
                         ))}
                       </ul>
                     </div>

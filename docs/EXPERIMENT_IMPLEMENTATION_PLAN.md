@@ -414,11 +414,47 @@ Trạng thái: **Completed**.
 - Tài liệu kỹ thuật: `docs/SMOKE_EXPERIMENT_RUNNER.md`.
 - Không có WOE, VIF, feature engineering, nested CV, tuning, statistical testing, benchmark sáu dataset hoặc result publishing trong P2C.
 
-Phase 2 hiện đủ điều kiện đánh dấu **Completed** ở mức experiment foundation. Phase 3 là bước tiếp theo: preprocessing protocol khoa học chống leakage đầy đủ. Smoke metrics không phải experimental scientific results.
+Phase 3 hiện đủ điều kiện đánh dấu **Completed** ở mức preprocessing/nested-CV foundation. Phase 4 là bước tiếp theo: metric validation trước core replication. Smoke/reduced artifacts không phải experimental scientific results.
 
 ### Phase 3 - Pipeline tiền xử lý chống leakage
 
 Phase 3 hiện **Completed** ở mức preprocessing/nested-CV foundation. Checkpoint **P3A - Completed** bổ sung nền tảng contract train-only cho Protocol A: mean imputation cho numeric, most-frequent/mode imputation cho categorical, tie-break deterministic, reserved token cho unseen category, schema validation và metadata JSON-serializable. Checkpoint **P3B - Completed** bổ sung WOE categorical train-only, iterative VIF train-only và optional standard scaling train-only. P3B không triển khai numeric supervised binning vì paper không đặc tả đủ rõ. Checkpoint **P3C - Completed** bổ sung deterministic repeated stratified two-fold outer CV, inner stratified k-fold, fold persistence, per-fold preprocessing fitting, tuning-isolation harness và non-publishable preprocessing-validation artifacts. Phase 3 chưa tạo scientific results, chưa chạy core replication và chưa thay thế Phase 4 metric validation; bước tiếp theo là Phase 4.
+
+<!-- PROJECT_STATUS:BEGIN -->
+Generated from website/content/progress.yaml. Do not edit manually.
+
+- Last completed phase: Phase 3
+- Current phase: Phase 4
+- Next phase: Phase 4 - Metric validation
+- Updated at: 2026-07-23
+
+| Phase | Status | Milestone tag |
+| --- | --- | --- |
+| Phase 0 - Data verification baseline | Completed | p0-data-verification-baseline |
+| Phase 1 - Website production foundation | Completed | p1-website-production-complete |
+| Phase 2 - Experiment foundation | Completed | p2-experiment-foundation-complete |
+| Phase 3 - Leakage-safe preprocessing | Completed | p3-leakage-safe-preprocessing-complete |
+| Phase 4 - Metric validation | Next | - |
+| Phase 5 - Mô hình truyền thống và ensemble | Planned | - |
+| Phase 6 - MLP depth replication | Planned | - |
+| Phase 7 - Core replication run | Planned | - |
+| Phase 8 - Modern reassessment | Planned | - |
+| Phase 9 - So sánh thống kê | Planned | - |
+| Phase 10 - Robustness | Planned | - |
+| Phase 11 - Báo cáo cuối và website kết quả | Planned | - |
+
+Phase 3 checkpoints:
+- P3A: Completed - Preprocessing contract và train-only imputation.
+- P3B: Completed - WOE, iterative VIF và train-only scaling.
+- P3C: Completed - Nested CV, fold persistence, per-fold preprocessing và tuning isolation.
+
+Phase 3 scope limits:
+- Completed preprocessing and nested-CV foundation only.
+- No validated scientific metrics yet.
+- Core replication has not run.
+- Smoke/reduced artifacts remain non-publishable validation artifacts.
+- Phase 4 - Metric validation is next.
+<!-- PROJECT_STATUS:END -->
 
 | Mục | Nội dung |
 |---|---|
@@ -436,7 +472,7 @@ Phase 3 hiện **Completed** ở mức preprocessing/nested-CV foundation. Check
 | Go/no-go | Go Phase 4/5 chỉ sau khi toàn bộ Phase 3 hoàn tất, gồm P3B WOE/VIF/scaling và P3C nested CV/fold persistence/tích hợp Protocol A. |
 | Ngoài phạm vi | Model grid đầy đủ, metric business, modern Protocol B. |
 | Commit đề xuất | `feat(preprocessing): add leakage-safe replication protocol` |
-| Tag đề xuất | `p3-leakage-safe-preprocessing` |
+| Tag | `p3-leakage-safe-preprocessing-complete` |
 | Website cần cập nhật | Cập nhật phương pháp preprocessing và trạng thái Phase 3. |
 
 ### Phase 4 - Xác minh metric và đánh giá kinh doanh
@@ -997,7 +1033,7 @@ Domain + HTTPS:
 
 ## 22. Giai đoạn tiếp theo
 
-**Giai đoạn tiếp theo được đề xuất:** bắt đầu **Phase 3 - Pipeline tiền xử lý chống leakage** trong một nhiệm vụ riêng. Phase 2 đã Completed ở mức experiment foundation; smoke metrics vẫn non-publishable và không phải kết quả nghiên cứu chính thức.
+**Giai đoạn tiếp theo được đề xuất:** bắt đầu **Phase 4 - Xác minh metric và đánh giá kinh doanh** trong một nhiệm vụ riêng. Phase 3 đã Completed ở mức preprocessing/nested-CV foundation; smoke/reduced artifacts vẫn non-publishable và không phải kết quả nghiên cứu chính thức.
 
 Các quyết định Phase 1 đã chốt hoặc đã vận hành:
 
