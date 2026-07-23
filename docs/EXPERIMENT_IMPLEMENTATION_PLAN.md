@@ -423,9 +423,9 @@ Phase 3 hiện **Completed** ở mức preprocessing/nested-CV foundation. Check
 <!-- PROJECT_STATUS:BEGIN -->
 Generated from website/content/progress.yaml. Do not edit manually.
 
-- Last completed phase: Phase 3
-- Current phase: Phase 4
-- Next phase: Phase 4 - Metric validation
+- Last completed phase: Phase 4
+- Current phase: Phase 5
+- Next phase: Phase 5 - Classical and ensemble models
 - Updated at: 2026-07-23
 
 | Phase | Status | Milestone tag |
@@ -434,8 +434,8 @@ Generated from website/content/progress.yaml. Do not edit manually.
 | Phase 1 - Website production foundation | Completed | p1-website-production-complete |
 | Phase 2 - Experiment foundation | Completed | p2-experiment-foundation-complete |
 | Phase 3 - Leakage-safe preprocessing | Completed | p3-leakage-safe-preprocessing-complete |
-| Phase 4 - Metric validation | Next | - |
-| Phase 5 - Mô hình truyền thống và ensemble | Planned | - |
+| Phase 4 - Metric validation | Completed | p4-metric-validation-complete |
+| Phase 5 - Classical and ensemble models | Next | - |
 | Phase 6 - MLP depth replication | Planned | - |
 | Phase 7 - Core replication run | Planned | - |
 | Phase 8 - Modern reassessment | Planned | - |
@@ -448,12 +448,16 @@ Phase 3 checkpoints:
 - P3B: Completed - WOE, iterative VIF và train-only scaling.
 - P3C: Completed - Nested CV, fold persistence, per-fold preprocessing và tuning isolation.
 
-Phase 3 scope limits:
-- Completed preprocessing and nested-CV foundation only.
-- No validated scientific metrics yet.
+Phase 4 checkpoints:
+- P4A: Completed - Metric specification và metric contract.
+- P4B: Completed - ROC AUC, Brier Score và Partial Gini implementation/reference validation.
+- P4C: Completed - EMP unsupported có provenance, metric config registry, nested-CV integration và metric-validation harness.
+
+Current scope limits:
 - Core replication has not run.
-- Smoke/reduced artifacts remain non-publishable validation artifacts.
-- Phase 4 - Metric validation is next.
+- Smoke, reduced, fake, preprocessing-validation, and metric-validation artifacts remain non-publishable validation artifacts.
+- Website still must not present validation artifacts as scientific results.
+- Phase 4 completed metric validation for AUC, Brier Score, Partial Gini, and EMP unsupported handling; Phase 5 is next.
 <!-- PROJECT_STATUS:END -->
 
 | Mục | Nội dung |
@@ -479,22 +483,32 @@ Phase 3 scope limits:
 
 | Mục | Nội dung |
 |---|---|
-| Phân loại | Must cho AUC, Brier Score, Partial Gini; Should cho EMP nếu exact chưa chốt |
+| Phân loại | Must cho AUC, Brier Score, Partial Gini; Must chốt EMP exact/approximate/unsupported |
 | Mục tiêu | Xác minh metric trước khi chạy core experiment quy mô lớn. |
-| Phạm vi | AUC, Brier Score, Partial Gini, EMP exact hoặc approximate, unit tests và reference tests. |
+| Phạm vi | AUC, Brier Score, Partial Gini, quyết định cuối cho EMP, metric config contract, nested-CV integration và metric-validation artifacts non-publishable. |
 | Đầu vào | Paper, Lessmann/Verbraken references cần đọc ở phase triển khai, toy predictions, artifact contract. |
-| Đầu ra | Metrics module đã test, metric docs, quyết định exact/approximate cho EMP. |
-| Nhiệm vụ chi tiết | Implement AUC/Brier; xác định công thức Partial Gini với `b=0.4`; xác định EMP exact/approximate; viết toy/reference tests; ghi rõ sign convention và tham số business. |
+| Đầu ra | Metrics module đã test; P4B hoàn tất ROC AUC, Brier Score và Partial Gini; P4C chốt EMP unsupported có provenance, metric config registry, nested-CV integration và metric-validation harness. |
+| Nhiệm vụ chi tiết | P4A chốt metric specification và typed metric contract; P4B implement/validate AUC, Brier Score và Partial Gini với `b=0.4`; P4C chốt EMP exact/approximate/unsupported, integration và metric-validation harness; ghi rõ sign convention, edge cases và tham số business. |
 | File dự kiến tạo/sửa | `src/creditrep/metrics/`, `tests/test_metrics_*.py`, docs metric nếu cần. |
 | Test | Perfect/random/worst classifier toy, Brier hand-computed, Partial Gini reference, EMP toy/reference, threshold không chọn trên test fold. |
 | Acceptance criteria | Metric deterministic, finite, documented; Partial Gini pass reference; EMP không bị gọi là exact nếu chỉ approximate. |
 | Dependency | Phase 2, có thể song song sau Phase 3 nhưng phải hoàn thành trước Phase 7. |
 | Rủi ro | Partial Gini formula ambiguous, EMP thiếu tham số, metric profit nhạy với imbalance. |
-| Go/no-go | Go Phase 7 khi AUC/Brier/Partial Gini pass; EMP được label rõ. |
+| Go/no-go | Sau P4B có thể tiếp tục P4C và chuẩn bị Phase 5/7, nhưng core experiment chỉ Go khi EMP được label rõ và metric-validation integration của P4C đạt acceptance. |
 | Ngoài phạm vi | Chạy full experiment, statistical comparison. |
 | Commit đề xuất | `feat(metrics): validate replication and business metrics` |
 | Tag đề xuất | `p4-metric-validation` |
 | Website cần cập nhật | Trang phương pháp ghi metric đã xác minh và EMP exact/approximate status. |
+
+Checkpoint nội bộ của Phase 4:
+
+| Checkpoint | Trạng thái | Phạm vi |
+|---|---|---|
+| P4A - Metric specification và metric contract | Completed | Audit metric hiện có, tài liệu `docs/METRIC_SPECIFICATION.md`, decision record Partial Gini/EMP và typed metric-result contract. |
+| P4B - AUC/Brier/Partial Gini reference validation | Completed | Implement/validate metric formulas, normalization, tie policy, edge-case status và toy/reference tests; giữ smoke runner backward-compatible. |
+| P4C - EMP và metric-validation harness | Completed | Chốt EMP unsupported có provenance, config validation, artifact integration và non-publishable metric-validation artifacts. |
+
+P4A không tạo scientific results, không chạy core replication và không công bố metric lên website.
 
 ### Phase 5 - Mô hình truyền thống và ensemble
 
@@ -1033,7 +1047,7 @@ Domain + HTTPS:
 
 ## 22. Giai đoạn tiếp theo
 
-**Giai đoạn tiếp theo được đề xuất:** bắt đầu **Phase 4 - Xác minh metric và đánh giá kinh doanh** trong một nhiệm vụ riêng. Phase 3 đã Completed ở mức preprocessing/nested-CV foundation; smoke/reduced artifacts vẫn non-publishable và không phải kết quả nghiên cứu chính thức.
+**Giai đoạn tiếp theo được đề xuất:** bắt đầu **Phase 5 - Mô hình truyền thống và ensemble**. Phase 4 đã completed ở mức metric validation: AUC, Brier Score và Partial Gini đã được implement/reference-validate; EMP được chốt `unsupported` có provenance; metric config registry, nested-CV integration và metric-validation artifacts đã có ở mức non-publishable. Smoke/reduced/fake/metric-validation artifacts vẫn không phải kết quả nghiên cứu chính thức.
 
 Các quyết định Phase 1 đã chốt hoặc đã vận hành:
 

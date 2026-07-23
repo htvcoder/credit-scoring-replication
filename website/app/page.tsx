@@ -88,9 +88,9 @@ export default function Home() {
             <p className="eyebrow">Tiến độ</p>
             <h2>Trạng thái phase</h2>
             <p className="muted">
-              Phase 3 đã hoàn thành nền tảng preprocessing và nested CV chống
-              leakage; Phase 4 - Metric validation là bước tiếp theo. Chưa có
-              kết quả nghiên cứu chính thức để công bố.
+              Phase 4 đã hoàn thành metric validation ở mức non-publishable
+              artifact; Phase 5 - Mô hình truyền thống và ensemble là bước tiếp
+              theo. Chưa có kết quả nghiên cứu chính thức để công bố.
             </p>
           </div>
           <Link className="text-link" href="/tien-do/">

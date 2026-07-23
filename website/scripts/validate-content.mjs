@@ -67,8 +67,8 @@ if (phase3?.tag !== "p3-leakage-safe-preprocessing-complete") {
   fail("Phase 3 tag must be p3-leakage-safe-preprocessing-complete.");
 }
 
-if (phase4?.status !== "next") {
-  fail("Phase 4 must be marked Next after Phase 3 completion.");
+if (!["next", "in_progress", "completed"].includes(phase4?.status)) {
+  fail("Phase 4 must be marked Next, In progress, or Completed after Phase 3 completion.");
 }
 
 if (progress.phases.length !== expectedPhaseOrder.length) {
@@ -104,6 +104,12 @@ for (const phase of progress.phases) {
 }
 
 for (const phase of progress.phases.slice(5)) {
+  if (phase.id === "Phase 5" && phase4?.status === "completed") {
+    if (phase.status !== "next") {
+      fail("Phase 5 must be Next after Phase 4 completion.");
+    }
+    continue;
+  }
   if (phase.status !== "planned") {
     fail(`${phase.id} must remain Planned until implementation evidence exists.`);
   }

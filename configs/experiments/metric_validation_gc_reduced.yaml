@@ -1,0 +1,39 @@
+experiment:
+  name: metric_validation_gc_reduced
+  result_scope: metric_validation
+  publishable: false
+dataset:
+  id: GC
+cross_validation:
+  outer:
+    strategy: repeated_stratified_2fold
+    n_repeats: 1
+    n_splits: 2
+    shuffle: true
+    random_seed: 42
+  inner:
+    strategy: stratified_kfold
+    n_splits: 2
+    shuffle: true
+    random_seed_policy: derived_from_outer
+preprocessing:
+  protocol_config: configs/protocols/protocol_a.yaml
+evaluation:
+  validation_model: deterministic_probability_estimator
+  metrics:
+    - id: roc_auc
+    - id: brier_score
+    - id: partial_gini
+      parameters:
+        b: 0.4
+    - id: emp
+tuning:
+  candidates:
+    - name: low_bias
+      bias: -0.1
+    - name: neutral_bias
+      bias: 0.0
+    - name: high_bias
+      bias: 0.1
+output:
+  root_dir: artifacts/experiments
