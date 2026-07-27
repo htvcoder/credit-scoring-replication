@@ -1,0 +1,15 @@
+experiment: {name: gc_reduced_model_validation, publishable: false, result_scope: model_validation}
+dataset: {id: GC}
+output: {root_dir: artifacts/model-validation}
+preprocessing: {protocol_config: configs/protocols/protocol_a.yaml}
+cross_validation:
+  outer: {strategy: repeated_stratified_2fold, n_repeats: 1, n_splits: 2, shuffle: true, random_seed: 42}
+  inner: {strategy: stratified_kfold, n_splits: 2, shuffle: true, random_seed_policy: derived_from_outer}
+models:
+  logistic_regression: [{max_iter: 100, solver: liblinear}]
+  decision_tree: [{max_depth: 3}]
+  random_forest: [{n_estimators: 20, n_jobs: 1}]
+  xgboost: [{n_estimators: 20, n_jobs: 1, tree_method: hist, eval_metric: logloss}]
+metrics: [{id: roc_auc}, {id: brier_score}, {id: partial_gini}, {id: emp}]
+optimization_metric: roc_auc
+random_seed: 42
