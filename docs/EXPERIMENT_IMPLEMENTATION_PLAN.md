@@ -423,9 +423,9 @@ Phase 3 hiện **Completed** ở mức preprocessing/nested-CV foundation. Check
 <!-- PROJECT_STATUS:BEGIN -->
 Generated from website/content/progress.yaml. Do not edit manually.
 
-- Last completed phase: Phase 4
-- Current phase: Phase 5
-- Next phase: Phase 5 - Classical and ensemble models
+- Last completed phase: Phase 5
+- Current phase: Phase 6
+- Next phase: Phase 6 - MLP depth replication
 - Updated at: 2026-07-27
 
 | Phase | Status | Milestone tag |
@@ -435,8 +435,8 @@ Generated from website/content/progress.yaml. Do not edit manually.
 | Phase 2 - Experiment foundation | Completed | p2-experiment-foundation-complete |
 | Phase 3 - Leakage-safe preprocessing | Completed | p3-leakage-safe-preprocessing-complete |
 | Phase 4 - Metric validation | Completed | p4-metric-validation-complete |
-| Phase 5 - Classical and ensemble models | In Progress | - |
-| Phase 6 - MLP depth replication | Planned | - |
+| Phase 5 - Classical and ensemble models | Completed | p5-classical-replication-complete |
+| Phase 6 - MLP depth replication | Next | - |
 | Phase 7 - Core replication run | Planned | - |
 | Phase 8 - Modern reassessment | Planned | - |
 | Phase 9 - So sánh thống kê | Planned | - |
@@ -456,13 +456,13 @@ Phase 4 checkpoints:
 Phase 5 checkpoints:
 - P5A: Completed - Model contract and configuration foundation.
 - P5B: Completed - Classical model implementations.
-- P5C: Planned - Nested-CV model-validation harness.
+- P5C: Completed - Nested-CV model-validation harness với atomic per-fold artifacts, resume/retry, failure stages và deterministic reconciliation.
 
 Current scope limits:
 - Core replication has not run.
 - Smoke, reduced, fake, preprocessing-validation, and metric-validation artifacts remain non-publishable validation artifacts.
 - Website still must not present validation artifacts as scientific results.
-- Phase 4 completed metric validation for AUC, Brier Score, Partial Gini, and EMP unsupported handling; Phase 5 is next.
+- Phase 5 completed the non-publishable classical-model validation harness; Phase 6 is next.
 <!-- PROJECT_STATUS:END -->
 
 | Mục | Nội dung |
@@ -1052,7 +1052,7 @@ Domain + HTTPS:
 
 ## 22. Giai đoạn tiếp theo
 
-**Giai đoạn tiếp theo được đề xuất:** bắt đầu **Phase 5 - Mô hình truyền thống và ensemble**. Phase 4 đã completed ở mức metric validation: AUC, Brier Score và Partial Gini đã được implement/reference-validate; EMP được chốt `unsupported` có provenance; metric config registry, nested-CV integration và metric-validation artifacts đã có ở mức non-publishable. Smoke/reduced/fake/metric-validation artifacts vẫn không phải kết quả nghiên cứu chính thức.
+**Giai đoạn tiếp theo được đề xuất:** bắt đầu **Phase 6 - Tái lập ảnh hưởng độ sâu của MLP**. Phase 5 đã completed ở mức non-publishable classical-model validation foundation với model contract, LR/CART/RF/XGBoost, nested-CV, atomic per-fold artifacts, resume/retry và structured failure handling. Chưa chạy core replication và các validation artifacts vẫn không phải kết quả nghiên cứu chính thức.
 
 Các quyết định Phase 1 đã chốt hoặc đã vận hành:
 

@@ -27,7 +27,7 @@ Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái 
 
 ## Bước tiếp theo
 
-- Phase 5 - Mô hình truyền thống và ensemble là bước tiếp theo.
+- Phase 5 đã hoàn thành classical-model validation foundation; Phase 6 - MLP depth replication là bước tiếp theo.
 - Core replication chỉ được bắt đầu sau khi model factory và baseline models dùng lại đúng preprocessing, nested-CV và metric-validation foundation của Phase 3-4.
 
 ## Modern reassessment

@@ -99,7 +99,19 @@ def test_phase4_completed_requires_phase5_next_and_project_pointer_updates() -> 
     status["phases"][4]["tag"] = "p4-metric-validation-complete"
     status["phases"][4]["checkpoints"][2]["status"] = "completed"
     status["phases"][5]["status"] = "next"
+    status["phases"][5].pop("tag", None)
+    status["phases"][5]["checkpoints"][2]["status"] = "planned"
+    status["phases"][6]["status"] = "planned"
     assert sync.validate_status_schema(status, check_tags=False).ok
+
+
+def test_phase5_completed_requires_phase6_next_and_canonical_tag() -> None:
+    status = load_status()
+    assert status["project"]["last_completed_phase"] == 5
+    assert status["project"]["current_phase"] == status["project"]["next_phase"] == 6
+    assert status["phases"][5]["status"] == "completed"
+    assert status["phases"][5]["tag"] == "p5-classical-replication-complete"
+    assert status["phases"][6]["status"] == "next"
 
 
 def test_website_derivative_matches_source_policy() -> None:

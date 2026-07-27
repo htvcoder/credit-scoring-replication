@@ -219,7 +219,7 @@ Cấu trúc nội dung chính:
 - `website/content/paper.yaml`: thông tin paper gốc, thiết kế thực nghiệm và kết quả chính do paper báo cáo.
 - `website/content/background.md`: bối cảnh và mục đích của đề tài thực tập.
 - `website/content/limitations.md`: hạn chế của paper và hạn chế khi tái thực hiện.
-- `website/content/progress.yaml`: source of truth cho trạng thái phase; Phase 0, Phase 1, Phase 2 và Phase 3 là `Completed`, Phase 4 là `Next`, Phase 5 đến Phase 11 là `Planned`.
+- `website/content/progress.yaml`: source of truth cho trạng thái phase; Phase 0 đến Phase 5 là `Completed`, Phase 6 là `Next`, Phase 7 đến Phase 11 là `Planned`.
 - `website/content/methods.md`: phương pháp dự kiến.
 - `website/content/deviations.md`: deviation và giới hạn hiện tại.
 - `data/datasets.yaml`: source of truth cho metadata dataset hiển thị trên website.
@@ -544,9 +544,9 @@ Remove-Item -Recurse -Force .venv-clean
 <!-- PROJECT_STATUS:BEGIN -->
 Generated from website/content/progress.yaml. Do not edit manually.
 
-- Last completed phase: Phase 4
-- Current phase: Phase 5
-- Next phase: Phase 5 - Classical and ensemble models
+- Last completed phase: Phase 5
+- Current phase: Phase 6
+- Next phase: Phase 6 - MLP depth replication
 - Updated at: 2026-07-27
 
 | Phase | Status | Milestone tag |
@@ -556,8 +556,8 @@ Generated from website/content/progress.yaml. Do not edit manually.
 | Phase 2 - Experiment foundation | Completed | p2-experiment-foundation-complete |
 | Phase 3 - Leakage-safe preprocessing | Completed | p3-leakage-safe-preprocessing-complete |
 | Phase 4 - Metric validation | Completed | p4-metric-validation-complete |
-| Phase 5 - Classical and ensemble models | In Progress | - |
-| Phase 6 - MLP depth replication | Planned | - |
+| Phase 5 - Classical and ensemble models | Completed | p5-classical-replication-complete |
+| Phase 6 - MLP depth replication | Next | - |
 | Phase 7 - Core replication run | Planned | - |
 | Phase 8 - Modern reassessment | Planned | - |
 | Phase 9 - So sánh thống kê | Planned | - |
@@ -577,11 +577,11 @@ Phase 4 checkpoints:
 Phase 5 checkpoints:
 - P5A: Completed - Model contract and configuration foundation.
 - P5B: Completed - Classical model implementations.
-- P5C: Planned - Nested-CV model-validation harness.
+- P5C: Completed - Nested-CV model-validation harness với atomic per-fold artifacts, resume/retry, failure stages và deterministic reconciliation.
 
 Current scope limits:
 - Core replication has not run.
 - Smoke, reduced, fake, preprocessing-validation, and metric-validation artifacts remain non-publishable validation artifacts.
 - Website still must not present validation artifacts as scientific results.
-- Phase 4 completed metric validation for AUC, Brier Score, Partial Gini, and EMP unsupported handling; Phase 5 is next.
+- Phase 5 completed the non-publishable classical-model validation harness; Phase 6 is next.
 <!-- PROJECT_STATUS:END -->

@@ -1,8 +1,8 @@
 schema_version: 1
 project:
-  last_completed_phase: 4
-  current_phase: 5
-  next_phase: 5
+  last_completed_phase: 5
+  current_phase: 6
+  next_phase: 6
   updated_at: "2026-07-27"
 status_enum:
   - planned
@@ -140,8 +140,9 @@ phases:
     numeric_id: 5
     title: "Mô hình truyền thống và ensemble"
     name: "Classical and ensemble models"
-    status: "in_progress"
-    summary: "Phase này sẽ triển khai các baseline chính của paper bằng cùng preprocessing và evaluation protocol. Kết quả baseline là điều kiện để so sánh MLP, XGBoost và modern reassessment sau này."
+    status: "completed"
+    tag: "p5-classical-replication-complete"
+    summary: "Phase 5 đã hoàn thành model contract, bốn classical model implementations và per-fold nested-CV model-validation harness với resume, retry, provenance validation, failure orchestration và non-publishable artifacts."
     tasks:
       - "Implement Logistic Regression, Decision Tree/CART hoặc C4.5 nếu khả thi."
       - "Implement Random Forest và XGBoost với probability output."
@@ -158,12 +159,12 @@ phases:
         status: "completed"
         summary: "Classical model implementations."
       - id: "P5C"
-        status: "planned"
-        summary: "Nested-CV model-validation harness."
+        status: "completed"
+        summary: "Nested-CV model-validation harness với atomic per-fold artifacts, resume/retry, failure stages và deterministic reconciliation."
   - id: "Phase 6"
     numeric_id: 6
     title: "MLP depth replication"
-    status: "planned"
+    status: "next"
     summary: "Phase này kiểm tra ảnh hưởng của độ sâu MLP để trả lời RQ2 trong phạm vi partial replication. Các cấu hình MLP-1, MLP-3 và MLP-5 phải dùng training setup nhất quán và log đầy đủ."
     tasks:
       - "Implement MLP-1, MLP-3 và MLP-5 bằng cùng model contract."
