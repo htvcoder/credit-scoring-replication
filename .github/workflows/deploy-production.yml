@@ -182,6 +182,23 @@ jobs:
           curl -fsS http://127.0.0.1:8080/
           curl -fsS http://127.0.0.1:8080/health/ | grep -q "OK"
           curl -fsS http://127.0.0.1:8080/version/ | grep -q "${{ steps.resolve.outputs.deploy_sha }}"
+          for route in tien-do gioi-thieu datasets; do
+            location="$(curl -sSI "http://127.0.0.1:8080/${route}" | awk -F': ' 'tolower($1) == "location" { print $2 }' | tr -d '\r')"
+            test -n "${location}"
+            case "${location}" in
+              *:8080*)
+                echo "Internal container port leaked in Location: ${location}" >&2
+                exit 1
+                ;;
+              */"${route}"/)
+                ;;
+              *)
+                echo "Unexpected trailing-slash redirect for /${route}: ${location}" >&2
+                exit 1
+                ;;
+            esac
+            curl -fsS "http://127.0.0.1:8080/${route}/" >/dev/null
+          done
           docker exec credit-scoring-website-deploy-check sh -c '
             set -eu
             test ! -e /usr/share/nginx/html/data/raw

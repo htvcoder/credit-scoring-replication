@@ -19,6 +19,7 @@ LABEL org.opencontainers.image.title="credit-scoring-replication-website"
 LABEL org.opencontainers.image.description="Static website for the credit-scoring-replication internship project"
 LABEL org.opencontainers.image.revision=$BUILD_SHA
 COPY --from=builder /app/out /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
   CMD wget -qO- http://127.0.0.1:8080/health/ | grep -q "OK"

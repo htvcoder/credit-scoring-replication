@@ -65,6 +65,10 @@ Container website lắng nghe port `8080`. Production map host port `80` sang co
 
 Không dùng host-level Nginx trong checkpoint này. Domain và HTTPS vẫn Optional.
 
+### Trailing-slash redirects
+
+Nginx listens on the container-only port `8080`, while Docker publishes host port `80`. The website image uses `port_in_redirect off;` and `absolute_redirect off;`, so directory canonicalization (for example `/tien-do` to `/tien-do/`) produces a relative `Location` header. This preserves the client's public host, port, proxy and HTTPS origin instead of leaking `:8080` or losing a non-default external port. Do not expose port `8080` to work around this. After deployment, verify representative slashless routes and reject any `Location` header containing `:8080`.
+
 ## Prerequisites trên VM
 
 VM đã được xác nhận qua workflow `.github/workflows/test-vm-ssh.yml`:
