@@ -2,6 +2,7 @@
 
 from creditrep.config.loader import config_hash, load_experiment_config
 from creditrep.config.models import ExperimentConfig
+from creditrep.config.model_config import parse_model_config
 from creditrep.config.nested import NestedCVConfig, load_nested_cv_config, parse_nested_cv_config
 
 __all__ = [
@@ -11,4 +12,5 @@ __all__ = [
     "load_experiment_config",
     "load_nested_cv_config",
     "parse_nested_cv_config",
+    "parse_model_config",
 ]

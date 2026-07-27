@@ -7,9 +7,13 @@ from typing import Any
 from sklearn.linear_model import LogisticRegression
 
 from creditrep.models.exceptions import ModelError
+from creditrep.models.registry import MODEL_REGISTRY
 
 
 def create_model(model_type: str, parameters: dict[str, Any]):
+    capability = MODEL_REGISTRY.resolve(model_type)
+    if not capability.implemented:
+        raise ModelError(f"Model {model_type!r} is registered but not implemented until P5B.")
     if model_type == "logistic_regression":
         return LogisticRegression(**parameters)
     if model_type == "xgboost":

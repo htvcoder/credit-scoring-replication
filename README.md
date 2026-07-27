@@ -547,7 +547,7 @@ Generated from website/content/progress.yaml. Do not edit manually.
 - Last completed phase: Phase 4
 - Current phase: Phase 5
 - Next phase: Phase 5 - Classical and ensemble models
-- Updated at: 2026-07-23
+- Updated at: 2026-07-27
 
 | Phase | Status | Milestone tag |
 | --- | --- | --- |
@@ -556,7 +556,7 @@ Generated from website/content/progress.yaml. Do not edit manually.
 | Phase 2 - Experiment foundation | Completed | p2-experiment-foundation-complete |
 | Phase 3 - Leakage-safe preprocessing | Completed | p3-leakage-safe-preprocessing-complete |
 | Phase 4 - Metric validation | Completed | p4-metric-validation-complete |
-| Phase 5 - Classical and ensemble models | Next | - |
+| Phase 5 - Classical and ensemble models | In Progress | - |
 | Phase 6 - MLP depth replication | Planned | - |
 | Phase 7 - Core replication run | Planned | - |
 | Phase 8 - Modern reassessment | Planned | - |
@@ -573,6 +573,11 @@ Phase 4 checkpoints:
 - P4A: Completed - Metric specification và metric contract.
 - P4B: Completed - ROC AUC, Brier Score và Partial Gini implementation/reference validation.
 - P4C: Completed - EMP unsupported có provenance, metric config registry, nested-CV integration và metric-validation harness.
+
+Phase 5 checkpoints:
+- P5A: Completed - Model contract and configuration foundation.
+- P5B: Planned - Classical model implementations.
+- P5C: Planned - Nested-CV model-validation harness.
 
 Current scope limits:
 - Core replication has not run.
