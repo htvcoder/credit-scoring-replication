@@ -455,7 +455,7 @@ Phase 4 checkpoints:
 
 Phase 5 checkpoints:
 - P5A: Completed - Model contract and configuration foundation.
-- P5B: Planned - Classical model implementations.
+- P5B: Completed - Classical model implementations.
 - P5C: Planned - Nested-CV model-validation harness.
 
 Current scope limits:

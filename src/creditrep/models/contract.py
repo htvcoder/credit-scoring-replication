@@ -41,6 +41,11 @@ class ModelCapability:
     supports_probability: bool
     expected_classes: tuple[int, int] = (0, 1)
     allowed_hyperparameters: tuple[str, ...] = ()
+    default_hyperparameters: Mapping[str, Any] = field(default_factory=dict)
+    algorithm: str | None = None
+    implementation: str | None = None
+    replication_role: str = "replication_model"
+    deviation_from_paper: str | None = None
     implemented: bool = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -84,6 +89,11 @@ class ModelArtifactMetadata:
     random_seed: int
     expected_classes: tuple[int, int]
     observed_classes: tuple[int, ...] | None
+    algorithm: str | None = None
+    implementation: str | None = None
+    replication_role: str = "replication_model"
+    deviation_from_paper: str | None = None
+    tuning_profile: str = "reduced"
     positive_class: int = 1
     probability_mapping: str = "P(class 1) = P(bad/default)"
     selected_hyperparameters: Mapping[str, Any] | None = None

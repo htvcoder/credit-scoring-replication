@@ -2,7 +2,7 @@
 
 ## Status
 
-Unresolved pending primary-paper evidence. The implementation must not claim C4.5 unless the selected library is genuinely C4.5 and the paper evidence requires it.
+Accepted: use sklearn CART (`sklearn.tree.DecisionTreeClassifier`) with stable model ID `decision_tree`. The algorithm is `cart`, its replication role is `approximation`, and its required deviation metadata is `c45_to_cart`.
 
 ## Evidence and options
 
@@ -13,8 +13,8 @@ Python options assessed for P5B are:
 - `sklearn.tree.DecisionTreeClassifier` (CART): maintained through the existing pinned scikit-learn dependency, deterministic with `random_state`, binary classification/probabilities, nested-CV compatible, BSD-3-Clause, and no new fragile dependency.
 - A third-party C4.5 implementation: cannot be selected without checking maintenance status, license, probability behavior, deterministic seed handling, and compatibility with the pinned Python/NumPy/scikit-learn stack.
 
-## Recommendation for P5B
+## Accepted implementation
 
-Use `DecisionTreeClassifier` only if the paper evidence remains unavailable or confirms a generic decision tree. Label it **CART decision tree**, retain model ID `decision_tree`, and propagate the explicit CART-vs-C4.5 deviation to model metadata and the final report. Do not label CART as C4.5.
+Use `DecisionTreeClassifier`, label it **CART decision tree**, retain model ID `decision_tree`, and propagate the explicit CART-vs-C4.5 deviation to model metadata and the final report. Do not label CART as C4.5.
 
-Before choosing a true C4.5 dependency, add primary-paper evidence and document package version, maintenance, license, deterministic behavior, probability generation, and CI/runtime effects. No new dependency is justified in P5A.
+The selected estimator is maintained, deterministic with `random_state`, supports binary probabilities, is compatible with nested CV, is part of the existing BSD-3-Clause scikit-learn dependency, and adds no fragile dependency. The final report must retain the deviation. No third-party C4.5 dependency is added.
