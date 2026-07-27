@@ -1,5 +1,7 @@
 """Smoke model factory."""
 
+from creditrep.models.contract import ModelArtifactMetadata, ModelCapability, ModelConfig, positive_class_probabilities
 from creditrep.models.factory import create_model
+from creditrep.models.registry import MODEL_REGISTRY, ModelRegistry
 
-__all__ = ["create_model"]
+__all__ = ["MODEL_REGISTRY", "ModelArtifactMetadata", "ModelCapability", "ModelConfig", "ModelRegistry", "create_model", "positive_class_probabilities"]

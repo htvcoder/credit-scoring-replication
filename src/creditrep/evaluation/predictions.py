@@ -23,13 +23,11 @@ def validate_positive_class_probabilities(model: Any, probabilities: np.ndarray,
         )
     if probabilities.shape[0] != expected_rows:
         raise EvaluationError(f"Prediction length mismatch: {probabilities.shape[0]} != {expected_rows}.")
-    positive_index = classes.index(1)
-    y_score = probabilities[:, positive_index].astype(float)
-    if not np.isfinite(y_score).all():
+    if not np.isfinite(probabilities).all():
         raise EvaluationError("Predicted probabilities contain NaN or Infinity.")
-    if ((y_score < 0) | (y_score > 1)).any():
+    if ((probabilities < 0) | (probabilities > 1)).any():
         raise EvaluationError("Predicted probabilities must be in [0, 1].")
-    return y_score
+    return probabilities[:, classes.index(1)].astype(float)
 
 
 def build_prediction_frame(

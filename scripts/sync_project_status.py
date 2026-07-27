@@ -184,8 +184,8 @@ def validate_status_schema(status: dict[str, Any], check_tags: bool = True) -> V
     if phase4_status == "completed":
         if project.get("last_completed_phase") != 4:
             result.add("project.last_completed_phase must be 4 when Phase 4 is completed.")
-        if phase5_status != "next":
-            result.add("Phase 5 must be next after Phase 4 completion.")
+        if phase5_status not in {"next", "in_progress"}:
+            result.add("Phase 5 must be next or in_progress after Phase 4 completion.")
         if project.get("current_phase") != 5 or project.get("next_phase") != 5:
             result.add("project.current_phase and project.next_phase must both be 5 after Phase 4 completion.")
     elif project.get("last_completed_phase") == 3 and project.get("next_phase") != 4:

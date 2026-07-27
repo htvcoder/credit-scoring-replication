@@ -26,6 +26,7 @@ from creditrep.evaluation.predictions import (
 from creditrep.experiments.exceptions import ExperimentError
 from creditrep.experiments.models import ExperimentRunResult
 from creditrep.models import create_model
+from creditrep.models import MODEL_REGISTRY, ModelArtifactMetadata
 from creditrep.preprocessing import build_smoke_preprocessor
 from creditrep.splitting import create_split
 
@@ -118,8 +119,26 @@ def run_smoke_experiment(
         y_pred=predictions["y_pred"].to_numpy(),
         threshold=config.classification_threshold,
     )
-    model_metadata: dict[str, Any] = {
-        "schema_version": "1.0",
+    capability = MODEL_REGISTRY.resolve(config.model_type)
+    effective_parameters = model.get_params(deep=False) if hasattr(model, "get_params") else config.model_parameters
+    model_metadata: dict[str, Any] = ModelArtifactMetadata(
+        model_id=config.model_type,
+        model_family=capability.family,
+        estimator_name=capability.estimator_name,
+        library_name=capability.library_name,
+        library_version=xgboost.__version__ if config.model_type == "xgboost" else sklearn.__version__,
+        configured_hyperparameters=config.model_parameters,
+        effective_hyperparameters=effective_parameters,
+        random_seed=config.random_seed,
+        expected_classes=capability.expected_classes,
+        observed_classes=tuple(int(value) for value in model.classes_),
+        fit_duration_seconds=float(fit_duration),
+        prediction_duration_seconds=float(predict_duration),
+        warnings=tuple(fit_warnings),
+        result_scope="smoke_validation",
+        publishable=False,
+    ).to_dict() | {
+        # Legacy keys are retained for P2C artifact readers.
         "model_type": config.model_type,
         "model_parameters": config.model_parameters,
         "preprocessing_mode": config.preprocessing_mode,
@@ -131,9 +150,6 @@ def run_smoke_experiment(
             "scikit_learn": sklearn.__version__,
             "xgboost": xgboost.__version__ if config.model_type == "xgboost" else None,
         },
-        "fit_duration_seconds": float(fit_duration),
-        "prediction_duration_seconds": float(predict_duration),
-        "random_seed": config.random_seed,
         "feature_count_before_preprocessing": int(split.train_features.shape[1]),
         "transformed_feature_count": _transformed_feature_count(pipeline, split.train_features),
         "fit_warnings": fit_warnings,

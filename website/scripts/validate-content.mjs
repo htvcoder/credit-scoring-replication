@@ -105,8 +105,8 @@ for (const phase of progress.phases) {
 
 for (const phase of progress.phases.slice(5)) {
   if (phase.id === "Phase 5" && phase4?.status === "completed") {
-    if (phase.status !== "next") {
-      fail("Phase 5 must be Next after Phase 4 completion.");
+    if (!["next", "in_progress"].includes(phase.status)) {
+      fail("Phase 5 must be Next or In progress after Phase 4 completion.");
     }
     continue;
   }

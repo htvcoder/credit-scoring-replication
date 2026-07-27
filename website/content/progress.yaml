@@ -3,7 +3,7 @@ project:
   last_completed_phase: 4
   current_phase: 5
   next_phase: 5
-  updated_at: "2026-07-23"
+  updated_at: "2026-07-27"
 status_enum:
   - planned
   - next
@@ -140,7 +140,7 @@ phases:
     numeric_id: 5
     title: "Mô hình truyền thống và ensemble"
     name: "Classical and ensemble models"
-    status: "next"
+    status: "in_progress"
     summary: "Phase này sẽ triển khai các baseline chính của paper bằng cùng preprocessing và evaluation protocol. Kết quả baseline là điều kiện để so sánh MLP, XGBoost và modern reassessment sau này."
     tasks:
       - "Implement Logistic Regression, Decision Tree/CART hoặc C4.5 nếu khả thi."
@@ -151,7 +151,15 @@ phases:
     deliverables:
       - "Baseline model artifacts, fold-level predictions và aggregated baseline metrics."
     checkpoints:
-      - "Không gọi Decision Tree là C4.5 nếu implementation thực tế là CART approximation."
+      - id: "P5A"
+        status: "completed"
+        summary: "Model contract and configuration foundation."
+      - id: "P5B"
+        status: "planned"
+        summary: "Classical model implementations."
+      - id: "P5C"
+        status: "planned"
+        summary: "Nested-CV model-validation harness."
   - id: "Phase 6"
     numeric_id: 6
     title: "MLP depth replication"
