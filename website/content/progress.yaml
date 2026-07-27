@@ -155,7 +155,7 @@ phases:
         status: "completed"
         summary: "Model contract and configuration foundation."
       - id: "P5B"
-        status: "planned"
+        status: "completed"
         summary: "Classical model implementations."
       - id: "P5C"
         status: "planned"

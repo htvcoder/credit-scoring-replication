@@ -38,11 +38,6 @@ def parse_model_config(payload: Any) -> ModelConfig:
     except (TypeError, ValueError) as exc:
         raise ConfigError(str(exc)) from exc
     capability = MODEL_REGISTRY.validate_config(config)
-    for name, value in config.hyperparameters.items():
-        if name in {"max_iter", "max_depth", "min_samples_leaf", "min_samples_split", "n_estimators", "n_jobs", "random_state"} and (not isinstance(value, int) or isinstance(value, bool) or value <= 0):
-            raise ConfigError(f"{model_id}: hyperparameter {name} must be a positive integer.")
-        if name in {"C", "learning_rate", "subsample", "colsample_bytree"} and (not isinstance(value, (int, float)) or isinstance(value, bool) or value <= 0):
-            raise ConfigError(f"{model_id}: hyperparameter {name} must be a positive number.")
     if capability.supports_random_seed and "random_state" in config.hyperparameters and config.hyperparameters["random_state"] != seed:
         raise ConfigError(f"{model_id}: random_state conflicts with model.random_seed.")
     return config
