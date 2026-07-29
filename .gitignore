@@ -55,4 +55,5 @@ service-account*.json
 client_secret*.json
 
 *.egg-info/
-presentations
+docs/presentations
+reports/*.xlsx
