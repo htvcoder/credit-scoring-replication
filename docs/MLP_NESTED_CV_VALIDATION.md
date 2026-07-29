@@ -65,3 +65,34 @@ preprocessing sẽ tăng theo số fold, candidate, rows và transformed feature
 tăng theo history artifacts. Khuyến nghị thực hiện TC reduced checkpoint trước, ghi
 runtime/memory/disk quan sát, rồi mới quyết định CPU local hay hạ tầng khác. Không chạy
 TC, không checkpoint, không resume giữa epoch và không công bố metric reduced.
+
+## P6C.2B — TC reduced resource checkpoint
+
+Profile `configs/p6c_tc_reduced_checkpoint_v1.yaml` là checkpoint engineering, dùng
+TC trên CPU với 2 outer × 2 inner folds, một candidate mỗi MLP và hai epochs; cả ba
+depth giữ cùng batch size, optimizer, learning rate, weight decay, early-stopping
+policy, seed và `fair_budget_id: p6b_shared_v1`. Mục đích là
+`engineering_resource_checkpoint`, không phải kết quả khoa học.
+
+Preflight TC pass: checksum `30C6BE3ABD8DCFD3E6096C828BAD8C2F011238620F5369220BD60CFC82700933`,
+30.000 dòng, 23 features sau bỏ ID, class 0/1 là 23.364/6.636 và không missing.
+Experiment `p6c_tc_reduced_checkpoint_v1-fe5cf2f64473` hoàn tất 6/6 folds. Lần đầu
+có một `PermissionError` khi atomic publication của một fold MLP-5; failure artifact
+được phân loại retryable. Resume skip 5 folds valid, retry một fold, sau đó artifact
+validator pass; lần resume tiếp theo skip đủ 6 fold.
+
+Observed final-refit duration (giây/fold) là MLP-1: 0,754 và 1,005; MLP-3: 0,818 và
+1,427; MLP-5: 1,906 và 1,606. Parameter counts lần lượt khoảng 1.345–1.409, 9.665
+và 17.985; mỗi final refit có 12.000 train rows, 3.000 validation rows. Artifact local
+có 106 files, 3.369.384 bytes. Peak memory vẫn **NOT AVAILABLE** theo policy không thêm
+dependency đo memory. Những số này chỉ là observed engineering evidence, không dùng để
+ranking model hay so sánh paper.
+
+Quyết định tài nguyên: **local CPU feasible nhưng runtime dài** cho checkpoint reduced.
+Đây là extrapolation thận trọng: TC có 30× rows GC và artifact lớn hơn khoảng 11×, trong
+khi checkpoint chỉ dùng 2 epochs và 1 candidate. Full scientific run sẽ tăng theo epochs,
+candidates và fold/repeat; rủi ro local gồm sleep/restart, thermal throttling, disk và
+thời gian dài. Khuyến nghị trước P6C scientific work là thêm checkpoint/profiling theo
+scope đã duyệt; cloud CPU là lựa chọn thực dụng nếu budget lớn hơn đáng kể. Evidence hiện
+có chưa chứng minh GPU bắt buộc. Không có checkpoint weights, resume giữa epoch hay metric
+scientific được công bố.
