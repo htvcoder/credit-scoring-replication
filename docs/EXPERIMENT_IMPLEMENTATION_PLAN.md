@@ -426,7 +426,7 @@ Generated from website/content/progress.yaml. Do not edit manually.
 - Last completed phase: Phase 5
 - Current phase: Phase 6
 - Next phase: Phase 6 - MLP depth replication
-- Updated at: 2026-07-27
+- Updated at: 2026-07-29
 
 | Phase | Status | Milestone tag |
 | --- | --- | --- |
@@ -436,7 +436,7 @@ Generated from website/content/progress.yaml. Do not edit manually.
 | Phase 3 - Leakage-safe preprocessing | Completed | p3-leakage-safe-preprocessing-complete |
 | Phase 4 - Metric validation | Completed | p4-metric-validation-complete |
 | Phase 5 - Classical and ensemble models | Completed | p5-classical-replication-complete |
-| Phase 6 - MLP depth replication | Next | - |
+| Phase 6 - MLP depth replication | In Progress | - |
 | Phase 7 - Core replication run | Planned | - |
 | Phase 8 - Modern reassessment | Planned | - |
 | Phase 9 - So sánh thống kê | Planned | - |
@@ -458,11 +458,16 @@ Phase 5 checkpoints:
 - P5B: Completed - Classical model implementations.
 - P5C: Completed - Nested-CV model-validation harness với atomic per-fold artifacts, resume/retry, failure stages và deterministic reconciliation.
 
+Phase 6 checkpoints:
+- P6A: Completed - Typed PyTorch MLP contract, logits-only shared builder, CPU-first tiny trainer, device/seed policy and in-memory early stopping foundation. Artifacts remain non-publishable.
+- P6B: Next - Finalize paper-reference MLP-1/3/5 architectures, stable IDs, model configs and production wrapper.
+- P6C: Planned - Integrate neural models into leakage-safe nested CV with inner validation, resume/retry and per-fold artifacts.
+
 Current scope limits:
 - Core replication has not run.
 - Smoke, reduced, fake, preprocessing-validation, and metric-validation artifacts remain non-publishable validation artifacts.
 - Website still must not present validation artifacts as scientific results.
-- Phase 5 completed the non-publishable classical-model validation harness; Phase 6 is next.
+- Phase 5 completed the non-publishable classical-model validation harness; Phase 6 is In Progress.
 <!-- PROJECT_STATUS:END -->
 
 | Mục | Nội dung |

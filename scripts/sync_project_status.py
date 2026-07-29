@@ -188,8 +188,8 @@ def validate_status_schema(status: dict[str, Any], check_tags: bool = True) -> V
                 result.add("Phase 5 tag must be p5-classical-replication-complete.")
             if project.get("last_completed_phase") != 5:
                 result.add("project.last_completed_phase must be 5 when Phase 5 is completed.")
-            if phase6_status != "next":
-                result.add("Phase 6 must be next after Phase 5 completion.")
+            if phase6_status not in {"next", "in_progress"}:
+                result.add("Phase 6 must be next or in_progress after Phase 5 completion.")
             if project.get("current_phase") != 6 or project.get("next_phase") != 6:
                 result.add("project.current_phase and project.next_phase must both be 6 after Phase 5 completion.")
         else:
@@ -267,7 +267,8 @@ def render_managed_section(status: dict[str, Any]) -> str:
             "- Smoke, reduced, fake, preprocessing-validation, and metric-validation artifacts remain non-publishable validation artifacts.",
             "- Website still must not present validation artifacts as scientific results.",
             (
-                "- Phase 5 completed the non-publishable classical-model validation harness; Phase 6 is next."
+                "- Phase 5 completed the non-publishable classical-model validation harness; Phase 6 is "
+                f"{status_label(by_number[6]['status'])}."
                 if by_number[5]["status"] == "completed"
                 else "- Phase 4 completed metric validation; Phase 5 is next/in progress."
             ),
