@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import shutil
 import time
 from dataclasses import dataclass
@@ -11,6 +12,16 @@ from typing import Any
 import pandas as pd
 
 from creditrep.artifacts.exceptions import ArtifactError
+from creditrep.artifacts.neural import (
+    NEURAL_ARTIFACT_SCHEMA_VERSION,
+    PROBABILITY_SEMANTICS,
+    RESULT_SCOPE as NEURAL_RESULT_SCOPE,
+    ensure_neural_payload_json_safe,
+    validate_neural_early_stopping_split_metadata,
+    validate_neural_training_history,
+    validate_neural_training_summary,
+    validate_training_summary_history,
+)
 from creditrep.artifacts.model_validation import (
     ArtifactValidationError,
     initialise_experiment,
@@ -40,6 +51,7 @@ from creditrep.models.neural.nested_cv import (
     create_early_stopping_split,
     derive_early_stopping_seed,
 )
+from creditrep.models.neural.specifications import FAIR_BUDGET_ID
 from creditrep.preprocessing import ProtocolAConfig
 from creditrep.splitting.nested import NestedCVDefinition
 
@@ -87,6 +99,110 @@ def _score(config: ModelValidationConfig, y_true, y_score) -> float:
 
 def _requires_validation_data(model_id: str) -> bool:
     return MODEL_REGISTRY.resolve(model_id).library_name == "pytorch"
+
+
+def _neural_evidence(
+    *,
+    estimator,
+    split,
+    source_y,
+    experiment_id: str,
+    dataset_id: str,
+    model_id: str,
+    outer_fold_id: str,
+    inner_fold_id: str | None,
+    candidate_id: int | str | None,
+    scope: str,
+) -> dict[str, dict[str, Any]]:
+    """Take immutable, JSON-safe evidence immediately after a successful MLP fit."""
+    raw_summary = copy.deepcopy(estimator.get_training_summary())
+    raw_history = copy.deepcopy(estimator.get_training_history())
+    config = estimator.config
+    runtime = raw_summary["runtime"]
+    context = {
+        "schema_version": NEURAL_ARTIFACT_SCHEMA_VERSION,
+        "experiment_id": experiment_id,
+        "dataset_id": dataset_id,
+        "model_id": model_id,
+        "outer_fold_id": outer_fold_id,
+        "inner_fold_id": inner_fold_id,
+        "candidate_id": candidate_id,
+    }
+    summary = context | {
+        "training_scope": scope,
+        "hidden_depth": len(config.hidden_layers),
+        "hidden_layers": list(config.hidden_layers),
+        "parameter_count": raw_summary["parameter_count"],
+        "framework": runtime["framework_name"],
+        "framework_version": runtime["framework_version"],
+        "requested_device": runtime["requested_device"],
+        "resolved_device": runtime["resolved_device"],
+        "optimizer": raw_summary["optimizer"]["name"],
+        "learning_rate": raw_summary["optimizer"]["learning_rate"],
+        "weight_decay": raw_summary["optimizer"]["weight_decay"],
+        "batch_size": config.batch_size,
+        "max_epochs": raw_summary["epochs_requested"],
+        "epochs_completed": raw_summary["epochs_completed"],
+        "best_epoch": raw_summary["best_epoch"],
+        "best_validation_loss": raw_summary["best_validation_loss"],
+        "early_stopping_enabled": config.early_stopping.enabled,
+        "early_stopping_triggered": raw_summary["early_stopping_triggered"],
+        "patience": config.early_stopping.patience,
+        "min_delta": config.early_stopping.min_delta,
+        "stop_reason": raw_summary["stop_reason"],
+        "best_weights_restored": raw_summary["best_weights_restored"],
+        "duration_seconds": raw_summary["total_training_duration_seconds"],
+        "model_seed": config.random_seed,
+        "early_stopping_split_seed": split.seed,
+        "fair_budget_id": FAIR_BUDGET_ID,
+        "probability_semantics": PROBABILITY_SEMANTICS,
+        "publishable": False,
+        "result_scope": NEURAL_RESULT_SCOPE,
+        "warnings": list(raw_summary["warnings"]),
+    }
+    history = context | {"training_scope": scope, "epochs": raw_history["epochs"]}
+    source_counts = {
+        str(key): int(value)
+        for key, value in source_y.value_counts().sort_index().items()
+    }
+    train_y = source_y.loc[list(split.train_indices)]
+    valid_y = source_y.loc[list(split.validation_indices)]
+    split_payload = context | {
+        "split_scope": scope,
+        "source_partition": "outer_train" if scope == "final_refit" else "inner_train",
+        "strategy": "stratified_holdout",
+        "validation_fraction": 0.2,
+        "shuffle": True,
+        "split_seed": split.seed,
+        "split_hash": split.split_hash,
+        "source_row_count": len(source_y),
+        "train_row_count": len(split.train_indices),
+        "validation_row_count": len(split.validation_indices),
+        "source_class_counts": source_counts,
+        "train_class_counts": {
+            str(k): int(v) for k, v in train_y.value_counts().sort_index().items()
+        },
+        "validation_class_counts": {
+            str(k): int(v) for k, v in valid_y.value_counts().sort_index().items()
+        },
+        "overlap_count": 0,
+        "union_matches_source": True,
+        "publishable": False,
+        "result_scope": NEURAL_RESULT_SCOPE,
+    }
+    for payload, validator in (
+        (summary, validate_neural_training_summary),
+        (history, validate_neural_training_history),
+        (split_payload, validate_neural_early_stopping_split_metadata),
+    ):
+        ensure_neural_payload_json_safe(payload)
+        validator(payload)
+    validate_training_summary_history(summary, history)
+    return {
+        "training_summary": copy.deepcopy(summary),
+        "training_history": copy.deepcopy(history),
+        "early_stopping_split": copy.deepcopy(split_payload),
+    }
 
 
 def _fit_for_partition(
@@ -160,7 +276,7 @@ def _fit_for_partition(
             y_validation=dataset.target.iloc[list(split.validation_indices)],
         ),
     )
-    return estimator, pipeline, evaluation, split.metadata()
+    return estimator, pipeline, evaluation, split
 
 
 def _run_fold(
@@ -174,13 +290,14 @@ def _run_fold(
 ) -> dict[str, Any]:
     candidate_rows = []
     candidate_warnings = []
+    neural_candidates: dict[int, list[dict[str, Any]]] = {}
     for index, parameters in enumerate(candidates):
         scores = []
         try:
             for inner in outer.inner_folds:
 
                 def evaluate_inner():
-                    estimator, _, validation, _ = _fit_for_partition(
+                    estimator, _, validation, split = _fit_for_partition(
                         dataset=dataset,
                         model_id=model_id,
                         parameters=parameters,
@@ -193,6 +310,21 @@ def _run_fold(
                         protocol_config=protocol_config,
                         model_stage="inner_tuning",
                     )
+                    if _requires_validation_data(model_id):
+                        neural_candidates.setdefault(index, []).append(
+                            _neural_evidence(
+                                estimator=estimator,
+                                split=split,
+                                source_y=dataset.target.iloc[list(inner.train_indices)],
+                                experiment_id=f"{config.experiment_name}-{config.config_hash[:12]}",
+                                dataset_id=config.dataset_id,
+                                model_id=model_id,
+                                outer_fold_id=outer.outer_fold_id,
+                                inner_fold_id=inner.inner_fold_id,
+                                candidate_id=index,
+                                scope="inner_candidate",
+                            )
+                        )
                     score = positive_class_probabilities(
                         estimator,
                         estimator.predict_proba(validation),
@@ -244,7 +376,7 @@ def _run_fold(
         ),
     )[0]
     prep_start = time.perf_counter()
-    estimator, pipeline, test, early_metadata = _fit_for_partition(
+    estimator, pipeline, test, split = _fit_for_partition(
         dataset=dataset,
         model_id=model_id,
         parameters=selected["parameters"],
@@ -286,6 +418,37 @@ def _run_fold(
             for metric in config.metrics
         ],
     )
+    neural_artifacts = None
+    if _requires_validation_data(model_id):
+        final_evidence = _neural_evidence(
+            estimator=estimator,
+            split=split,
+            source_y=dataset.target.iloc[list(outer.train_indices)],
+            experiment_id=f"{config.experiment_name}-{config.config_hash[:12]}",
+            dataset_id=config.dataset_id,
+            model_id=model_id,
+            outer_fold_id=outer.outer_fold_id,
+            inner_fold_id="final_refit",
+            candidate_id=selected["index"],
+            scope="final_refit",
+        )
+        neural_artifacts = {
+            "candidates": [
+                {
+                    "candidate_id": row["index"],
+                    "parameters": row["parameters"],
+                    "candidate_hash": row["candidate_hash"],
+                    "inner_scores": row["inner_scores"],
+                    "selection_metric": config.optimization_metric,
+                    "selected": row["index"] == selected["index"],
+                    "runs": neural_candidates.get(row["index"], []),
+                }
+                for row in candidate_rows
+            ],
+            "selected_candidate_id": selected["index"],
+            "fair_budget_id": FAIR_BUDGET_ID,
+            "final_refit": final_evidence,
+        }
     return {
         "outer_fold_id": outer.outer_fold_id,
         "model_id": model_id,
@@ -310,6 +473,7 @@ def _run_fold(
         "test_class_counts": outer.test_class_counts,
         "inner_fold_count": len(outer.inner_folds),
         "warnings": candidate_warnings,
+        "neural_artifacts": neural_artifacts,
         "timings": {
             "preprocessing_seconds": preprocessing_seconds,
             "fit_seconds": fit_seconds,
