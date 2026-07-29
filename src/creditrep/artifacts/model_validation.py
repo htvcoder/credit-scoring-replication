@@ -46,11 +46,106 @@ FAILURE_STAGES = {
     "artifact_write",
     "artifact_validation",
     "summary_update",
+    "early_stopping_split",
+    "neural_model_initialization",
+    "neural_training",
+    "neural_metadata_capture",
+    "neural_artifact_validation",
+    "neural_artifact_publication",
+    "neural_reconciliation",
 }
+NEURAL_FAILURE_STAGES = FAILURE_STAGES - {
+    "loading",
+    "fold_validation",
+    "preprocessing",
+    "inner_tuning",
+    "outer_refit",
+    "prediction",
+    "metrics",
+    "artifact_write",
+    "artifact_validation",
+    "summary_update",
+}
+RETRY_CLASSES = {"retryable", "non_retryable"}
 
 
 class ArtifactValidationError(ArtifactError):
     """A complete temporary fold failed validation and was not promoted."""
+
+
+def execution_unit_id(
+    *,
+    experiment_id: str,
+    dataset_checksum: str | None,
+    config_fingerprint: str,
+    model_id: str,
+    outer_fold_id: str,
+    inner_fold_id: str | None = None,
+    candidate_id: str | int | None = None,
+    training_scope: str | None = None,
+) -> str:
+    """Stable identity for a retryable execution boundary; never includes runtime."""
+    return sha256_canonical(
+        {
+            "experiment_id": experiment_id,
+            "dataset_checksum": dataset_checksum,
+            "config_fingerprint": config_fingerprint,
+            "model_id": model_id,
+            "outer_fold_id": outer_fold_id,
+            "inner_fold_id": inner_fold_id,
+            "candidate_id": candidate_id,
+            "training_scope": training_scope,
+        }
+    )
+
+
+def classify_retry(exception: Exception, *, stage: str) -> tuple[str, bool]:
+    """Conservative deterministic retry policy: data/config defects are never retried."""
+    text = str(exception).lower()
+    if stage in {
+        "early_stopping_split",
+        "neural_metadata_capture",
+        "neural_artifact_validation",
+    }:
+        return "non_retryable", False
+    if stage == "neural_reconciliation":
+        if any(
+            marker in text
+            for marker in ("malformed", "incomplete", "missing", "corrupt")
+        ):
+            return "retryable", True
+        return "non_retryable", False
+    if any(
+        marker in text
+        for marker in (
+            "non-finite",
+            "nan",
+            "infinity",
+            "unsupported",
+            "mismatch",
+            "invalid",
+            "schema",
+            "probability",
+        )
+    ):
+        return "non_retryable", False
+    if isinstance(exception, (OSError, TimeoutError)) or any(
+        marker in text for marker in ("lock", "interrupted", "temporar", "disk error")
+    ):
+        return "retryable", True
+    return "non_retryable", False
+
+
+def _sanitize_failure_message(exception: Exception) -> str:
+    message = str(exception).replace("\\", "/").splitlines()[0]
+    message = re.sub(
+        r"(?i)\b(secret|token|password)\s*=\s*[^\s,;]+", r"\1=[REDACTED]", message
+    )
+    message = re.sub(r"(?i)(?:[a-z]:)?/(?:[^\s/]+/)+[^\s/]+", "[PATH]", message)
+    message = re.sub(r"(?i)raw[-_ ]?row\s*=\s*[^\s,;]+", "raw-row=[REDACTED]", message)
+    message = re.sub(r"(?i)tensor\([^)]*\)", "Tensor([REDACTED])", message)
+    message = re.sub(r"(?i)state_dict\s*=\s*[^\s,;]+", "state_dict=[REDACTED]", message)
+    return message[:500]
 
 
 def _json(path: Path, value: Any) -> None:
@@ -190,6 +285,32 @@ def validate_failure_artifact(
         raise ArtifactError("Failure artifact has an invalid schema.")
     if config_hash is not None and failure["config_hash"] != config_hash:
         raise ArtifactError("Failure artifact config hash mismatch.")
+    if failure["stage"] in NEURAL_FAILURE_STAGES:
+        neural = {
+            "outer_fold_id",
+            "training_scope",
+            "execution_unit_id",
+            "retry_class",
+            "attempt_number",
+            "config_fingerprint",
+            "model_seed",
+        }
+        if (
+            neural - set(failure)
+            or failure["retry_class"] not in RETRY_CLASSES
+            or failure["retryable"] != (failure["retry_class"] == "retryable")
+        ):
+            raise ArtifactError(
+                "Neural failure artifact has an invalid retry/context schema."
+            )
+        if failure["training_scope"] not in {"inner_candidate", "final_refit"}:
+            raise ArtifactError("Neural failure artifact has invalid training_scope.")
+        if failure["training_scope"] == "inner_candidate" and (
+            failure.get("inner_fold_id") is None or failure.get("candidate_id") is None
+        ):
+            raise ArtifactError(
+                "Neural inner-candidate failure lacks identity context."
+            )
     return failure
 
 
@@ -206,14 +327,12 @@ def write_failure_artifact(
     config_hash: str,
     retryable: bool = True,
     cleanup_status: str = "completed",
+    neural_context: dict[str, Any] | None = None,
 ) -> Path:
     if stage not in FAILURE_STAGES:
         raise ArtifactError(f"Unsupported failure stage: {stage}.")
     # Keep user-controlled exception output bounded and avoid leaking paths/tracebacks.
-    message = str(exception).replace("\\", "/").splitlines()[0]
-    message = re.sub(
-        r"(?i)\b(secret|token|password)\s*=\s*[^\s,;]+", r"\1=[REDACTED]", message
-    )[:500]
+    message = _sanitize_failure_message(exception)
     target = Path(root) / "failures" / f"{fold_id}.json"
     target.parent.mkdir(parents=True, exist_ok=True)
     old = None
@@ -223,6 +342,7 @@ def write_failure_artifact(
         except ArtifactError:
             old = None
     now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    retry_class, classified_retryable = classify_retry(exception, stage=stage)
     payload = {
         "schema_version": SCHEMA_VERSION,
         "experiment_id": experiment_id,
@@ -233,7 +353,9 @@ def write_failure_artifact(
         "stage": stage,
         "exception_type": type(exception).__name__,
         "message": message,
-        "retryable": bool(retryable),
+        "retryable": bool(
+            retryable if neural_context is None else retryable and classified_retryable
+        ),
         "config_hash": config_hash,
         "timestamp_utc": now,
         "first_failure_timestamp_utc": old.get("first_failure_timestamp_utc", now)
@@ -245,6 +367,14 @@ def write_failure_artifact(
         "publishable": False,
         "result_scope": "model_validation",
     }
+    if neural_context is not None:
+        payload |= dict(neural_context) | {
+            "retry_class": retry_class,
+            "retryable": classified_retryable,
+            "attempt_number": int(old.get("attempt_number", old.get("attempt", 0))) + 1
+            if old
+            else 1,
+        }
     temp = target.with_suffix(".tmp")
     _json(temp, payload)
     validate_failure_artifact(temp, config_hash=config_hash)
@@ -631,6 +761,49 @@ def write_fold_artifact(
             shutil.rmtree(temporary)
         raise
     return destination
+
+
+def reconcile_fold_state(
+    *,
+    root: Path | str,
+    fold_id: str,
+    config: ModelValidationConfig,
+    dataset_checksum: str | None,
+    fold_hash: str,
+    model_id: str,
+) -> str:
+    """Return a deterministic state without trusting directory enumeration order."""
+    experiment = Path(root)
+    fold = experiment / "folds" / fold_id
+    failure = experiment / "failures" / f"{fold_id}.json"
+    if fold.exists():
+        try:
+            validate_fold(
+                fold,
+                config_hash=config.config_hash,
+                dataset_checksum=dataset_checksum,
+                fold_hash=fold_hash,
+                model_id=model_id,
+                experiment_id=experiment.name,
+                dataset_id=config.dataset_id,
+            )
+            return "valid_completed"
+        except ArtifactError as exc:
+            message = str(exc).lower()
+            if "schema version" in message:
+                return "unsupported_schema"
+            if "config hash mismatch" in message or "experiment id mismatch" in message:
+                return "identity_mismatch"
+            return "corrupt"
+    if failure.exists():
+        try:
+            payload = validate_failure_artifact(failure, config_hash=config.config_hash)
+        except ArtifactError as exc:
+            return "unsupported_schema" if "schema" in str(exc).lower() else "corrupt"
+        return "retryable_failed" if payload["retryable"] else "non_retryable_failed"
+    if (experiment / "folds" / f".tmp-{fold_id}").exists():
+        return "incomplete"
+    return "incomplete"
 
 
 def reconcile_summary(

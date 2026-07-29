@@ -31,6 +31,7 @@ from creditrep.artifacts.model_validation import (
     validate_fold,
     write_failure_artifact,
     write_fold_artifact,
+    execution_unit_id,
 )
 from creditrep.config.loader import canonical_json, sha256_canonical
 from creditrep.config.model_validation import ModelValidationConfig
@@ -65,19 +66,22 @@ class ModelValidationResult:
 class FoldStageError(RuntimeError):
     """Preserve the execution boundary that produced a fold failure."""
 
-    def __init__(self, stage: str, cause: Exception):
+    def __init__(
+        self, stage: str, cause: Exception, context: dict[str, Any] | None = None
+    ):
         super().__init__(str(cause))
         self.stage = stage
         self.cause = cause
+        self.context = context or {}
 
 
-def _at_stage(stage: str, operation):
+def _at_stage(stage: str, operation, *, context: dict[str, Any] | None = None):
     try:
         return operation()
     except FoldStageError:
         raise
     except Exception as exc:
-        raise FoldStageError(stage, exc) from exc
+        raise FoldStageError(stage, exc, context) from exc
 
 
 def _score(config: ModelValidationConfig, y_true, y_score) -> float:
@@ -238,16 +242,28 @@ def _fit_for_partition(
             lambda: estimator.fit(train, dataset.target.iloc[list(train_indices)]),
         )
         return estimator, pipeline, evaluation, None
-    split = create_early_stopping_split(
-        train_indices,
-        dataset.target.iloc[list(train_indices)],
-        seed=derive_early_stopping_seed(
-            experiment_seed=seed,
-            model_id=model_id,
-            outer_fold_id=outer_id,
-            inner_fold_id=inner_id,
-            candidate_id=candidate_id,
+    neural_context = {
+        "outer_fold_id": outer_id,
+        "inner_fold_id": inner_id,
+        "candidate_id": candidate_id,
+        "training_scope": "final_refit"
+        if inner_id == "final_refit"
+        else "inner_candidate",
+        "model_seed": seed,
+    }
+    split_seed = derive_early_stopping_seed(
+        experiment_seed=seed,
+        model_id=model_id,
+        outer_fold_id=outer_id,
+        inner_fold_id=inner_id,
+        candidate_id=candidate_id,
+    )
+    split = _at_stage(
+        "early_stopping_split",
+        lambda: create_early_stopping_split(
+            train_indices, dataset.target.iloc[list(train_indices)], seed=split_seed
         ),
+        context=neural_context | {"early_stopping_split_seed": split_seed},
     )
     pipeline, train, validation = _at_stage(
         "preprocessing",
@@ -265,16 +281,19 @@ def _fit_for_partition(
         ),
     )
     estimator = _at_stage(
-        model_stage, lambda: create_model(model_id, parameters, random_seed=seed)
+        "neural_model_initialization",
+        lambda: create_model(model_id, parameters, random_seed=seed),
+        context=neural_context | {"early_stopping_split_seed": split_seed},
     )
     _at_stage(
-        model_stage,
+        "neural_training",
         lambda: estimator.fit(
             train,
             dataset.target.iloc[list(split.train_indices)],
             X_validation=validation,
             y_validation=dataset.target.iloc[list(split.validation_indices)],
         ),
+        context=neural_context | {"early_stopping_split_seed": split_seed},
     )
     return estimator, pipeline, evaluation, split
 
@@ -312,17 +331,30 @@ def _run_fold(
                     )
                     if _requires_validation_data(model_id):
                         neural_candidates.setdefault(index, []).append(
-                            _neural_evidence(
-                                estimator=estimator,
-                                split=split,
-                                source_y=dataset.target.iloc[list(inner.train_indices)],
-                                experiment_id=f"{config.experiment_name}-{config.config_hash[:12]}",
-                                dataset_id=config.dataset_id,
-                                model_id=model_id,
-                                outer_fold_id=outer.outer_fold_id,
-                                inner_fold_id=inner.inner_fold_id,
-                                candidate_id=index,
-                                scope="inner_candidate",
+                            _at_stage(
+                                "neural_metadata_capture",
+                                lambda: _neural_evidence(
+                                    estimator=estimator,
+                                    split=split,
+                                    source_y=dataset.target.iloc[
+                                        list(inner.train_indices)
+                                    ],
+                                    experiment_id=f"{config.experiment_name}-{config.config_hash[:12]}",
+                                    dataset_id=config.dataset_id,
+                                    model_id=model_id,
+                                    outer_fold_id=outer.outer_fold_id,
+                                    inner_fold_id=inner.inner_fold_id,
+                                    candidate_id=index,
+                                    scope="inner_candidate",
+                                ),
+                                context={
+                                    "outer_fold_id": outer.outer_fold_id,
+                                    "inner_fold_id": inner.inner_fold_id,
+                                    "candidate_id": index,
+                                    "training_scope": "inner_candidate",
+                                    "model_seed": inner.seed,
+                                    "early_stopping_split_seed": split.seed,
+                                },
                             )
                         )
                     score = positive_class_probabilities(
@@ -353,7 +385,12 @@ def _run_fold(
                 }
             )
         except FoldStageError as exc:
-            if exc.stage == "preprocessing":
+            if exc.stage == "preprocessing" or exc.stage in {
+                "early_stopping_split",
+                "neural_model_initialization",
+                "neural_training",
+                "neural_metadata_capture",
+            }:
                 raise
             candidate_warnings.append(
                 {
@@ -420,17 +457,28 @@ def _run_fold(
     )
     neural_artifacts = None
     if _requires_validation_data(model_id):
-        final_evidence = _neural_evidence(
-            estimator=estimator,
-            split=split,
-            source_y=dataset.target.iloc[list(outer.train_indices)],
-            experiment_id=f"{config.experiment_name}-{config.config_hash[:12]}",
-            dataset_id=config.dataset_id,
-            model_id=model_id,
-            outer_fold_id=outer.outer_fold_id,
-            inner_fold_id="final_refit",
-            candidate_id=selected["index"],
-            scope="final_refit",
+        final_evidence = _at_stage(
+            "neural_metadata_capture",
+            lambda: _neural_evidence(
+                estimator=estimator,
+                split=split,
+                source_y=dataset.target.iloc[list(outer.train_indices)],
+                experiment_id=f"{config.experiment_name}-{config.config_hash[:12]}",
+                dataset_id=config.dataset_id,
+                model_id=model_id,
+                outer_fold_id=outer.outer_fold_id,
+                inner_fold_id="final_refit",
+                candidate_id=selected["index"],
+                scope="final_refit",
+            ),
+            context={
+                "outer_fold_id": outer.outer_fold_id,
+                "inner_fold_id": "final_refit",
+                "candidate_id": selected["index"],
+                "training_scope": "final_refit",
+                "model_seed": outer.seed,
+                "early_stopping_split_seed": split.seed,
+            },
         )
         neural_artifacts = {
             "candidates": [
@@ -583,6 +631,37 @@ def run_folded_model_validation(
                         raise ArtifactError(
                             f"Fold provenance mismatch for {fold_id}; use a new experiment ID."
                         ) from exc
+                    if _requires_validation_data(model_id):
+                        context = {
+                            "outer_fold_id": outer.outer_fold_id,
+                            "inner_fold_id": None,
+                            "candidate_id": None,
+                            "training_scope": "final_refit",
+                            "model_seed": outer.seed,
+                            "dataloader_seed": outer.seed,
+                            "early_stopping_split_seed": None,
+                            "config_fingerprint": config.config_hash,
+                        }
+                        context["execution_unit_id"] = execution_unit_id(
+                            experiment_id=experiment_id,
+                            dataset_checksum=dataset_checksum,
+                            config_fingerprint=config.config_hash,
+                            model_id=model_id,
+                            outer_fold_id=outer.outer_fold_id,
+                            training_scope="final_refit",
+                        )
+                        write_failure_artifact(
+                            root=root,
+                            experiment_id=experiment_id,
+                            dataset_id=config.dataset_id,
+                            model_id=model_id,
+                            fold_id=fold_id,
+                            fold_hash=outer.split_hash,
+                            stage="neural_reconciliation",
+                            exception=exc,
+                            config_hash=config.config_hash,
+                            neural_context=context,
+                        )
                     # Preserve corrupt evidence; never overwrite it in place.
                     quarantine = (
                         root / "corrupt" / f"{fold_id}-{int(time.time() * 1000)}"
@@ -604,6 +683,11 @@ def run_folded_model_validation(
                     raise ArtifactError(
                         f"Failed fold exists: {fold_id}; use --resume to retry."
                     )
+                if (
+                    not failure["retryable"]
+                    or failure["attempt"] > config.max_retry_attempts
+                ):
+                    continue
                 retried += 1
             try:
                 fold = _run_fold(
@@ -634,6 +718,40 @@ def run_folded_model_validation(
                     else "artifact_write"
                 )
                 cause = exc.cause if isinstance(exc, FoldStageError) else exc
+                is_neural = _requires_validation_data(model_id)
+                if is_neural and not isinstance(exc, FoldStageError):
+                    stage = (
+                        "neural_artifact_validation"
+                        if isinstance(exc, ArtifactValidationError)
+                        else "neural_artifact_publication"
+                    )
+                stage_context = exc.context if isinstance(exc, FoldStageError) else {}
+                neural_context = None
+                if is_neural:
+                    training_scope = stage_context.get("training_scope", "final_refit")
+                    context = {
+                        "outer_fold_id": outer.outer_fold_id,
+                        "inner_fold_id": stage_context.get("inner_fold_id"),
+                        "candidate_id": stage_context.get("candidate_id"),
+                        "training_scope": training_scope,
+                        "model_seed": stage_context.get("model_seed", outer.seed),
+                        "dataloader_seed": stage_context.get("model_seed", outer.seed),
+                        "early_stopping_split_seed": stage_context.get(
+                            "early_stopping_split_seed"
+                        ),
+                        "config_fingerprint": config.config_hash,
+                    }
+                    context["execution_unit_id"] = execution_unit_id(
+                        experiment_id=experiment_id,
+                        dataset_checksum=dataset_checksum,
+                        config_fingerprint=config.config_hash,
+                        model_id=model_id,
+                        outer_fold_id=outer.outer_fold_id,
+                        inner_fold_id=context["inner_fold_id"],
+                        candidate_id=context["candidate_id"],
+                        training_scope=training_scope,
+                    )
+                    neural_context = context
                 write_failure_artifact(
                     root=root,
                     experiment_id=experiment_id,
@@ -644,6 +762,7 @@ def run_folded_model_validation(
                     stage=stage,
                     exception=cause,
                     config_hash=config.config_hash,
+                    neural_context=neural_context,
                 )
                 summary = reconcile_summary(
                     experiment_root=root,
