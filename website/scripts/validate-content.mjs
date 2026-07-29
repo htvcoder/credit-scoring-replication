@@ -45,6 +45,7 @@ const phase2 = progress.phases.find((phase) => phase.id === "Phase 2");
 const phase3 = progress.phases.find((phase) => phase.id === "Phase 3");
 const phase4 = progress.phases.find((phase) => phase.id === "Phase 4");
 const phase5 = progress.phases.find((phase) => phase.id === "Phase 5");
+const phase6 = progress.phases.find((phase) => phase.id === "Phase 6");
 const allowedStatuses = new Set(["planned", "next", "in_progress", "completed", "blocked", "deferred"]);
 const expectedPhaseOrder = Array.from({ length: 12 }, (_, index) => `Phase ${index}`);
 
@@ -134,6 +135,12 @@ for (const phase of progress.phases.slice(5)) {
   if (phase.id === "Phase 6" && phase5?.status === "completed") {
     if (!["next", "in_progress", "completed"].includes(phase.status)) {
       fail("Phase 6 must be Next, In Progress, or Completed after Phase 5 completion.");
+    }
+    continue;
+  }
+  if (phase.id === "Phase 7" && phase6?.status === "completed") {
+    if (phase.status !== "next") {
+      fail("Phase 7 must be Next after Phase 6 completion.");
     }
     continue;
   }

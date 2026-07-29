@@ -23,7 +23,15 @@ MANAGED_DOCS = [
 GENERATED_NOTE = "Generated from website/content/progress.yaml. Do not edit manually."
 BEGIN = "<!-- PROJECT_STATUS:BEGIN -->"
 END = "<!-- PROJECT_STATUS:END -->"
-ALLOWED_STATUSES = {"planned", "next", "in_progress", "completed", "blocked", "deferred"}
+ALLOWED_STATUSES = {
+    "planned",
+    "next",
+    "in_progress",
+    "completed",
+    "blocked",
+    "deferred",
+}
+ALLOWED_TAG_STATUSES = {"created", "proposed"}
 TAG_RE = re.compile(r"^p\d+-[a-z0-9]+(?:-[a-z0-9]+)*$")
 STALE_CURRENT_PATTERNS = [
     re.compile(r"Phase\s*3\s*:\s*(Pending|In Progress|Next)", re.IGNORECASE),
@@ -87,7 +95,9 @@ def phases_by_number(status: dict[str, Any]) -> dict[int, dict[str, Any]]:
     return {phase_number(phase): phase for phase in status.get("phases", [])}
 
 
-def validate_status_schema(status: dict[str, Any], check_tags: bool = True) -> ValidationResult:
+def validate_status_schema(
+    status: dict[str, Any], check_tags: bool = True
+) -> ValidationResult:
     result = ValidationResult([])
     if status.get("schema_version") != 1:
         result.add("schema_version must be 1.")
@@ -115,7 +125,7 @@ def validate_status_schema(status: dict[str, Any], check_tags: bool = True) -> V
     completed_numbers: list[int] = []
 
     for index, phase in enumerate(phases):
-      # Keep this loop intentionally explicit; error messages are CI-facing.
+        # Keep this loop intentionally explicit; error messages are CI-facing.
         try:
             number = phase_number(phase)
         except ValueError as exc:
@@ -125,7 +135,9 @@ def validate_status_schema(status: dict[str, Any], check_tags: bool = True) -> V
             result.add(f"Duplicate phase id: Phase {number}.")
         seen_numbers.add(number)
         if number != index:
-            result.add(f"Phase order must be contiguous; expected Phase {index}, found Phase {number}.")
+            result.add(
+                f"Phase order must be contiguous; expected Phase {index}, found Phase {number}."
+            )
 
         status_value = phase.get("status")
         if status_value not in ALLOWED_STATUSES:
@@ -140,6 +152,11 @@ def validate_status_schema(status: dict[str, Any], check_tags: bool = True) -> V
                 result.add(f"Completed Phase {number} must declare a milestone tag.")
             elif not TAG_RE.fullmatch(str(tag)):
                 result.add(f"Phase {number} tag has invalid format: {tag}.")
+            tag_status = phase.get("tag_status", "created")
+            if tag_status not in ALLOWED_TAG_STATUSES:
+                result.add(
+                    f"Phase {number} tag_status has invalid value: {tag_status}."
+                )
 
         checkpoints = phase.get("checkpoints") or []
         checkpoint_ids: set[str] = set()
@@ -150,13 +167,19 @@ def validate_status_schema(status: dict[str, Any], check_tags: bool = True) -> V
             if not checkpoint_id:
                 result.add(f"Phase {number} checkpoint is missing id.")
             elif checkpoint_id in checkpoint_ids:
-                result.add(f"Phase {number} has duplicate checkpoint id: {checkpoint_id}.")
+                result.add(
+                    f"Phase {number} has duplicate checkpoint id: {checkpoint_id}."
+                )
             checkpoint_ids.add(str(checkpoint_id))
             checkpoint_status = checkpoint.get("status")
             if checkpoint_status not in ALLOWED_STATUSES:
-                result.add(f"Checkpoint {checkpoint_id} has invalid status: {checkpoint_status}.")
+                result.add(
+                    f"Checkpoint {checkpoint_id} has invalid status: {checkpoint_status}."
+                )
             if status_value == "completed" and checkpoint_status != "completed":
-                result.add(f"Completed Phase {number} has non-completed checkpoint: {checkpoint_id}.")
+                result.add(
+                    f"Completed Phase {number} has non-completed checkpoint: {checkpoint_id}."
+                )
 
     if next_count > 1:
         result.add("Only one phase may be next.")
@@ -169,9 +192,15 @@ def validate_status_schema(status: dict[str, Any], check_tags: bool = True) -> V
     if completed_numbers:
         last_completed = max(completed_numbers)
         if project.get("last_completed_phase") != last_completed:
-            result.add("project.last_completed_phase is inconsistent with completed phases.")
-    if in_progress_count == 0 and project.get("current_phase") != project.get("next_phase"):
-        result.add("project.current_phase must match project.next_phase while no phase is in progress.")
+            result.add(
+                "project.last_completed_phase is inconsistent with completed phases."
+            )
+    if in_progress_count == 0 and project.get("current_phase") != project.get(
+        "next_phase"
+    ):
+        result.add(
+            "project.current_phase must match project.next_phase while no phase is in progress."
+        )
     by_number = phases_by_number(status)
     if by_number.get(3, {}).get("status") != "completed":
         result.add("Phase 3 must be completed.")
@@ -186,27 +215,59 @@ def validate_status_schema(status: dict[str, Any], check_tags: bool = True) -> V
         if phase5_status == "completed":
             if by_number[5].get("tag") != "p5-classical-replication-complete":
                 result.add("Phase 5 tag must be p5-classical-replication-complete.")
-            if project.get("last_completed_phase") != 5:
-                result.add("project.last_completed_phase must be 5 when Phase 5 is completed.")
-            if phase6_status not in {"next", "in_progress"}:
-                result.add("Phase 6 must be next or in_progress after Phase 5 completion.")
-            if project.get("current_phase") != 6 or project.get("next_phase") != 6:
-                result.add("project.current_phase and project.next_phase must both be 6 after Phase 5 completion.")
+            if phase6_status == "completed":
+                if by_number[6].get("tag") != "p6-mlp-depth-replication-complete":
+                    result.add("Phase 6 tag must be p6-mlp-depth-replication-complete.")
+                if project.get("last_completed_phase") != 6:
+                    result.add(
+                        "project.last_completed_phase must be 6 when Phase 6 is completed."
+                    )
+                if by_number.get(7, {}).get("status") != "next":
+                    result.add("Phase 7 must be next after Phase 6 completion.")
+                if project.get("current_phase") != 7 or project.get("next_phase") != 7:
+                    result.add(
+                        "project.current_phase and project.next_phase must both be 7 after Phase 6 completion."
+                    )
+            else:
+                if project.get("last_completed_phase") != 5:
+                    result.add(
+                        "project.last_completed_phase must be 5 while Phase 6 is not completed."
+                    )
+                if phase6_status not in {"next", "in_progress"}:
+                    result.add(
+                        "Phase 6 must be next, in_progress, or completed after Phase 5 completion."
+                    )
+                if project.get("current_phase") != 6 or project.get("next_phase") != 6:
+                    result.add(
+                        "project.current_phase and project.next_phase must both be 6 before Phase 6 completion."
+                    )
         else:
             if project.get("last_completed_phase") != 4:
-                result.add("project.last_completed_phase must be 4 while Phase 5 is not completed.")
+                result.add(
+                    "project.last_completed_phase must be 4 while Phase 5 is not completed."
+                )
             if phase5_status not in {"next", "in_progress"}:
-                result.add("Phase 5 must be next or in_progress after Phase 4 completion.")
+                result.add(
+                    "Phase 5 must be next or in_progress after Phase 4 completion."
+                )
             if project.get("current_phase") != 5 or project.get("next_phase") != 5:
-                result.add("project.current_phase and project.next_phase must both be 5 after Phase 4 completion.")
+                result.add(
+                    "project.current_phase and project.next_phase must both be 5 after Phase 4 completion."
+                )
     elif project.get("last_completed_phase") == 3 and project.get("next_phase") != 4:
         result.add("Phase 4 must be the next phase after Phase 3.")
 
     if check_tags:
         for phase in phases:
-            if phase.get("status") == "completed" and phase.get("tag"):
+            if (
+                phase.get("status") == "completed"
+                and phase.get("tag")
+                and phase.get("tag_status", "created") != "proposed"
+            ):
                 if not git_tag_exists(str(phase["tag"])):
-                    result.add(f"Milestone tag not found locally: {phase['tag']}. Use --skip-tag-existence in shallow clones.")
+                    result.add(
+                        f"Milestone tag not found locally: {phase['tag']}. Use --skip-tag-existence in shallow clones."
+                    )
 
     return result
 
@@ -248,17 +309,23 @@ def render_managed_section(status: dict[str, Any]) -> str:
     for number in sorted(by_number):
         phase = by_number[number]
         tag = phase.get("tag", "")
-        lines.append(f"| Phase {number} - {phase.get('name', phase['title'])} | {status_label(phase['status'])} | {tag or '-'} |")
+        lines.append(
+            f"| Phase {number} - {phase.get('name', phase['title'])} | {status_label(phase['status'])} | {tag or '-'} |"
+        )
 
     for number in sorted(by_number):
         structured_checkpoints = [
-            checkpoint for checkpoint in by_number[number].get("checkpoints", []) if isinstance(checkpoint, dict)
+            checkpoint
+            for checkpoint in by_number[number].get("checkpoints", [])
+            if isinstance(checkpoint, dict)
         ]
         if not structured_checkpoints:
             continue
         lines.extend(["", f"Phase {number} checkpoints:"])
         for checkpoint in structured_checkpoints:
-            lines.append(f"- {checkpoint['id']}: {status_label(checkpoint['status'])} - {checkpoint.get('summary', '')}")
+            lines.append(
+                f"- {checkpoint['id']}: {status_label(checkpoint['status'])} - {checkpoint.get('summary', '')}"
+            )
     lines.extend(
         [
             "",
@@ -267,8 +334,8 @@ def render_managed_section(status: dict[str, Any]) -> str:
             "- Smoke, reduced, fake, preprocessing-validation, and metric-validation artifacts remain non-publishable validation artifacts.",
             "- Website still must not present validation artifacts as scientific results.",
             (
-                "- Phase 5 completed the non-publishable classical-model validation harness; Phase 6 is "
-                f"{status_label(by_number[6]['status'])}."
+                "- Phase 6 completed the non-publishable MLP infrastructure/hardening validation; Phase 7 is "
+                f"{status_label(by_number[7]['status'])}."
                 if by_number[5]["status"] == "completed"
                 else "- Phase 4 completed metric validation; Phase 5 is next/in progress."
             ),
@@ -289,13 +356,18 @@ def expected_managed_outputs(status: dict[str, Any]) -> dict[Path, str]:
     rendered = render_managed_section(status)
     outputs: dict[Path, str] = {}
     for path in MANAGED_DOCS:
-        outputs[path] = replace_managed_section(path.read_text(encoding="utf-8"), rendered, path)
+        outputs[path] = replace_managed_section(
+            path.read_text(encoding="utf-8"), rendered, path
+        )
     return outputs
 
 
 def validate_current_status_text(files: list[Path]) -> ValidationResult:
     result = ValidationResult([])
-    historical_marker = re.compile(r"(historical|lịch sử|plan cũ|ban đầu|example|acceptance criteria)", re.IGNORECASE)
+    historical_marker = re.compile(
+        r"(historical|lịch sử|plan cũ|ban đầu|example|acceptance criteria)",
+        re.IGNORECASE,
+    )
     for path in files:
         if not path.exists():
             continue
@@ -303,12 +375,16 @@ def validate_current_status_text(files: list[Path]) -> ValidationResult:
             display_path = path.relative_to(REPO_ROOT)
         except ValueError:
             display_path = path
-        for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        for line_number, line in enumerate(
+            path.read_text(encoding="utf-8").splitlines(), start=1
+        ):
             if historical_marker.search(line):
                 continue
             for pattern in STALE_CURRENT_PATTERNS:
                 if pattern.search(line):
-                    result.add(f"Stale current status in {display_path}:{line_number}: {line.strip()}")
+                    result.add(
+                        f"Stale current status in {display_path}:{line_number}: {line.strip()}"
+                    )
     return result
 
 
@@ -320,7 +396,9 @@ def validate_no_local_absolute_paths(status: dict[str, Any]) -> ValidationResult
     return result
 
 
-def build_expected_status(status: dict[str, Any], phase_updates: dict[int, str] | None = None) -> dict[str, Any]:
+def build_expected_status(
+    status: dict[str, Any], phase_updates: dict[int, str] | None = None
+) -> dict[str, Any]:
     updated = copy.deepcopy(status)
     if phase_updates:
         for phase in updated["phases"]:
@@ -354,7 +432,10 @@ def run(check: bool, skip_tag_existence: bool) -> int:
 
     if check:
         if stale_files:
-            errors.extend(f"Managed status section is stale: {path.relative_to(REPO_ROOT)}" for path in stale_files)
+            errors.extend(
+                f"Managed status section is stale: {path.relative_to(REPO_ROOT)}"
+                for path in stale_files
+            )
         if errors:
             print("Project status synchronization check failed:", file=sys.stderr)
             for error in errors:
@@ -364,7 +445,9 @@ def run(check: bool, skip_tag_existence: bool) -> int:
         return 0
 
     if errors:
-        print("Project status validation failed; no files were updated:", file=sys.stderr)
+        print(
+            "Project status validation failed; no files were updated:", file=sys.stderr
+        )
         for error in errors:
             print(f"- {error}", file=sys.stderr)
         return 1
@@ -385,7 +468,9 @@ def run(check: bool, skip_tag_existence: bool) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--check", action="store_true", help="Validate without writing files.")
+    parser.add_argument(
+        "--check", action="store_true", help="Validate without writing files."
+    )
     parser.add_argument(
         "--skip-tag-existence",
         action="store_true",

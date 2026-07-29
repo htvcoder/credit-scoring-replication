@@ -96,3 +96,17 @@ thời gian dài. Khuyến nghị trước P6C scientific work là thêm checkpo
 scope đã duyệt; cloud CPU là lựa chọn thực dụng nếu budget lớn hơn đáng kể. Evidence hiện
 có chưa chứng minh GPU bắt buộc. Không có checkpoint weights, resume giữa epoch hay metric
 scientific được công bố.
+
+## Quyết định đóng P6C và Phase 6
+
+P6C hoàn tất ở boundary **infrastructure/hardening**: MLP-1/3/5 đã qua nested-CV
+leakage-safe, early stopping deterministic, artifact atomic, retry/resume/reconciliation
+và reduced validation thật trên GC/TC. Các reduced artifacts vẫn non-publishable và không
+được dùng để xếp hạng MLP hay so sánh paper. Theo implementation plan, core scientific
+replication trên các dataset/model đã chốt, fold-level metrics và evidence RQ1/RQ2 thuộc
+**Phase 7**. Vì vậy Phase 6 không phụ thuộc một full scientific TC run để đóng.
+
+Phase 7 là bước tiếp theo. Tag đề xuất cho Phase 6 là
+`p6-mlp-depth-replication-complete`; tag này chưa được tạo trong Git. Công việc Phase 7
+còn lại gồm core replication approved scope, aggregation/scientific comparison ở các phase
+sau và website chỉ dùng artifacts đã được phép công bố.

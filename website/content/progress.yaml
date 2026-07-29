@@ -1,8 +1,8 @@
 schema_version: 1
 project:
-  last_completed_phase: 5
-  current_phase: 6
-  next_phase: 6
+  last_completed_phase: 6
+  current_phase: 7
+  next_phase: 7
   updated_at: "2026-07-29"
 status_enum:
   - planned
@@ -165,8 +165,10 @@ phases:
     numeric_id: 6
     title: "MLP depth replication"
     name: "MLP depth replication"
-    status: "in_progress"
-    summary: "Phase này kiểm tra ảnh hưởng của độ sâu MLP để trả lời RQ2 trong phạm vi partial replication. Các cấu hình MLP-1, MLP-3 và MLP-5 phải dùng training setup nhất quán và log đầy đủ."
+    status: "completed"
+    tag: "p6-mlp-depth-replication-complete"
+    tag_status: "proposed"
+    summary: "Phase này hoàn tất infrastructure/hardening cho MLP-1, MLP-3 và MLP-5: nested-CV leakage-safe, early stopping deterministic, per-fold artifacts, resume/retry và reduced engineering validation trên GC/TC. Đây không phải kết quả khoa học hay ranking RQ2; core scientific replication thuộc Phase 7. Tag được đề xuất, chưa được tạo trong Git."
     tasks:
       - "Implement MLP-1, MLP-3 và MLP-5 bằng cùng model contract."
       - "Thiết lập early stopping, seed control và normalization train-only."
@@ -174,7 +176,7 @@ phases:
       - "Chạy smoke/reduced run trên GC/TC trước khi mở rộng."
       - "Theo dõi runtime để quyết định budget khả thi."
     deliverables:
-      - "Kết quả MLP theo độ sâu, learning curves và comparison artifact cho RQ2."
+      - "MLP nested-CV infrastructure/hardening, training evidence và reduced engineering artifacts non-publishable."
     checkpoints:
       - id: "P6A"
         status: "completed"
@@ -183,12 +185,12 @@ phases:
         status: "completed"
         summary: "Stable MLP-1/3/5 IDs, shared PyTorch wrapper, fair training-budget specification, model configs and provenance metadata. Artifacts remain non-publishable."
       - id: "P6C"
-        status: "next"
-        summary: "Integrate neural models into leakage-safe nested CV with inner validation, resume/retry and per-fold artifacts."
+        status: "completed"
+        summary: "Neural nested-CV integration/hardening, deterministic early stopping, artifacts, retry/resume, GC reduced validation và TC resource checkpoint completed; non-publishable engineering evidence only."
   - id: "Phase 7"
     numeric_id: 7
     title: "Core replication run"
-    status: "planned"
+    status: "next"
     summary: "Phase này chạy core replication trên 6 dataset public đủ điều kiện với Protocol A và các model core. Chỉ fold-level/aggregated artifacts đã validate mới được dùng cho thống kê và website."
     tasks:
       - "Chạy dry run, smoke run và reduced/full approved run theo resource."

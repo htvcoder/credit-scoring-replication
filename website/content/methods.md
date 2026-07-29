@@ -27,7 +27,7 @@ Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái 
 
 ## Bước tiếp theo
 
-- Phase 5 đã hoàn thành classical-model validation foundation; Phase 6 - MLP depth replication là bước tiếp theo.
+- Phase 6 đã hoàn thành MLP infrastructure/hardening validation; Phase 7 - Core replication run là bước tiếp theo. Các reduced validation artifacts vẫn không phải kết quả khoa học.
 - Core replication chỉ được bắt đầu sau khi model factory và baseline models dùng lại đúng preprocessing, nested-CV và metric-validation foundation của Phase 3-4.
 
 ## Modern reassessment
