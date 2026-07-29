@@ -48,6 +48,25 @@ const phase5 = progress.phases.find((phase) => phase.id === "Phase 5");
 const allowedStatuses = new Set(["planned", "next", "in_progress", "completed", "blocked", "deferred"]);
 const expectedPhaseOrder = Array.from({ length: 12 }, (_, index) => `Phase ${index}`);
 
+function validateCheckpointProgress(phase) {
+  const checkpoints = (phase.checkpoints || []).filter((checkpoint) => typeof checkpoint === "object");
+  if (!checkpoints.length) return;
+  const states = checkpoints.map((checkpoint) => checkpoint.status);
+  const firstActive = states.findIndex((state) => state !== "completed");
+  if (states.slice(0, firstActive < 0 ? states.length : firstActive).some((state) => state !== "completed")) {
+    fail(`${phase.id} checkpoints must complete in order.`);
+  }
+  if (phase.status === "next" && states.some((state) => state === "completed" || state === "in_progress")) {
+    fail(`${phase.id} cannot be Next after a checkpoint has started.`);
+  }
+  if (phase.status === "in_progress" && !states.some((state) => state === "completed" || state === "in_progress")) {
+    fail(`${phase.id} In Progress requires checkpoint progress.`);
+  }
+  if (phase.status === "completed" && states.some((state) => state !== "completed")) {
+    fail(`${phase.id} cannot be Completed while checkpoints remain unfinished.`);
+  }
+}
+
 if (phase0?.status !== "completed") {
   fail("Phase 0 must be Completed.");
 }
@@ -102,6 +121,7 @@ for (const phase of progress.phases) {
   if (!Array.isArray(phase.deliverables) || phase.deliverables.length < 1) {
     fail(`${phase.id} deliverables must contain at least 1 item.`);
   }
+  validateCheckpointProgress(phase);
 }
 
 for (const phase of progress.phases.slice(5)) {
@@ -112,8 +132,8 @@ for (const phase of progress.phases.slice(5)) {
     continue;
   }
   if (phase.id === "Phase 6" && phase5?.status === "completed") {
-    if (phase.status !== "next") {
-      fail("Phase 6 must be Next after Phase 5 completion.");
+    if (!["next", "in_progress", "completed"].includes(phase.status)) {
+      fail("Phase 6 must be Next, In Progress, or Completed after Phase 5 completion.");
     }
     continue;
   }
