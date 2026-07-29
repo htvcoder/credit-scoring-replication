@@ -8,7 +8,7 @@
 | 2 | Sprint 2 | Triển khai mô hình và chạy thực nghiệm | Xây dựng các mô hình, chạy replication cốt lõi và đánh giá mô hình hiện đại. | Bảo đảm kết quả mô hình có thể tái lập, so sánh công bằng và quản lý tài nguyên chạy. | 27/07/2026 | 08/08/2026 | Đang thực hiện | P5–P8 |
 | 3 | Sprint 3 | Phân tích, hoàn thiện báo cáo và bàn giao | Phân tích thống kê, kiểm tra độ bền vững, hoàn thiện báo cáo và website kết quả. | Đưa ra kết luận đáng tin cậy và đóng gói sản phẩm có thể tái lập. | 10/08/2026 | 22/08/2026 | Chưa bắt đầu | P9–P11 |
 
-## Sprint 1 — Vấn đề, phương pháp & đánh giá kết quả
+## Sprint 1
 
 | STT | Vấn đề cần giải quyết | Câu hỏi nhỏ cần giải quyết | Phương pháp áp dụng | Đánh giá kết quả theo phương pháp | Ghi chú |
 | --- | --- | --- | --- | --- | --- |
@@ -17,7 +17,7 @@
 | 3 | Xây dựng pipeline thực nghiệm tái lập | Làm thế nào để tải dữ liệu, chia tập và lưu artifact nhất quán? | Thiết kế loader, deterministic split, cấu hình và smoke runner. | Pipeline chạy được, artifact có provenance và smoke validation hợp lệ. | P2 |
 | 4 | Bảo đảm tiền xử lý và đánh giá không rò rỉ dữ liệu | Tiền xử lý và metric có được áp dụng đúng trên từng fold không? | Xây pipeline train-only, nested CV; kiểm chứng AUC, Brier, Partial Gini và EMP. | Leakage test và metric reference test đạt; metric được tài liệu hóa rõ. | P3–P4 |
 
-## Sprint 2 — Vấn đề, phương pháp & đánh giá kết quả
+## Sprint 2
 
 | STT | Vấn đề cần giải quyết | Câu hỏi nhỏ cần giải quyết | Phương pháp áp dụng | Đánh giá kết quả theo phương pháp | Ghi chú |
 | --- | --- | --- | --- | --- | --- |
@@ -26,7 +26,7 @@
 | 3 | Chạy replication cốt lõi | Các mô hình có tạo kết quả hợp lệ trên các dataset theo Protocol A không? | Dry run, chạy thực nghiệm theo fold, kiểm tra artifact, resume và xử lý lỗi. | Mỗi tổ hợp dataset–mô hình có kết quả hợp lệ hoặc trạng thái lỗi rõ ràng. | P7 |
 | 4 | Đánh giá lại bằng mô hình hiện đại | Mô hình hiện đại có thay đổi kết luận so với baseline XGBoost không? | Triển khai CatBoost; đánh giá TabNet/FT-Transformer theo khả năng tài nguyên; tách Protocol A/B. | Kết quả so sánh hợp lệ, protocol không bị trộn và quyết định no-go được ghi rõ. | P8 |
 
-## Sprint 3 — Vấn đề, phương pháp & đánh giá kết quả
+## Sprint 3
 
 | STT | Vấn đề cần giải quyết | Câu hỏi nhỏ cần giải quyết | Phương pháp áp dụng | Đánh giá kết quả theo phương pháp | Ghi chú |
 | --- | --- | --- | --- | --- | --- |
