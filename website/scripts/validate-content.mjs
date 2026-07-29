@@ -45,6 +45,8 @@ const phase2 = progress.phases.find((phase) => phase.id === "Phase 2");
 const phase3 = progress.phases.find((phase) => phase.id === "Phase 3");
 const phase4 = progress.phases.find((phase) => phase.id === "Phase 4");
 const phase5 = progress.phases.find((phase) => phase.id === "Phase 5");
+const phase6 = progress.phases.find((phase) => phase.id === "Phase 6");
+const phase7 = progress.phases.find((phase) => phase.id === "Phase 7");
 const allowedStatuses = new Set(["planned", "next", "in_progress", "completed", "blocked", "deferred"]);
 const expectedPhaseOrder = Array.from({ length: 12 }, (_, index) => `Phase ${index}`);
 
@@ -91,6 +93,33 @@ if (!["next", "in_progress", "completed"].includes(phase4?.status)) {
   fail("Phase 4 must be marked Next, In progress, or Completed after Phase 3 completion.");
 }
 
+if (
+  progress.project?.last_completed_phase !== 6 ||
+  progress.project?.current_phase !== 7 ||
+  progress.project?.next_phase !== 7
+) {
+  fail("Project pointers must identify Phase 6 as completed and Phase 7 as next.");
+}
+
+if (phase5?.status !== "completed" || phase6?.status !== "completed" || phase7?.status !== "next") {
+  fail("Phase 5 and Phase 6 must be Completed, and Phase 7 must be Next.");
+}
+
+const homepageSummary = progress.project?.current_status_summary;
+if (typeof homepageSummary !== "string" || !homepageSummary.trim()) {
+  fail("project.current_status_summary is required for homepage and roadmap status copy.");
+} else {
+  if (!/Phase 6.*hoàn thành/i.test(homepageSummary)) {
+    fail("Homepage status summary must state that Phase 6 is completed.");
+  }
+  if (!/Phase 7.*bước tiếp theo/i.test(homepageSummary)) {
+    fail("Homepage status summary must state that Phase 7 is next.");
+  }
+  if (!/không phải kết quả khoa học/i.test(homepageSummary)) {
+    fail("Homepage status summary must keep engineering validation non-scientific.");
+  }
+}
+
 if (progress.phases.length !== expectedPhaseOrder.length) {
   fail(`Progress content must contain ${expectedPhaseOrder.length} phases.`);
 }
@@ -134,6 +163,12 @@ for (const phase of progress.phases.slice(5)) {
   if (phase.id === "Phase 6" && phase5?.status === "completed") {
     if (!["next", "in_progress", "completed"].includes(phase.status)) {
       fail("Phase 6 must be Next, In Progress, or Completed after Phase 5 completion.");
+    }
+    continue;
+  }
+  if (phase.id === "Phase 7" && phase6?.status === "completed") {
+    if (phase.status !== "next") {
+      fail("Phase 7 must be Next after Phase 6 completion.");
     }
     continue;
   }

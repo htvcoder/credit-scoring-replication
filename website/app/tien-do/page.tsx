@@ -9,12 +9,7 @@ export default function ProgressPage() {
       <section className="page-title">
         <p className="eyebrow">Roadmap</p>
         <h1>Tiến độ các phase</h1>
-        <p className="lead">
-          Phase 4 đã Completed ở mức metric-validation artifact
-          non-publishable. Phase 5 - Mô hình truyền thống và ensemble là bước
-          tiếp theo; website chưa công bố scientific metrics hoặc core
-          replication results.
-        </p>
+        <p className="lead">{progress.project.current_status_summary}</p>
       </section>
 
       <section className="timeline">

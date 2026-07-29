@@ -420,12 +420,17 @@ Phase 3 hiện đủ điều kiện đánh dấu **Completed** ở mức preproc
 
 Phase 3 hiện **Completed** ở mức preprocessing/nested-CV foundation. Checkpoint **P3A - Completed** bổ sung nền tảng contract train-only cho Protocol A: mean imputation cho numeric, most-frequent/mode imputation cho categorical, tie-break deterministic, reserved token cho unseen category, schema validation và metadata JSON-serializable. Checkpoint **P3B - Completed** bổ sung WOE categorical train-only, iterative VIF train-only và optional standard scaling train-only. P3B không triển khai numeric supervised binning vì paper không đặc tả đủ rõ. Checkpoint **P3C - Completed** bổ sung deterministic repeated stratified two-fold outer CV, inner stratified k-fold, fold persistence, per-fold preprocessing fitting, tuning-isolation harness và non-publishable preprocessing-validation artifacts. Phase 3 chưa tạo scientific results, chưa chạy core replication và chưa thay thế Phase 4 metric validation; bước tiếp theo là Phase 4.
 
+Phase 6 hoàn tất ở mức MLP nested-CV infrastructure/hardening sau P6A/P6B/P6C và
+reduced engineering validation GC/TC. Đây không phải scientific RQ2 result: core
+replication, fold-level metrics và evidence so sánh thuộc Phase 7. Phase 7 là next;
+milestone `p6-mlp-depth-replication-complete` chỉ là đề xuất, chưa được tạo Git tag.
+
 <!-- PROJECT_STATUS:BEGIN -->
 Generated from website/content/progress.yaml. Do not edit manually.
 
-- Last completed phase: Phase 5
-- Current phase: Phase 6
-- Next phase: Phase 6 - MLP depth replication
+- Last completed phase: Phase 6
+- Current phase: Phase 7
+- Next phase: Phase 7 - Core replication run
 - Updated at: 2026-07-29
 
 | Phase | Status | Milestone tag |
@@ -436,8 +441,8 @@ Generated from website/content/progress.yaml. Do not edit manually.
 | Phase 3 - Leakage-safe preprocessing | Completed | p3-leakage-safe-preprocessing-complete |
 | Phase 4 - Metric validation | Completed | p4-metric-validation-complete |
 | Phase 5 - Classical and ensemble models | Completed | p5-classical-replication-complete |
-| Phase 6 - MLP depth replication | In Progress | - |
-| Phase 7 - Core replication run | Planned | - |
+| Phase 6 - MLP depth replication | Completed | p6-mlp-depth-replication-complete |
+| Phase 7 - Core replication run | Next | - |
 | Phase 8 - Modern reassessment | Planned | - |
 | Phase 9 - So sánh thống kê | Planned | - |
 | Phase 10 - Robustness | Planned | - |
@@ -461,13 +466,13 @@ Phase 5 checkpoints:
 Phase 6 checkpoints:
 - P6A: Completed - Typed PyTorch MLP contract, logits-only shared builder, CPU-first tiny trainer, device/seed policy and in-memory early stopping foundation. Artifacts remain non-publishable.
 - P6B: Completed - Stable MLP-1/3/5 IDs, shared PyTorch wrapper, fair training-budget specification, model configs and provenance metadata. Artifacts remain non-publishable.
-- P6C: Next - Integrate neural models into leakage-safe nested CV with inner validation, resume/retry and per-fold artifacts.
+- P6C: Completed - Neural nested-CV integration/hardening, deterministic early stopping, artifacts, retry/resume, GC reduced validation và TC resource checkpoint completed; non-publishable engineering evidence only.
 
 Current scope limits:
 - Core replication has not run.
 - Smoke, reduced, fake, preprocessing-validation, and metric-validation artifacts remain non-publishable validation artifacts.
 - Website still must not present validation artifacts as scientific results.
-- Phase 5 completed the non-publishable classical-model validation harness; Phase 6 is In Progress.
+- Phase 6 completed the non-publishable MLP infrastructure/hardening validation; Phase 7 is Next.
 <!-- PROJECT_STATUS:END -->
 
 | Mục | Nội dung |
@@ -1057,7 +1062,7 @@ Domain + HTTPS:
 
 ## 22. Giai đoạn tiếp theo
 
-**Giai đoạn tiếp theo được đề xuất:** bắt đầu **Phase 6 - Tái lập ảnh hưởng độ sâu của MLP**. Phase 5 đã completed ở mức non-publishable classical-model validation foundation với model contract, LR/CART/RF/XGBoost, nested-CV, atomic per-fold artifacts, resume/retry và structured failure handling. Chưa chạy core replication và các validation artifacts vẫn không phải kết quả nghiên cứu chính thức.
+**Giai đoạn tiếp theo được đề xuất:** bắt đầu **Phase 7 - Core replication run**. Phase 6 đã completed ở mức non-publishable MLP infrastructure/hardening với MLP-1/3/5, nested-CV, atomic per-fold artifacts, resume/retry, GC/TC reduced engineering validation và resource checkpoint. Chưa chạy core replication; các validation artifacts vẫn không phải kết quả nghiên cứu chính thức.
 
 Các quyết định Phase 1 đã chốt hoặc đã vận hành:
 

@@ -371,6 +371,8 @@ Các deviation hiện đã biết hoặc rất có khả năng cần chấp nh�
 
 ## 13. Kết luận khả thi
 
+**Cập nhật sau Phase 6:** Phase 6 đã đóng ở boundary infrastructure/hardening: MLP-1/3/5 đã có nested-CV leakage-safe, early stopping deterministic, artifacts, resume/retry và reduced engineering validation trên GC/TC. Các artifact này không phải kết quả khoa học hay bằng chứng ranking; Phase 7 là bước kế tiếp để chạy core replication và tạo fold-level scientific evidence. TC cho thấy CPU local khả thi cho checkpoint bị chặn, nhưng full scope cần profiling/budget trước khi phê duyệt; peak-memory telemetry chưa có nên không được suy diễn thành capacity claim.
+
 **Kết luận cập nhật sau Phase 0:** **Khả thi có điều kiện** cho partial replication trên 6 dataset công khai; vẫn không khả thi cho full replication vì thiếu Bene1, Bene2, Bene3 và UK.
 
 Không nên bắt đầu triển khai thực nghiệm đầy đủ trước khi metric validation được chốt. Theo roadmap hiện hành, Phase 3 preprocessing/nested-CV foundation đã Completed với P3A train-only preprocessing contract, P3B WOE/VIF/scaling và P3C nested CV/fold artifacts. Bước kế tiếp là Phase 4 metric validation. Phase 0 acceptance hiện đã có registry tập trung, checksum portable, target mapping đủ 6 dataset, numeric/categorical/identifier metadata, data cards, dependency pin, reusable TH02 conversion và verifier chạy độc lập current working directory. Blocker dữ liệu HMEQ/TH02 đã được xử lý ở mức verification: HMEQ full pass validation, TH02 pass validation sau conversion. Blocker còn lại trước core experiment là metric validation, quyết định implementation C4.5 hoặc deviation CART, và xác định EMP là exact hay approximate.
@@ -388,5 +390,5 @@ Nên giữ nguyên `N x 2` CV của paper cho dataset Must nếu compute cho ph�
 - Số dataset đủ điều kiện ngay: 6 dataset công khai sau remediation; HMEQ dùng `hmeq_full.csv`, TH02 dùng conversion artifact.
 - Blocker chính: thiếu 4 dataset độc quyền, HMEQ full chưa khớp checksum SAS kỳ vọng, C4.5/EMP/WOE/VIF cần implementation chống leakage.
 - Protocol đề xuất: Protocol A làm chính, Protocol B làm sensitivity/modern reassessment phụ.
-- Phase tiếp theo: triển khai Phase 4 metric validation trong một nhiệm vụ riêng; Phase 3 đã Completed ở mức preprocessing/nested-CV foundation và smoke/reduced artifacts vẫn non-publishable.
+- Phase tiếp theo: Phase 7 core replication run; Phase 6 đã Completed ở mức MLP infrastructure/hardening và mọi smoke/reduced artifact vẫn non-publishable.
 - File báo cáo đã tạo: `docs/EXPERIMENT_FEASIBILITY_ASSESSMENT.md`.

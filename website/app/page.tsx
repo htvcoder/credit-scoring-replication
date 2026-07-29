@@ -1,13 +1,14 @@
 import Image from "next/image";
 import Link from "next/link";
 import { getDatasetSummaries } from "@/lib/datasets";
-import { getProgressContent, getProjectContent } from "@/lib/content";
+import { getHomepageStatusData, getProgressContent, getProjectContent } from "@/lib/content";
 import { StatusBadge } from "@/components/StatusBadge";
 
 export default function Home() {
   const project = getProjectContent();
   const datasets = getDatasetSummaries();
   const progress = getProgressContent();
+  const homepageStatus = getHomepageStatusData(progress);
 
   return (
     <div className="page">
@@ -87,18 +88,14 @@ export default function Home() {
           <div>
             <p className="eyebrow">Tiến độ</p>
             <h2>Trạng thái phase</h2>
-            <p className="muted">
-              Phase 4 đã hoàn thành metric validation ở mức non-publishable
-              artifact; Phase 5 - Mô hình truyền thống và ensemble là bước tiếp
-              theo. Chưa có kết quả nghiên cứu chính thức để công bố.
-            </p>
+            <p className="muted">{homepageStatus.summary}</p>
           </div>
           <Link className="text-link" href="/tien-do/">
             Xem roadmap
           </Link>
         </div>
         <div className="phase-preview">
-          {progress.phases.slice(0, 5).map((phase) => (
+          {homepageStatus.phases.map((phase) => (
             <article className="phase-card" key={phase.id}>
               <div>
                 <span className="muted">{phase.id}</span>

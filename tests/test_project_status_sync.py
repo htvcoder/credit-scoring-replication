@@ -38,6 +38,12 @@ def test_invalid_status_enum_fails() -> None:
     assert_invalid(status, "invalid status")
 
 
+def test_current_status_summary_is_required() -> None:
+    status = load_status()
+    status["project"].pop("current_status_summary")
+    assert_invalid(status, "project.current_status_summary is required")
+
+
 def test_duplicate_phase_id_fails() -> None:
     status = load_status()
     status["phases"][1]["numeric_id"] = 0
@@ -102,18 +108,48 @@ def test_phase4_completed_requires_phase5_next_and_project_pointer_updates() -> 
     status["phases"][5].pop("tag", None)
     status["phases"][5]["checkpoints"][2]["status"] = "planned"
     status["phases"][6]["status"] = "planned"
+    status["phases"][7]["status"] = "planned"
     assert sync.validate_status_schema(status, check_tags=False).ok
 
 
-def test_phase5_completed_allows_phase6_in_progress_with_p6b_complete() -> None:
+def test_phase6_completed_advances_project_to_phase7() -> None:
     status = load_status()
-    assert status["project"]["last_completed_phase"] == 5
-    assert status["project"]["current_phase"] == status["project"]["next_phase"] == 6
+    assert status["project"]["last_completed_phase"] == 6
+    assert status["project"]["current_phase"] == status["project"]["next_phase"] == 7
     assert status["phases"][5]["status"] == "completed"
     assert status["phases"][5]["tag"] == "p5-classical-replication-complete"
-    assert status["phases"][6]["status"] == "in_progress"
-    checkpoints = {item["id"]: item["status"] for item in status["phases"][6]["checkpoints"]}
-    assert checkpoints == {"P6A": "completed", "P6B": "completed", "P6C": "next"}
+    assert status["phases"][6]["status"] == "completed"
+    assert status["phases"][6]["tag_status"] == "proposed"
+    checkpoints = {
+        item["id"]: item["status"] for item in status["phases"][6]["checkpoints"]
+    }
+    assert checkpoints == {"P6A": "completed", "P6B": "completed", "P6C": "completed"}
+
+
+def test_proposed_completed_tag_does_not_require_a_local_git_tag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    status = load_status()
+    monkeypatch.setattr(
+        sync,
+        "git_tag_exists",
+        lambda tag: tag != "p6-mlp-depth-replication-complete",
+    )
+    assert sync.validate_status_schema(status, check_tags=True).ok
+
+
+def test_phase6_completed_requires_phase7_next_and_updated_pointers() -> None:
+    status = load_status()
+    phase6 = status["phases"][6]
+    phase6["status"] = "completed"
+    phase6["tag"] = "p6-mlp-depth-replication-complete"
+    for checkpoint in phase6["checkpoints"]:
+        checkpoint["status"] = "completed"
+    status["phases"][7]["status"] = "next"
+    status["project"].update(
+        {"last_completed_phase": 6, "current_phase": 7, "next_phase": 7}
+    )
+    assert sync.validate_status_schema(status, check_tags=False).ok
 
 
 def test_website_derivative_matches_source_policy() -> None:
@@ -123,7 +159,9 @@ def test_website_derivative_matches_source_policy() -> None:
     assert phase3["tag"] == "p3-leakage-safe-preprocessing-complete"
 
 
-def test_readme_docs_managed_section_stale_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_readme_docs_managed_section_stale_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     status = load_status()
     doc = tmp_path / "README.md"
     doc.write_text(f"{sync.BEGIN}\nstale\n{sync.END}\n", encoding="utf-8")
@@ -134,15 +172,22 @@ def test_readme_docs_managed_section_stale_fails(tmp_path: Path, monkeypatch: py
 
 def test_missing_required_phase_fails() -> None:
     status = load_status()
-    status["phases"] = [phase for phase in status["phases"] if phase.get("numeric_id") != 4]
+    status["phases"] = [
+        phase for phase in status["phases"] if phase.get("numeric_id") != 4
+    ]
     assert_invalid(status, "Missing required Phase 4")
 
 
-def test_check_mode_does_not_modify_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_check_mode_does_not_modify_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     repo = tmp_path
     status_path = repo / "website" / "content" / "progress.yaml"
     status_path.parent.mkdir(parents=True)
-    status_path.write_text(yaml.safe_dump(load_status(), allow_unicode=True, sort_keys=False), encoding="utf-8")
+    status_path.write_text(
+        yaml.safe_dump(load_status(), allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
     doc = repo / "README.md"
     doc.write_text(f"{sync.BEGIN}\nstale\n{sync.END}\n", encoding="utf-8")
     monkeypatch.setattr(sync, "REPO_ROOT", repo)
@@ -155,11 +200,16 @@ def test_check_mode_does_not_modify_files(tmp_path: Path, monkeypatch: pytest.Mo
     assert doc.read_text(encoding="utf-8") == before
 
 
-def test_sync_mode_only_updates_managed_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_sync_mode_only_updates_managed_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     repo = tmp_path
     status_path = repo / "website" / "content" / "progress.yaml"
     status_path.parent.mkdir(parents=True)
-    status_path.write_text(yaml.safe_dump(load_status(), allow_unicode=True, sort_keys=False), encoding="utf-8")
+    status_path.write_text(
+        yaml.safe_dump(load_status(), allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
     doc = repo / "README.md"
     doc.write_text(f"intro\n{sync.BEGIN}\nstale\n{sync.END}\noutro\n", encoding="utf-8")
     untouched = repo / "NOTES.md"
@@ -177,7 +227,9 @@ def test_sync_mode_only_updates_managed_files(tmp_path: Path, monkeypatch: pytes
 
 def test_generated_output_is_deterministic() -> None:
     status = load_status()
-    assert sync.render_managed_section(status) == sync.render_managed_section(copy.deepcopy(status))
+    assert sync.render_managed_section(status) == sync.render_managed_section(
+        copy.deepcopy(status)
+    )
 
 
 def test_does_not_depend_on_raw_data() -> None:
@@ -197,12 +249,17 @@ def test_phase_status_update_updates_rendered_status() -> None:
     status = load_status()
     status["phases"][4]["status"] = "in_progress"
     rendered = sync.render_managed_section(status)
-    assert "| Phase 4 - Metric validation | In Progress | p4-metric-validation-complete |" in rendered
+    assert (
+        "| Phase 4 - Metric validation | In Progress | p4-metric-validation-complete |"
+        in rendered
+    )
 
 
 def test_historical_text_is_not_misread_as_stale(tmp_path: Path) -> None:
     doc = tmp_path / "history.md"
-    doc.write_text("Historical note: Phase 3: Next was true in an old plan.\n", encoding="utf-8")
+    doc.write_text(
+        "Historical note: Phase 3: Next was true in an old plan.\n", encoding="utf-8"
+    )
     assert sync.validate_current_status_text([doc]).ok
 
 
@@ -212,7 +269,9 @@ def test_completed_tag_name_is_validated() -> None:
     assert_invalid(status, "invalid format")
 
 
-def test_shallow_clone_tag_check_policy_skips_existence(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_shallow_clone_tag_check_policy_skips_existence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     status = load_status()
     monkeypatch.setattr(sync, "git_tag_exists", lambda tag: False)
     assert not sync.validate_status_schema(status, check_tags=True).ok

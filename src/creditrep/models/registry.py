@@ -38,12 +38,174 @@ class ModelRegistry:
 
 MODEL_REGISTRY = ModelRegistry()
 
-MODEL_REGISTRY.register(ModelCapability("logistic_regression", "Logistic Regression", "linear", "LogisticRegression", "scikit-learn", True, True, allowed_hyperparameters=("C", "class_weight", "max_iter", "penalty", "random_state", "solver"), default_hyperparameters={"max_iter": 200, "solver": "liblinear", "random_state": 42}, algorithm="logistic_regression", implementation="sklearn.linear_model.LogisticRegression", implemented=True))
-MODEL_REGISTRY.register(ModelCapability("decision_tree", "Decision Tree (CART)", "tree", "DecisionTreeClassifier", "scikit-learn", True, True, allowed_hyperparameters=("criterion", "splitter", "max_depth", "min_samples_split", "min_samples_leaf", "max_features", "random_state", "class_weight", "ccp_alpha"), default_hyperparameters={"criterion": "gini", "max_depth": 3, "min_samples_split": 2, "min_samples_leaf": 1, "random_state": 42, "class_weight": None}, algorithm="cart", implementation="sklearn.tree.DecisionTreeClassifier", replication_role="approximation", deviation_from_paper="c45_to_cart", implemented=True))
-MODEL_REGISTRY.register(ModelCapability("random_forest", "Random Forest", "ensemble", "RandomForestClassifier", "scikit-learn", True, True, allowed_hyperparameters=("n_estimators", "criterion", "max_depth", "min_samples_split", "min_samples_leaf", "max_features", "bootstrap", "class_weight", "n_jobs", "random_state"), default_hyperparameters={"n_estimators": 20, "max_depth": 4, "min_samples_split": 2, "min_samples_leaf": 1, "n_jobs": 1, "random_state": 42, "class_weight": None}, algorithm="random_forest", implementation="sklearn.ensemble.RandomForestClassifier", implemented=True))
-MODEL_REGISTRY.register(ModelCapability("xgboost", "XGBoost", "gradient_boosting", "XGBClassifier", "xgboost", True, True, allowed_hyperparameters=("colsample_bytree", "eval_metric", "learning_rate", "max_depth", "n_estimators", "n_jobs", "random_state", "subsample", "tree_method"), default_hyperparameters={"n_estimators": 20, "max_depth": 3, "learning_rate": 0.1, "subsample": 1.0, "colsample_bytree": 1.0, "n_jobs": 1, "random_state": 42, "eval_metric": "logloss", "tree_method": "hist"}, algorithm="gradient_boosted_trees", implementation="xgboost.XGBClassifier", implemented=True))
-for _id, _depth in (("mlp_1",1),("mlp_3",3),("mlp_5",5)):
-    MODEL_REGISTRY.register(ModelCapability(_id, f"MLP-{_depth}", "neural_network", "MLPProbabilityEstimator", "pytorch", True, True, allowed_hyperparameters=("batch_size","device_policy","learning_rate","max_epochs","random_seed","weight_decay"), default_hyperparameters={"random_seed":42,"learning_rate":0.001,"weight_decay":0.0,"batch_size":32,"max_epochs":200,"device_policy":"auto"}, algorithm="mlp", implementation="creditrep.models.neural.MLPProbabilityEstimator", replication_role="replication_model", deviation_from_paper="training_defaults_project_decision", implemented=True))
+MODEL_REGISTRY.register(
+    ModelCapability(
+        "logistic_regression",
+        "Logistic Regression",
+        "linear",
+        "LogisticRegression",
+        "scikit-learn",
+        True,
+        True,
+        allowed_hyperparameters=(
+            "C",
+            "class_weight",
+            "max_iter",
+            "penalty",
+            "random_state",
+            "solver",
+        ),
+        default_hyperparameters={
+            "max_iter": 200,
+            "solver": "liblinear",
+            "random_state": 42,
+        },
+        algorithm="logistic_regression",
+        implementation="sklearn.linear_model.LogisticRegression",
+        implemented=True,
+    )
+)
+MODEL_REGISTRY.register(
+    ModelCapability(
+        "decision_tree",
+        "Decision Tree (CART)",
+        "tree",
+        "DecisionTreeClassifier",
+        "scikit-learn",
+        True,
+        True,
+        allowed_hyperparameters=(
+            "criterion",
+            "splitter",
+            "max_depth",
+            "min_samples_split",
+            "min_samples_leaf",
+            "max_features",
+            "random_state",
+            "class_weight",
+            "ccp_alpha",
+        ),
+        default_hyperparameters={
+            "criterion": "gini",
+            "max_depth": 3,
+            "min_samples_split": 2,
+            "min_samples_leaf": 1,
+            "random_state": 42,
+            "class_weight": None,
+        },
+        algorithm="cart",
+        implementation="sklearn.tree.DecisionTreeClassifier",
+        replication_role="approximation",
+        deviation_from_paper="c45_to_cart",
+        implemented=True,
+    )
+)
+MODEL_REGISTRY.register(
+    ModelCapability(
+        "random_forest",
+        "Random Forest",
+        "ensemble",
+        "RandomForestClassifier",
+        "scikit-learn",
+        True,
+        True,
+        allowed_hyperparameters=(
+            "n_estimators",
+            "criterion",
+            "max_depth",
+            "min_samples_split",
+            "min_samples_leaf",
+            "max_features",
+            "bootstrap",
+            "class_weight",
+            "n_jobs",
+            "random_state",
+        ),
+        default_hyperparameters={
+            "n_estimators": 20,
+            "max_depth": 4,
+            "min_samples_split": 2,
+            "min_samples_leaf": 1,
+            "n_jobs": 1,
+            "random_state": 42,
+            "class_weight": None,
+        },
+        algorithm="random_forest",
+        implementation="sklearn.ensemble.RandomForestClassifier",
+        implemented=True,
+    )
+)
+MODEL_REGISTRY.register(
+    ModelCapability(
+        "xgboost",
+        "XGBoost",
+        "gradient_boosting",
+        "XGBClassifier",
+        "xgboost",
+        True,
+        True,
+        allowed_hyperparameters=(
+            "colsample_bytree",
+            "eval_metric",
+            "learning_rate",
+            "max_depth",
+            "n_estimators",
+            "n_jobs",
+            "random_state",
+            "subsample",
+            "tree_method",
+        ),
+        default_hyperparameters={
+            "n_estimators": 20,
+            "max_depth": 3,
+            "learning_rate": 0.1,
+            "subsample": 1.0,
+            "colsample_bytree": 1.0,
+            "n_jobs": 1,
+            "random_state": 42,
+            "eval_metric": "logloss",
+            "tree_method": "hist",
+        },
+        algorithm="gradient_boosted_trees",
+        implementation="xgboost.XGBClassifier",
+        implemented=True,
+    )
+)
+for _id, _depth in (("mlp_1", 1), ("mlp_3", 3), ("mlp_5", 5)):
+    MODEL_REGISTRY.register(
+        ModelCapability(
+            _id,
+            f"MLP-{_depth}",
+            "neural_network",
+            "MLPProbabilityEstimator",
+            "pytorch",
+            True,
+            True,
+            allowed_hyperparameters=(
+                "batch_size",
+                "device_policy",
+                "early_stopping_min_delta",
+                "early_stopping_patience",
+                "learning_rate",
+                "max_epochs",
+                "random_seed",
+                "weight_decay",
+            ),
+            default_hyperparameters={
+                "random_seed": 42,
+                "learning_rate": 0.001,
+                "weight_decay": 0.0,
+                "batch_size": 32,
+                "max_epochs": 200,
+                "device_policy": "auto",
+            },
+            algorithm="mlp",
+            implementation="creditrep.models.neural.MLPProbabilityEstimator",
+            replication_role="replication_model",
+            deviation_from_paper="training_defaults_project_decision",
+            implemented=True,
+        )
+    )
 
 
 def validate_hyperparameters(model_id: str, parameters: Mapping[str, Any]) -> None:
@@ -51,17 +213,55 @@ def validate_hyperparameters(model_id: str, parameters: Mapping[str, Any]) -> No
     unknown = sorted(set(parameters) - set(capability.allowed_hyperparameters))
     if unknown:
         raise ConfigError(f"{model_id}: unknown hyperparameters: {unknown}.")
-    positive_ints = {"max_iter", "max_depth", "min_samples_leaf", "min_samples_split", "n_estimators"}
+    positive_ints = {
+        "max_iter",
+        "max_depth",
+        "min_samples_leaf",
+        "min_samples_split",
+        "n_estimators",
+    }
     for name, value in parameters.items():
-        if name in positive_ints and (not isinstance(value, int) or isinstance(value, bool) or value <= 0):
-            raise ConfigError(f"{model_id}: hyperparameter {name} must be a positive integer.")
-        if name == "n_jobs" and (not isinstance(value, int) or isinstance(value, bool) or value == 0):
-            raise ConfigError(f"{model_id}: hyperparameter n_jobs must be an integer other than 0.")
-        if name in {"C", "learning_rate", "subsample", "colsample_bytree", "ccp_alpha"} and (not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0 or (name != "ccp_alpha" and value == 0)):
-            raise ConfigError(f"{model_id}: hyperparameter {name} must be a positive number (or non-negative for ccp_alpha).")
-        if name == "random_state" and (not isinstance(value, int) or isinstance(value, bool)):
-            raise ConfigError(f"{model_id}: hyperparameter random_state must be an integer.")
+        if name in positive_ints and (
+            not isinstance(value, int) or isinstance(value, bool) or value <= 0
+        ):
+            raise ConfigError(
+                f"{model_id}: hyperparameter {name} must be a positive integer."
+            )
+        if name == "n_jobs" and (
+            not isinstance(value, int) or isinstance(value, bool) or value == 0
+        ):
+            raise ConfigError(
+                f"{model_id}: hyperparameter n_jobs must be an integer other than 0."
+            )
+        if name in {
+            "C",
+            "learning_rate",
+            "subsample",
+            "colsample_bytree",
+            "ccp_alpha",
+        } and (
+            not isinstance(value, (int, float))
+            or isinstance(value, bool)
+            or value < 0
+            or (name != "ccp_alpha" and value == 0)
+        ):
+            raise ConfigError(
+                f"{model_id}: hyperparameter {name} must be a positive number (or non-negative for ccp_alpha)."
+            )
+        if name == "random_state" and (
+            not isinstance(value, int) or isinstance(value, bool)
+        ):
+            raise ConfigError(
+                f"{model_id}: hyperparameter random_state must be an integer."
+            )
     if parameters.get("class_weight") not in {None, "balanced"}:
-        raise ConfigError(f"{model_id}: class_weight must be null, 'balanced', or omitted.")
-    if model_id == "xgboost" and parameters.get("tree_method") not in {None, "hist", "approx", "exact"}:
+        raise ConfigError(
+            f"{model_id}: class_weight must be null, 'balanced', or omitted."
+        )
+    if model_id == "xgboost" and parameters.get("tree_method") not in {
+        None,
+        "hist",
+        "approx",
+        "exact",
+    }:
         raise ConfigError("xgboost: tree_method must be CPU-compatible.")

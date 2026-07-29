@@ -1,0 +1,22 @@
+# Engineering-only reduced neural nested-CV validation; never scientific results.
+experiment:
+  name: p6c_gc_reduced_validation_v1
+  publishable: false
+  result_scope: model_validation
+  validation_purpose: engineering_reduced_validation
+  fair_budget_id: p6b_shared_v1
+dataset: {id: GC}
+output: {root_dir: results/p6c-gc-reduced-validation}
+preprocessing: {protocol_config: configs/protocols/protocol_a.yaml}
+cross_validation:
+  outer: {strategy: repeated_stratified_2fold, n_repeats: 1, n_splits: 2, shuffle: true, random_seed: 42}
+  inner: {strategy: stratified_kfold, n_splits: 2, shuffle: true, random_seed_policy: derived_from_outer}
+models:
+  mlp_1: [{batch_size: 32, device_policy: cpu, early_stopping_min_delta: 0.0001, early_stopping_patience: 2, learning_rate: 0.001, max_epochs: 4, weight_decay: 0.0}]
+  mlp_3: [{batch_size: 32, device_policy: cpu, early_stopping_min_delta: 0.0001, early_stopping_patience: 2, learning_rate: 0.001, max_epochs: 4, weight_decay: 0.0}]
+  mlp_5: [{batch_size: 32, device_policy: cpu, early_stopping_min_delta: 0.0001, early_stopping_patience: 2, learning_rate: 0.001, max_epochs: 4, weight_decay: 0.0}]
+metrics: [{id: roc_auc}, {id: brier_score}]
+optimization_metric: roc_auc
+random_seed: 42
+resume: true
+retry_policy: {max_retry_attempts: 1}
