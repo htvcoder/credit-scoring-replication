@@ -17,6 +17,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+neural = [
+  "torch>=2.5,<2.13",
+]
 test = [
   "pytest>=8,<9",
 ]
