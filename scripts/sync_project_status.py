@@ -106,9 +106,20 @@ def validate_status_schema(
     if not isinstance(project, dict):
         result.add("project metadata is required.")
         project = {}
-    for field in ("last_completed_phase", "current_phase", "next_phase", "updated_at"):
+    for field in (
+        "last_completed_phase",
+        "current_phase",
+        "next_phase",
+        "updated_at",
+        "current_status_summary",
+    ):
         if field not in project:
             result.add(f"project.{field} is required.")
+    if (
+        not isinstance(project.get("current_status_summary"), str)
+        or not project.get("current_status_summary", "").strip()
+    ):
+        result.add("project.current_status_summary must be a non-empty string.")
 
     declared_enum = set(status.get("status_enum") or [])
     if declared_enum != ALLOWED_STATUSES:

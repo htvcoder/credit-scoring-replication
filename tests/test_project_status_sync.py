@@ -38,6 +38,12 @@ def test_invalid_status_enum_fails() -> None:
     assert_invalid(status, "invalid status")
 
 
+def test_current_status_summary_is_required() -> None:
+    status = load_status()
+    status["project"].pop("current_status_summary")
+    assert_invalid(status, "project.current_status_summary is required")
+
+
 def test_duplicate_phase_id_fails() -> None:
     status = load_status()
     status["phases"][1]["numeric_id"] = 0

@@ -1,6 +1,6 @@
 # Phương pháp dự kiến
 
-Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái nghiệm thu kỹ thuật. Phase 4 đã hoàn thành metric validation cho ROC AUC, Brier Score, Partial Gini và EMP unsupported handling ở mức non-publishable validation artifact; core replication run và kết quả nghiên cứu chính thức vẫn chưa được công bố.
+Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái nghiệm thu kỹ thuật. Phase 6 đã hoàn thành MLP infrastructure/hardening; GC/TC reduced runs là non-publishable engineering validation. Core replication run và kết quả nghiên cứu chính thức vẫn chưa được công bố.
 
 ## Replication core
 

@@ -4,6 +4,7 @@ project:
   current_phase: 7
   next_phase: 7
   updated_at: "2026-07-29"
+  current_status_summary: "Phase 6 đã hoàn thành nền tảng và hardening MLP-1, MLP-3 và MLP-5. GC/TC reduced runs chỉ là engineering validation, không phải kết quả khoa học. Phase 7 - Core replication run là bước tiếp theo; chưa có kết quả nghiên cứu chính thức để công bố."
 status_enum:
   - planned
   - next
@@ -135,7 +136,7 @@ phases:
       - id: "P4C"
         status: "completed"
         summary: "EMP unsupported có provenance, metric config registry, nested-CV integration và metric-validation harness."
-    caveat: "Phase 4 đã completed ở mức metric validation và non-publishable artifacts. EMP không được tái lập thành metric số vì thiếu business parameters/distribution có provenance rõ ràng; Phase 5 mới là bước tiếp theo cho model factory và baseline models. Chưa có scientific results để công bố."
+    caveat: "Phase 4 đã completed ở mức metric validation và non-publishable artifacts. EMP không được tái lập thành metric số vì thiếu business parameters/distribution có provenance rõ ràng. Các phase sau tiếp tục model-validation infrastructure; scientific evidence chỉ được tạo trong Phase 7 core replication."
   - id: "Phase 5"
     numeric_id: 5
     title: "Mô hình truyền thống và ensemble"

@@ -78,6 +78,7 @@ export type ProgressContent = {
     current_phase: number;
     next_phase: number;
     updated_at: string;
+    current_status_summary: string;
   };
   status_enum: PhaseStatus[];
   phases: Phase[];
@@ -104,6 +105,23 @@ export function getPaperContent() {
 
 export function getProgressContent() {
   return readYaml<ProgressContent>("progress.yaml");
+}
+
+export function getHomepageStatusData(progress = getProgressContent()) {
+  const nextPhase = progress.phases.find(
+    (phase) => phase.numeric_id === progress.project.next_phase,
+  );
+
+  if (!nextPhase) {
+    throw new Error(`Missing next phase: ${progress.project.next_phase}`);
+  }
+
+  return {
+    summary: progress.project.current_status_summary,
+    phases: progress.phases.filter(
+      (phase) => phase.status === "completed" || phase.id === nextPhase.id,
+    ),
+  };
 }
 
 export function getMarkdownContent(fileName: string) {
