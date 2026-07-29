@@ -25,6 +25,8 @@ class MLPModelSpecification:
             raise MLPConfigError("MLP model ID must match its hidden-layer depth.")
 
     def config(self, **overrides: Any) -> MLPConfig:
+        patience = overrides.pop("early_stopping_patience", 20)
+        min_delta = overrides.pop("early_stopping_min_delta", 0.0001)
         values = dict(
             model_id=self.model_id,
             hidden_layers=self.hidden_layers,
@@ -37,7 +39,7 @@ class MLPModelSpecification:
             weight_decay=0.0,
             batch_size=32,
             max_epochs=200,
-            early_stopping=EarlyStoppingConfig(True, 20, 0.0001),
+            early_stopping=EarlyStoppingConfig(True, patience, min_delta),
             device_policy="auto",
             dataloader_workers=0,
             checkpoint_policy="none",
