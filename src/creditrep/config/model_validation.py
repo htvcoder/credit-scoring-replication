@@ -33,6 +33,8 @@ class ModelValidationConfig:
     publishable: bool = False
     resume: bool = False
     max_retry_attempts: int = 1
+    validation_purpose: str = "model_validation"
+    fair_budget_id: str | None = None
 
     def canonical_payload(self) -> dict[str, Any]:
         return {
@@ -40,6 +42,8 @@ class ModelValidationConfig:
                 "name": self.experiment_name,
                 "result_scope": self.result_scope,
                 "publishable": self.publishable,
+                "validation_purpose": self.validation_purpose,
+                "fair_budget_id": self.fair_budget_id,
             },
             "dataset": {"id": self.dataset_id},
             "output": {"root_dir": self.output_root},
@@ -120,6 +124,16 @@ def parse_model_validation_config(payload: Any) -> ModelValidationConfig:
     ):
         raise ConfigError(
             "experiment.name, dataset.id and output.root_dir are required."
+        )
+    validation_purpose = experiment.get("validation_purpose", "model_validation")
+    fair_budget_id = experiment.get("fair_budget_id")
+    if not isinstance(validation_purpose, str) or not validation_purpose.strip():
+        raise ConfigError("experiment.validation_purpose must be a non-empty string.")
+    if fair_budget_id is not None and (
+        not isinstance(fair_budget_id, str) or not fair_budget_id.strip()
+    ):
+        raise ConfigError(
+            "experiment.fair_budget_id must be null or a non-empty string."
         )
     candidates: dict[str, tuple[dict[str, Any], ...]] = {}
     for model_id, values in models.items():
@@ -220,4 +234,6 @@ def parse_model_validation_config(payload: Any) -> ModelValidationConfig:
         inner_splits,
         resume=resume,
         max_retry_attempts=max_retry_attempts,
+        validation_purpose=validation_purpose.strip(),
+        fair_budget_id=fair_budget_id.strip() if fair_budget_id else None,
     )
