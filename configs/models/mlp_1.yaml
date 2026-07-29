@@ -1,0 +1,6 @@
+id: mlp_1
+hidden_layers: [64]
+architecture_source: paper_exact
+training_budget_id: p6b_shared_v1
+publishable: false
+result_scope: mlp_model_validation

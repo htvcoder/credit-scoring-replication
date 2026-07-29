@@ -17,9 +17,9 @@ class ProbabilityModel:
 
 
 def test_registry_resolves_all_phase_five_ids_and_rejects_unknown_and_duplicate():
-    assert {item.model_id for item in MODEL_REGISTRY.capabilities()} == {
+    assert {
         "logistic_regression", "decision_tree", "random_forest", "xgboost"
-    }
+    }.issubset({item.model_id for item in MODEL_REGISTRY.capabilities()})
     assert MODEL_REGISTRY.resolve("logistic_regression").supports_probability is True
     with pytest.raises(ModelError, match="Unknown model ID"):
         MODEL_REGISTRY.resolve("unknown")

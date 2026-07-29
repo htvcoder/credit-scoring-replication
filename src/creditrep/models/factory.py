@@ -36,4 +36,11 @@ def create_model(model_type: str, parameters: dict[str, Any] | None = None, *, r
         except ImportError as exc:
             raise ModelError("xgboost is required for model.type='xgboost'.") from exc
         return XGBClassifier(**effective)
+    if model_type in {"mlp_1", "mlp_3", "mlp_5"}:
+        from creditrep.models.neural.wrapper import MLPProbabilityEstimator
+        mapped = dict(effective)
+        if random_seed is not None:
+            mapped["random_seed"] = random_seed
+        mapped.pop("random_state", None)
+        return MLPProbabilityEstimator(model_type, **mapped)
     raise ModelError(f"Unsupported model type: {model_type}")

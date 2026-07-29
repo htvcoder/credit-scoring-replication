@@ -581,8 +581,8 @@ Phase 5 checkpoints:
 
 Phase 6 checkpoints:
 - P6A: Completed - Typed PyTorch MLP contract, logits-only shared builder, CPU-first tiny trainer, device/seed policy and in-memory early stopping foundation. Artifacts remain non-publishable.
-- P6B: Next - Finalize paper-reference MLP-1/3/5 architectures, stable IDs, model configs and production wrapper.
-- P6C: Planned - Integrate neural models into leakage-safe nested CV with inner validation, resume/retry and per-fold artifacts.
+- P6B: Completed - Stable MLP-1/3/5 IDs, shared PyTorch wrapper, fair training-budget specification, model configs and provenance metadata. Artifacts remain non-publishable.
+- P6C: Next - Integrate neural models into leakage-safe nested CV with inner validation, resume/retry and per-fold artifacts.
 
 Current scope limits:
 - Core replication has not run.

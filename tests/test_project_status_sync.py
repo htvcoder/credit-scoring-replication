@@ -105,7 +105,7 @@ def test_phase4_completed_requires_phase5_next_and_project_pointer_updates() -> 
     assert sync.validate_status_schema(status, check_tags=False).ok
 
 
-def test_phase5_completed_allows_phase6_in_progress_with_p6a_complete() -> None:
+def test_phase5_completed_allows_phase6_in_progress_with_p6b_complete() -> None:
     status = load_status()
     assert status["project"]["last_completed_phase"] == 5
     assert status["project"]["current_phase"] == status["project"]["next_phase"] == 6
@@ -113,7 +113,7 @@ def test_phase5_completed_allows_phase6_in_progress_with_p6a_complete() -> None:
     assert status["phases"][5]["tag"] == "p5-classical-replication-complete"
     assert status["phases"][6]["status"] == "in_progress"
     checkpoints = {item["id"]: item["status"] for item in status["phases"][6]["checkpoints"]}
-    assert checkpoints == {"P6A": "completed", "P6B": "next", "P6C": "planned"}
+    assert checkpoints == {"P6A": "completed", "P6B": "completed", "P6C": "next"}
 
 
 def test_website_derivative_matches_source_policy() -> None:

@@ -79,8 +79,8 @@ class MLPConfig:
             raise MLPConfigError("dataloader_workers must be a non-negative integer.")
         if self.checkpoint_policy != "none" or self.save_model:
             raise MLPConfigError("P6A only supports in-memory best-weight snapshots; disk checkpoints are disabled.")
-        if self.publishable or self.result_scope != "mlp_training_validation":
-            raise MLPConfigError("P6A results must be non-publishable with scope 'mlp_training_validation'.")
+        if self.publishable or self.result_scope not in {"mlp_training_validation", "mlp_model_validation"}:
+            raise MLPConfigError("Neural results must be non-publishable with an approved validation scope.")
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
