@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Mapping
 
 import pandas as pd
 
@@ -201,7 +201,7 @@ def create_nested_cv_definition(
     *,
     dataset_checksum: str,
     outer_strategy: str = "repeated_stratified_2fold",
-    outer_n_repeats: int = 5,
+    outer_n_repeats: int | Mapping[str, int] = 5,
     outer_n_splits: int = 2,
     inner_strategy: str = "stratified_kfold",
     inner_n_splits: int = 5,
@@ -214,7 +214,14 @@ def create_nested_cv_definition(
         raise SplitError(f"Unsupported outer CV strategy {outer_strategy!r}.")
     if outer_n_splits != 2:
         raise SplitError("repeated_stratified_2fold requires outer_n_splits=2.")
-    if outer_n_repeats < 1:
+    if isinstance(outer_n_repeats, Mapping):
+        requested = outer_n_repeats.get(dataset.dataset_id.upper())
+        if requested is None:
+            raise SplitError(
+                f"outer_n_repeats mapping has no entry for dataset {dataset.dataset_id.upper()}."
+            )
+        outer_n_repeats = requested
+    if not isinstance(outer_n_repeats, int) or isinstance(outer_n_repeats, bool) or outer_n_repeats < 1:
         raise SplitError("outer_n_repeats must be >= 1.")
     if inner_strategy != "stratified_kfold":
         raise SplitError(f"Unsupported inner CV strategy {inner_strategy!r}.")

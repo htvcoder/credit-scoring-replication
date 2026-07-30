@@ -4,7 +4,7 @@ project:
   current_phase: 7
   next_phase: 7
   updated_at: "2026-07-29"
-  current_status_summary: "Phase 6 đã hoàn thành nền tảng và hardening MLP-1, MLP-3 và MLP-5. GC/TC reduced runs chỉ là engineering validation, không phải kết quả khoa học. Phase 7 - Core replication run là bước tiếp theo; chưa có kết quả nghiên cứu chính thức để công bố."
+  current_status_summary: "Phase 6 đã hoàn thành nền tảng và hardening MLP-1, MLP-3 và MLP-5; reduced runs không phải kết quả khoa học. P7A đã khóa protocol bất biến và candidate manifest P7B cho sáu dataset công khai; P7B feasibility pilot là bước tiếp theo. Chưa có kết quả nghiên cứu chính thức để công bố."
 status_enum:
   - planned
   - next
@@ -191,10 +191,12 @@ phases:
   - id: "Phase 7"
     numeric_id: 7
     title: "Core replication run"
-    status: "next"
-    summary: "Phase này chạy core replication trên 6 dataset public đủ điều kiện với Protocol A và các model core. Chỉ fold-level/aggregated artifacts đã validate mới được dùng cho thống kê và website."
+    status: "in_progress"
+    summary: "P7A đã khóa protocol bất biến và candidate manifest P7B theo Table 2/3 của bài báo. P7B đo tính khả thi, sau đó closeout khóa final P7C manifest trước full scientific run; chưa có kết quả khoa học."
     tasks:
-      - "Chạy dry run, smoke run và reduced/full approved run theo resource."
+      - "P7A: khóa protocol/candidate manifest và kiểm tra integrity trước pilot."
+      - "P7B: chạy feasibility pilot non-publishable; không dùng predictive performance để quyết định inclusion."
+      - "P7B closeout: ghi decision records và khóa final P7C manifest."
       - "Chạy LR, DT/CART, RF, XGBoost và MLP-1/3/5 trên dataset đã chốt."
       - "Validate incremental results, resume failed folds và chạy GMC sau cùng."
       - "Lưu predictions, metrics, configs, runtime và failure logs."
@@ -202,7 +204,15 @@ phases:
     deliverables:
       - "Fold-level predictions, metrics, configs, runtime logs và evidence package cho RQ1/RQ2."
     checkpoints:
-      - "Mỗi dataset-model Must phải có artifact hợp lệ hoặc failure status rõ; không tạo result giả."
+      - id: "P7A"
+        status: "completed"
+        summary: "Protocol bất biến, candidate manifest P7B, provenance Table 2/3, CART-A Grid 2 approved cho pilot non-publishable, validator và CLI đã hoàn thành; final scientific search space chờ P7B closeout."
+      - id: "P7B"
+        status: "next"
+        summary: "Feasibility pilot non-publishable, đo runtime/resource/failure để quyết định final manifest."
+      - id: "P7C"
+        status: "planned"
+        summary: "Full scientific run chỉ bắt đầu sau P7B closeout và final P7C manifest lock."
   - id: "Phase 8"
     numeric_id: 8
     title: "Modern reassessment"

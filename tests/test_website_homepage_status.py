@@ -42,14 +42,14 @@ def test_homepage_status_data_contains_completed_phases_and_next_phase() -> None
         ("Phase 4", "completed"),
         ("Phase 5", "completed"),
         ("Phase 6", "completed"),
-        ("Phase 7", "next"),
+        ("Phase 7", "in_progress"),
     ]
 
 
 def test_homepage_and_roadmap_use_the_source_status_summary() -> None:
     summary = load_status()["project"]["current_status_summary"]
     assert "Phase 6 đã hoàn thành" in summary
-    assert "Phase 7 - Core replication run là bước tiếp theo" in summary
+    assert "P7A đã khóa protocol bất biến" in summary
     assert "không phải kết quả khoa học" in summary
 
     homepage = HOMEPAGE_PATH.read_text(encoding="utf-8")

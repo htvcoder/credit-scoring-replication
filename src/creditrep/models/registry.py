@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any, Mapping
 
 from creditrep.config.exceptions import ConfigError
@@ -216,7 +217,6 @@ def validate_hyperparameters(model_id: str, parameters: Mapping[str, Any]) -> No
     positive_ints = {
         "max_iter",
         "max_depth",
-        "min_samples_leaf",
         "min_samples_split",
         "n_estimators",
     }
@@ -227,6 +227,21 @@ def validate_hyperparameters(model_id: str, parameters: Mapping[str, Any]) -> No
             raise ConfigError(
                 f"{model_id}: hyperparameter {name} must be a positive integer."
             )
+        if name == "min_samples_leaf":
+            if isinstance(value, bool):
+                raise ConfigError(f"{model_id}: min_samples_leaf must not be boolean.")
+            if isinstance(value, int):
+                if value <= 0:
+                    raise ConfigError(f"{model_id}: min_samples_leaf integer must be positive.")
+            elif isinstance(value, float):
+                if not math.isfinite(value) or not 0 < value <= 0.5:
+                    raise ConfigError(
+                        f"{model_id}: min_samples_leaf fraction must be finite and in (0, 0.5]."
+                    )
+            else:
+                raise ConfigError(
+                    f"{model_id}: min_samples_leaf must be a positive integer or fraction in (0, 0.5]."
+                )
         if name == "n_jobs" and (
             not isinstance(value, int) or isinstance(value, bool) or value == 0
         ):

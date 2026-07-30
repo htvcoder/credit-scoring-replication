@@ -101,8 +101,8 @@ if (
   fail("Project pointers must identify Phase 6 as completed and Phase 7 as next.");
 }
 
-if (phase5?.status !== "completed" || phase6?.status !== "completed" || phase7?.status !== "next") {
-  fail("Phase 5 and Phase 6 must be Completed, and Phase 7 must be Next.");
+if (phase5?.status !== "completed" || phase6?.status !== "completed" || !["next", "in_progress"].includes(phase7?.status)) {
+  fail("Phase 5 and Phase 6 must be Completed, and Phase 7 must be Next or In Progress.");
 }
 
 const homepageSummary = progress.project?.current_status_summary;
@@ -112,8 +112,8 @@ if (typeof homepageSummary !== "string" || !homepageSummary.trim()) {
   if (!/Phase 6.*hoàn thành/i.test(homepageSummary)) {
     fail("Homepage status summary must state that Phase 6 is completed.");
   }
-  if (!/Phase 7.*bước tiếp theo/i.test(homepageSummary)) {
-    fail("Homepage status summary must state that Phase 7 is next.");
+  if (!/P7A.*P7B feasibility pilot.*bước tiếp theo/i.test(homepageSummary)) {
+    fail("Homepage status summary must state that P7A completed and P7B is next.");
   }
   if (!/không phải kết quả khoa học/i.test(homepageSummary)) {
     fail("Homepage status summary must keep engineering validation non-scientific.");
@@ -167,8 +167,8 @@ for (const phase of progress.phases.slice(5)) {
     continue;
   }
   if (phase.id === "Phase 7" && phase6?.status === "completed") {
-    if (phase.status !== "next") {
-      fail("Phase 7 must be Next after Phase 6 completion.");
+    if (!["next", "in_progress"].includes(phase.status)) {
+      fail("Phase 7 must be Next or In Progress after Phase 6 completion.");
     }
     continue;
   }
