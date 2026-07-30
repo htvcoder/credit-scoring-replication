@@ -233,8 +233,8 @@ def validate_status_schema(
                     result.add(
                         "project.last_completed_phase must be 6 when Phase 6 is completed."
                     )
-                if by_number.get(7, {}).get("status") != "next":
-                    result.add("Phase 7 must be next after Phase 6 completion.")
+                if by_number.get(7, {}).get("status") not in {"next", "in_progress"}:
+                    result.add("Phase 7 must be next or in_progress after Phase 6 completion.")
                 if project.get("current_phase") != 7 or project.get("next_phase") != 7:
                     result.add(
                         "project.current_phase and project.next_phase must both be 7 after Phase 6 completion."

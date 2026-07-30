@@ -1,0 +1,271 @@
+schema_version: 1
+protocol:
+  id: p7a-public-six-dataset
+  version: 1.0.0
+  status: locked
+  scope: partial_replication_public_datasets
+  created_from: Gunnarsson_et_al_2021_Deep_Learning_for_Credit_Scoring.md
+datasets:
+- AC
+- GC
+- HMEQ
+- TH02
+- TC
+- GMC
+dataset_integrity:
+  registry: data/datasets.yaml
+  checksum_registry: data/checksums-sha256.csv
+  verification_required: true
+target:
+  class_0: good/non-default
+  class_1: bad/default
+  y_score: P(class 1 = bad/default)
+preprocessing:
+  protocol_config: configs/protocols/protocol_a.yaml
+  fit_scope: corresponding_training_partition_only
+  provenance: paper_section_4_2
+cross_validation:
+  outer_strategy: repeated_stratified_2fold
+  outer_splits: 2
+  outer_repeats:
+    AC: 10
+    GC: 10
+    TH02: 10
+    HMEQ: 5
+    TC: 5
+    GMC: 5
+  inner_strategy: stratified_kfold
+  inner_splits: 5
+  seed: 42
+  seed_provenance: project_reproducibility_decision_paper_seed_not_reported
+models:
+- id: logistic_regression
+  inclusion_status: required
+  search_status: no_tuning_paper
+- id: decision_tree
+  inclusion_status: required
+  search_status: pending_user_approval_cart_candidate
+  deviation: c45_to_cart
+- id: random_forest
+  inclusion_status: required
+  search_status: reference_candidate_pending_p7b
+- id: xgboost
+  inclusion_status: required
+  search_status: reference_candidate_pending_p7b
+- id: mlp_1
+  inclusion_status: required
+  search_status: reference_candidate_pending_p7b
+- id: mlp_3
+  inclusion_status: required
+  search_status: reference_candidate_pending_p7b
+- id: mlp_5
+  inclusion_status: decision_pending
+  search_status: reference_candidate_pending_p7b
+- id: catboost
+  inclusion_status: conditionally_required
+  search_status: implementation_and_candidate_pending_p7b
+- id: tabnet
+  inclusion_status: conditionally_required
+  search_status: implementation_and_candidate_pending_p7b
+- id: ft_transformer
+  inclusion_status: optional_extension
+  search_status: optional
+metrics:
+  primary: roc_auc
+  secondary:
+  - brier_score
+  - log_loss
+  - accuracy
+  - precision
+  - recall
+  - f1
+  - confusion_matrix
+  threshold: 0.5
+  outer_test_selection_forbidden: true
+reference_search_spaces:
+  source: paper_table_2
+  logistic_regression:
+    declared_configurations: 1
+    tuning: false
+  random_forest:
+    declared_configurations: 30
+    formula: 5*6
+    parameters:
+      n_estimators:
+      - 100
+      - 250
+      - 500
+      - 750
+      - 1000
+      max_features_multiplier_of_sqrt_m:
+      - 0.1
+      - 0.25
+      - 0.5
+      - 1
+      - 2
+      - 4
+  xgboost:
+    declared_configurations: 108
+    formula: 3*3*2*2*3
+    parameters:
+      n_estimators:
+      - 50
+      - 100
+      - 150
+      max_depth:
+      - 1
+      - 2
+      - 3
+      learning_rate:
+      - 0.3
+      - 0.4
+      colsample_bytree:
+      - 0.6
+      - 0.8
+      subsample:
+      - 0.5
+      - 0.75
+      - 1.0
+  mlp:
+    shared:
+      hidden_units:
+      - 5
+      - 10
+      - 15
+      - 20
+      dropout:
+      - 0.0
+      - 0.25
+      - 0.5
+      l2:
+      - 0.1
+      - 0.01
+      - 0.001
+      - 0.0
+      batch_normalization:
+      - true
+      - false
+      non_increasing_hidden_units: true
+    mlp_1:
+      declared_configurations: 144
+      learning_rate:
+      - 0.01
+      - 0.001
+      - 0.0001
+    mlp_3:
+      declared_configurations: 720
+      learning_rate:
+      - 0.01
+      - 0.001
+      - 0.0001
+    mlp_5:
+      declared_configurations: 2016
+      learning_rate:
+      - 0.001
+      - 0.0001
+      - 1.0e-05
+    count_inconsistency: table_counts_match_non_batchnorm_formula; including_batch_normalization_doubles_each_count
+candidate_search_space:
+  status: cart_a_grid_2_approved_for_p7b_only
+  cart_a:
+    implementation: sklearn.tree.DecisionTreeClassifier
+    max_depth:
+    - 3
+    - 5
+    - 7
+    - 9
+    min_samples_leaf:
+    - 0.005
+    - 0.01
+    - 0.02
+    representation: relative_fraction
+    canonical_decimal_literals:
+    - 0.005
+    - 0.01
+    - 0.02
+    candidate_count: 12
+    formula: 4*3
+    inner_fits_per_outer_partition: 60
+    full_theoretical_workload:
+      inner_candidate_evaluation_fits: 5400
+      outer_selected_model_refits: 90
+      note: inner_fits_exclude_outer_selected_model_refits_and_any_retry
+    scientific_deviation:
+    - c45_to_cart
+    - cart_complexity_control_uses_max_depth_and_relative_min_samples_leaf
+    - not_equivalent_to_c45_confidence_based_pruning
+    - cart_candidate_count_12_differs_from_paper_c45_36
+    - relative_leaf_fraction_is_project_specific_design_decision
+  cart_options:
+  - cart_a_max_depth_and_relative_min_samples_leaf_approved_for_p7b
+  - cart_b_cost_complexity_pruning_fallback
+  - cart_c_not_selected
+pilot_budget:
+  publishable: false
+  purpose: cart_a_feasibility_only
+  datasets:
+  - AC
+  - HMEQ
+  - GMC
+  outer_partition:
+    repeat_index: 0
+    fold_index: 0
+    outer_fold_id: repeat_00_fold_00
+    selection: deterministic_first_partition_not_metric_selected
+    seed_policy: derive_seed(base_seed=42,stage=outer,repeat_index=0,outer_fold_index=0)
+  candidates:
+  - id: cart_a_low_complexity
+    max_depth: 3
+    min_samples_leaf: 0.02
+    coverage_role: low_complexity
+  - id: cart_a_high_complexity
+    max_depth: 9
+    min_samples_leaf: 0.005
+    coverage_role: highest_complexity
+  - id: cart_a_strong_leaf_regularization
+    max_depth: 9
+    min_samples_leaf: 0.02
+    coverage_role: strong_leaf_regularization
+  - id: cart_a_intermediate
+    max_depth: 5
+    min_samples_leaf: 0.01
+    coverage_role: intermediate
+  inner_folds: 5
+  total_inner_fits: 60
+  scientific_model_selection_or_refit: false
+  metrics: non_publishable_pipeline_validation_only
+  artifact_provenance_required:
+  - configured_relative_min_samples_leaf
+  - inner_training_row_count
+  - effective_minimum_leaf_count_ceiling
+  - max_depth
+  - candidate_id
+  - manifest_version
+  - manifest_sha256
+  thresholds: pending_user_approval
+final_scientific_search_space:
+  status: created_only_after_p7b_closeout_before_p7c
+failure_policy:
+  retry_transient_only: true
+  max_retry_attempts: 1
+  invalid_artifacts: reject_or_quarantine
+  resume_requires_protocol_hash: true
+runtime_overrides:
+  allowed:
+  - artifact_root
+  - device
+  - threads
+  - checkpoint_root
+  - log_level
+  forbidden_scientific_fields:
+  - datasets
+  - target
+  - preprocessing
+  - cross_validation
+  - models
+  - reference_search_spaces
+  - metrics
+lock:
+  algorithm: sha256-canonical-json
+  manifest_sha256: 62b5bddc29017cf152607dab029d790e7c6f822bcf840a814b81a90228025f4e
+  lock_scope: all_fields_except_lock
