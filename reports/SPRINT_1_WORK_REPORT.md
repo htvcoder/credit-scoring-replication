@@ -2,7 +2,7 @@
 
 - Người báo cáo: Hoàng Trọng Vĩnh
 - Người hướng dẫn: Trần Công Phú Khánh
-- Thời gian: 16/07/2026 - 25/07/2026
+- Thời gian: 20/07/2026 - 01/08/2026
 - Đơn vị: VinSmart Future - Fintech
 - Dự án: Credit Scoring Replication
 
