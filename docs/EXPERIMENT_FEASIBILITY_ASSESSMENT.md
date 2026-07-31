@@ -114,7 +114,7 @@ Trong báo cáo này:
 |---|---|---|
 | AUC | Đánh giá discriminative ability trên toàn score distribution | Đủ. |
 | Brier Score | Mean-squared error giữa PD dự báo và binary response | Đủ. |
-| Partial Gini | Tập trung vùng score có `p(+1|x) <= b`, với `b = 0.4` | Cần xác định công thức tính partial Gini cụ thể. |
+| Partial Gini | Tập trung vùng score có `p(+1\|x) <= b`, với `b = 0.4` | Cần xác định công thức tính partial Gini cụ thể. |
 | EMP | Expected Maximum Profit theo Verbraken et al. (2014) | Có công thức tổng quát nhưng thiếu tham số cost/benefit cụ thể trong repo; chỉ có thể approximate nếu không bổ sung implementation/parameter. |
 
 ### 2.5. Kiểm định thống kê
