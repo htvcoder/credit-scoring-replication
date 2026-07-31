@@ -4,9 +4,9 @@
 
 | STT | Sprint | Tên / Chủ đề Sprint | Mục tiêu chính | Vấn đề trọng tâm cần giải quyết | Ngày bắt đầu | Ngày kết thúc | Trạng thái | Ghi chú |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | Sprint 1 | Nền tảng dự án và thực nghiệm | Hoàn thiện nền tảng dữ liệu, website, pipeline thực nghiệm, tiền xử lý và metric. | Tạo môi trường nghiên cứu có thể kiểm chứng, tránh rò rỉ dữ liệu và đánh giá đúng. | 16/07/2026 | 25/07/2026 | Hoàn thành | P0–P4 |
-| 2 | Sprint 2 | Triển khai mô hình và chạy thực nghiệm | Xây dựng các mô hình, chạy replication cốt lõi và đánh giá mô hình hiện đại. | Bảo đảm kết quả mô hình có thể tái lập, so sánh công bằng và quản lý tài nguyên chạy. | 27/07/2026 | 08/08/2026 | Đang thực hiện | P5–P8 |
-| 3 | Sprint 3 | Phân tích, hoàn thiện báo cáo và bàn giao | Phân tích thống kê, kiểm tra độ bền vững, hoàn thiện báo cáo và website kết quả. | Đưa ra kết luận đáng tin cậy và đóng gói sản phẩm có thể tái lập. | 10/08/2026 | 22/08/2026 | Chưa bắt đầu | P9–P11 |
+| 1 | Sprint 1 | Nền tảng dự án và thực nghiệm | Hoàn thiện nền tảng dữ liệu, website, pipeline thực nghiệm, tiền xử lý và metric. | Tạo môi trường nghiên cứu có thể kiểm chứng, tránh rò rỉ dữ liệu và đánh giá đúng. | 20/07/2026 | 01/08/2026 | Hoàn thành | P0–P4 |
+| 2 | Sprint 2 | Triển khai mô hình và chạy thực nghiệm | Xây dựng các mô hình, chạy replication cốt lõi và đánh giá mô hình hiện đại. | Bảo đảm kết quả mô hình có thể tái lập, so sánh công bằng và quản lý tài nguyên chạy. | 03/08/2026 | 15/08/2026 | Đang thực hiện | P5–P8 |
+| 3 | Sprint 3 | Phân tích, hoàn thiện báo cáo và bàn giao | Phân tích thống kê, kiểm tra độ bền vững, hoàn thiện báo cáo và website kết quả. | Đưa ra kết luận đáng tin cậy và đóng gói sản phẩm có thể tái lập. | 17/08/2026 | 29/08/2026 | Chưa bắt đầu | P9–P11 |
 
 ## Sprint 1
 
