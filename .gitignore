@@ -58,4 +58,4 @@ client_secret*.json
 docs/presentations
 reports/*.xlsx
 
-/artifacts/p7b-cart-feasibility/p7b1-dry-run/
+/artifacts/p7b-cart-feasibility/

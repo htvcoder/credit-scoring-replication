@@ -5,7 +5,14 @@ import argparse
 import json
 from pathlib import Path
 from creditrep.datasets.registry import find_repo_root
-from creditrep.experiments.p7b_cart import build_plan, render_plan, run, validate_plan
+from creditrep.experiments.p7b_cart import (
+    P7BContractError,
+    build_plan,
+    render_plan,
+    run,
+    validate_artifacts,
+    validate_plan,
+)
 
 
 def main() -> int:
@@ -32,16 +39,22 @@ def main() -> int:
     elif args.command == "validate-plan":
         result = validate_plan(plan)
     elif args.command == "validate-artifacts":
-        result = json.loads(
-            (args.output_dir / "validator.json").read_text(encoding="utf-8")
-        )
+        result = validate_artifacts(plan, args.output_dir, repo_root=root)
     else:
         result = run(
             plan, args.output_dir, repo_root=root, resume=args.command == "resume"
         )
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
-    return 0
+    return (
+        2
+        if args.command == "validate-artifacts" and not result.get("valid", False)
+        else 0
+    )
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except P7BContractError as exc:
+        print(json.dumps({"valid": False, "error": str(exc)}, ensure_ascii=False))
+        raise SystemExit(2)
