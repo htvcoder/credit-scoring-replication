@@ -16,11 +16,11 @@ Manifest machine-readable là `configs/protocols/p7a/p7a_candidate_manifest.yaml
 
 Table 2 của paper là `reference_search_space`: LR không tuning; RF có 30, XGBoost 108 cấu hình. MLP công bố 144/720/2016 cấu hình cho 1/3/5 layer và cấm số neuron tăng theo layer. Bảng đồng thời liệt kê batch normalization nhưng số đếm chỉ khớp khi không nhân theo tham số này; manifest ghi rõ bất nhất đó.
 
-`candidate_search_space` CART-A đã được phê duyệt riêng cho P7B: `max_depth` là `[3, 5, 7, 9]` và `min_samples_leaf` dạng tỷ lệ là `[0.005, 0.01, 0.02]`, tổng `4×3=12` candidate. Tỷ lệ được sklearn quy đổi theo `ceil(fraction × inner_training_row_count)` và được ghi canonical là `0.005`, `0.01`, `0.02`. Đây không phải ánh xạ confidence-based pruning của C4.5, không phải final scientific search space P7C, và vẫn mang deviation `c45_to_cart`.
+`candidate_search_space` CART-A dùng `max_depth` `[3, 5, 7, 9]` và `min_samples_leaf` dạng tỷ lệ `[0.005, 0.01, 0.02]`, tổng `4×3=12` candidate. Tỷ lệ được sklearn quy đổi theo `ceil(fraction × inner_training_row_count)` và được ghi canonical là `0.005`, `0.01`, `0.02`. Sau P7B closeout, đúng 12 cấu hình này đã được khóa cho CART tại `configs/protocols/p7c/p7c_cart_final_manifest.yaml`; đây vẫn là deviation `c45_to_cart`, không phải ánh xạ confidence-based pruning của C4.5.
 
 Pilot P7B chỉ dùng AC, HMEQ, GMC; mỗi dataset dùng `repeat_00_fold_00` được dẫn xuất từ seed 42, bốn candidate đã khóa theo coverage và 5 inner folds, tổng 60 inner fits. Pilot không thực hiện scientific model selection/final refit; metric nếu có chỉ là non-publishable pipeline validation. Full theoretical CART Grid 2 có 5.400 inner candidate-evaluation fits và, nếu P7C sau này được khóa/chạy, 90 outer selected-model refits tách biệt.
 
-CART-B (`ccp_alpha`) vẫn là phương án dự phòng; CART-C không được chọn. P7B closeout phải ghi decision record và chỉ khi đó mới được khóa final scientific search space P7C.
+CART-B (`ccp_alpha`) vẫn là phương án dự phòng; CART-C không được chọn. P7B decision record tại `docs/P7B_CART_FEASIBILITY_DECISION.md` đã khóa final CART search space; các model khác không được khóa bởi quyết định này.
 
 RF, XGBoost, MLP-1 và MLP-3 giữ reference grid làm candidate scientific search space nhưng final budget chỉ khóa sau P7B. MLP-5 là `decision_pending`; CatBoost và TabNet là `conditionally_required`; FT-Transformer là `optional_extension` và không tính vào main completeness matrix.
 
@@ -28,7 +28,7 @@ RF, XGBoost, MLP-1 và MLP-3 giữ reference grid làm candidate scientific sear
 
 P7B chỉ đo feasibility: thời gian, RAM/VRAM, dung lượng artifact, failure/resume và chi phí dự kiến. Ngưỡng định lượng còn `pending_user_approval`. Mọi pilot artifact và predictive metric là non-publishable, không được dùng để quyết định model inclusion dựa trên performance.
 
-P7B closeout phải tạo decision records, khóa `final_scientific_search_space` và sinh final locked P7C manifest trước khi P7C được phép bắt đầu.
+P7B closeout đã tạo decision record và final locked CART manifest. P7C chưa chạy; bất kỳ execution nào ngoài CART còn cần final search-space/budget decision riêng.
 
 ```powershell
 .\.venv\Scripts\python.exe -m creditrep.protocols.cli verify configs/protocols/p7a/p7a_candidate_manifest.yaml

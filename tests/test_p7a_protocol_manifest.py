@@ -8,6 +8,7 @@ import yaml
 import pandas as pd
 
 from creditrep.config.exceptions import ConfigError
+from creditrep.config.loader import sha256_canonical
 from creditrep.models.registry import validate_hyperparameters
 from creditrep.protocols.p7a import ProtocolManifestError, effective_min_samples_leaf, load_manifest, manifest_hash, validate_manifest, verify_manifest_lock
 from creditrep.datasets.models import LoadedDataset
@@ -15,6 +16,7 @@ from creditrep.splitting.nested import create_nested_cv_definition
 
 
 MANIFEST = Path("configs/protocols/p7a/p7a_candidate_manifest.yaml")
+P7C_CART_MANIFEST = Path("configs/protocols/p7c/p7c_cart_final_manifest.yaml")
 
 
 def test_candidate_manifest_is_locked_and_uses_paper_repeat_counts():
@@ -83,6 +85,29 @@ def test_cart_grid_and_pilot_budget_are_locked():
     assert pilot["total_inner_fits"] == 3 * 4 * 5 == 60
     assert cart["full_theoretical_workload"]["inner_candidate_evaluation_fits"] == 450 * 12 == 5400
     assert payload["final_scientific_search_space"]["status"] == "created_only_after_p7b_closeout_before_p7c"
+
+
+def test_p7c_cart_final_manifest_locks_the_full_p7a_grid():
+    p7a = load_manifest(MANIFEST)
+    p7c = yaml.safe_load(P7C_CART_MANIFEST.read_text(encoding="utf-8"))
+    lock = p7c.pop("lock")
+    assert p7c["protocol"]["status"] == "locked"
+    assert p7c["protocol"]["source_manifest_sha256"] == manifest_hash(p7a)
+    assert p7c["protocol"]["decision_record"] == "docs/P7B_CART_FEASIBILITY_DECISION.md"
+    assert p7c["datasets"] == p7a["datasets"]
+    assert p7c["cross_validation"] == p7a["cross_validation"]
+    expected = [
+        (depth, leaf)
+        for depth in p7a["candidate_search_space"]["cart_a"]["max_depth"]
+        for leaf in p7a["candidate_search_space"]["cart_a"]["min_samples_leaf"]
+    ]
+    actual = [(item["max_depth"], item["min_samples_leaf"]) for item in p7c["search_space"]["candidates"]]
+    assert actual == expected
+    assert len({item["id"] for item in p7c["search_space"]["candidates"]}) == 12
+    assert p7c["workload"]["inner_candidate_evaluation_fits"] == 5400
+    assert p7c["workload"]["outer_selected_model_refits"] == 90
+    assert lock["algorithm"] == "sha256-canonical-json"
+    assert lock["manifest_sha256"] == sha256_canonical(p7c)
 
 
 def test_effective_minimum_leaf_count_uses_ceiling():

@@ -547,7 +547,7 @@ Generated from website/content/progress.yaml. Do not edit manually.
 - Last completed phase: Phase 6
 - Current phase: Phase 7
 - Next phase: Phase 7 - Core replication run
-- Updated at: 2026-07-29
+- Updated at: 2026-08-05
 
 | Phase | Status | Milestone tag |
 | --- | --- | --- |
@@ -586,8 +586,8 @@ Phase 6 checkpoints:
 
 Phase 7 checkpoints:
 - P7A: Completed - Protocol bất biến, candidate manifest P7B, provenance Table 2/3, CART-A Grid 2 approved cho pilot non-publishable, validator và CLI đã hoàn thành; final scientific search space chờ P7B closeout.
-- P7B: Next - Feasibility pilot non-publishable, đo runtime/resource/failure để quyết định final manifest.
-- P7C: Planned - Full scientific run chỉ bắt đầu sau P7B closeout và final P7C manifest lock.
+- P7B: Completed - P7B.1 runner/hardening và P7B.2 CART engineering-feasibility đã completed: run-002 tại Git 989997a9dd8cb792636d99f5e2b243b5775807ed có 60/60 fit, 0 failed, 0 pending, artifact validated. Decision record đã khóa final CART-A grid 12 candidates; runtime/RSS vẫn chỉ là bằng chứng kỹ thuật non-publishable.
+- P7C: Next - P7C chưa chạy. Final CART-A grid đã khóa, nhưng search space/budget của RF, XGBoost, MLP-1/3/5, CatBoost, TabNet và FT-Transformer chưa tự động được khóa; không được tuyên bố P7C ready cho full scientific run.
 
 Current scope limits:
 - Core replication has not run.

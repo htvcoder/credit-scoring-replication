@@ -1,0 +1,102 @@
+schema_version: 1
+protocol:
+  id: p7c-cart-a-final-scientific-search-space
+  version: 1.0.0
+  status: locked
+  scope: cart_only_final_search_space
+  decision_record: docs/P7B_CART_FEASIBILITY_DECISION.md
+  source_manifest: configs/protocols/p7a/p7a_candidate_manifest.yaml
+  source_manifest_sha256: 62b5bddc29017cf152607dab029d790e7c6f822bcf840a814b81a90228025f4e
+  decision_date: '2026-08-05'
+model:
+  id: decision_tree
+  implementation: sklearn.tree.DecisionTreeClassifier
+  deviation: c45_to_cart
+  scientific_boundary: feasibility_and_protocol_decision_only_no_pilot_metric_selection
+datasets:
+- AC
+- GC
+- HMEQ
+- TH02
+- TC
+- GMC
+cross_validation:
+  outer_strategy: repeated_stratified_2fold
+  outer_splits: 2
+  outer_repeats:
+    AC: 10
+    GC: 10
+    TH02: 10
+    HMEQ: 5
+    TC: 5
+    GMC: 5
+  inner_strategy: stratified_kfold
+  inner_splits: 5
+  seed: 42
+  seed_provenance: project_reproducibility_decision_paper_seed_not_reported
+search_space:
+  representation: relative_fraction
+  candidate_count: 12
+  candidates:
+  - id: cart_a_depth_3_leaf_0_005
+    max_depth: 3
+    min_samples_leaf: 0.005
+  - id: cart_a_depth_3_leaf_0_01
+    max_depth: 3
+    min_samples_leaf: 0.01
+  - id: cart_a_depth_3_leaf_0_02
+    max_depth: 3
+    min_samples_leaf: 0.02
+  - id: cart_a_depth_5_leaf_0_005
+    max_depth: 5
+    min_samples_leaf: 0.005
+  - id: cart_a_depth_5_leaf_0_01
+    max_depth: 5
+    min_samples_leaf: 0.01
+  - id: cart_a_depth_5_leaf_0_02
+    max_depth: 5
+    min_samples_leaf: 0.02
+  - id: cart_a_depth_7_leaf_0_005
+    max_depth: 7
+    min_samples_leaf: 0.005
+  - id: cart_a_depth_7_leaf_0_01
+    max_depth: 7
+    min_samples_leaf: 0.01
+  - id: cart_a_depth_7_leaf_0_02
+    max_depth: 7
+    min_samples_leaf: 0.02
+  - id: cart_a_depth_9_leaf_0_005
+    max_depth: 9
+    min_samples_leaf: 0.005
+  - id: cart_a_depth_9_leaf_0_01
+    max_depth: 9
+    min_samples_leaf: 0.01
+  - id: cart_a_depth_9_leaf_0_02
+    max_depth: 9
+    min_samples_leaf: 0.02
+workload:
+  inner_candidate_evaluation_fits: 5400
+  outer_selected_model_refits: 90
+  by_dataset:
+    AC:
+      inner_candidate_evaluation_fits: 1200
+      outer_selected_model_refits: 20
+    GC:
+      inner_candidate_evaluation_fits: 1200
+      outer_selected_model_refits: 20
+    HMEQ:
+      inner_candidate_evaluation_fits: 600
+      outer_selected_model_refits: 10
+    TH02:
+      inner_candidate_evaluation_fits: 1200
+      outer_selected_model_refits: 20
+    TC:
+      inner_candidate_evaluation_fits: 600
+      outer_selected_model_refits: 10
+    GMC:
+      inner_candidate_evaluation_fits: 600
+      outer_selected_model_refits: 10
+lock:
+  algorithm: sha256-canonical-json
+  manifest_sha256: 573acb1c5bdbba6569aafaf9c5eff412deeae9a90a68346c59a0411ccfc60476
+  lock_scope: all_fields_except_lock

@@ -22,16 +22,20 @@ Lệnh dry-run P7B.1 (không fit model):
 .\.venv\Scripts\python.exe -m creditrep.experiments.p7b_cli plan --output-dir artifacts\p7b-cart-feasibility\p7b1-dry-run
 ```
 
-Lệnh dự kiến cho P7B.2 (chỉ dùng khi được yêu cầu riêng):
+Lệnh P7B.2 đã dùng để tạo run hoàn chỉnh (không chạy lại hoặc overwrite artifact):
 
 ```powershell
-.\.venv\Scripts\python.exe -m creditrep.experiments.p7b_cli run --output-dir artifacts\p7b-cart-feasibility\p7b2-run-001
+.\.venv\Scripts\python.exe -m creditrep.experiments.p7b_cli run --output-dir artifacts\p7b-cart-feasibility\p7b2-run-002
 ```
 
 Kiểm tra output sau run (hoặc kiểm tra dry-run ở chế độ plan-only):
 
 ```powershell
-.\.venv\Scripts\python.exe -m creditrep.experiments.p7b_cli validate-artifacts --output-dir artifacts\p7b-cart-feasibility\p7b2-run-001
+.\.venv\Scripts\python.exe -m creditrep.experiments.p7b_cli validate-artifacts --output-dir artifacts\p7b-cart-feasibility\p7b2-run-002
 ```
 
-P7B.1 hiện implementation-ready; P7B.2 chưa chạy. P7B.1 không khóa final scientific search space của P7C và không dùng metric dự đoán để quyết định bao gồm mô hình.
+## P7B.2 engineering closeout
+
+`artifacts/p7b-cart-feasibility/p7b2-run-002` đã hoàn thành và được CLI tái xác thực: 60/60 fit completed, 0 failed, 0 pending, `training_artifacts_validated=true`, với `run_config_hash=6b6828231991b972c38d0ffc949a9f96ffa27940020ab805c2c80b2c705f02ee`. Run dùng revision `989997a9dd8cb792636d99f5e2b243b5775807ed` và working tree sạch. Tổng thời gian fit tuần tự là 12.998 giây; RSS process-local peak quan sát cao nhất là 230.6 MB. Chi tiết audit, ngoại suy và giới hạn telemetry nằm tại `docs/P7B2_ENGINEERING_FEASIBILITY_CLOSEOUT.md`.
+
+P7B đã closed bằng `docs/P7B_CART_FEASIBILITY_DECISION.md` và final CART manifest `configs/protocols/p7c/p7c_cart_final_manifest.yaml`; quyết định giữ đầy đủ 12 candidates không dùng metric dự đoán. Điều này không khóa search space của model khác, không chạy P7C và không tạo kết quả khoa học.

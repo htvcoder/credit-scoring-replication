@@ -1,6 +1,6 @@
 # Phương pháp dự kiến
 
-Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái nghiệm thu kỹ thuật. Phase 6 đã hoàn thành MLP infrastructure/hardening; GC/TC reduced runs là non-publishable engineering validation. Core replication run và kết quả nghiên cứu chính thức vẫn chưa được công bố.
+Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái nghiệm thu kỹ thuật. Phase 6 đã hoàn thành MLP infrastructure/hardening; GC/TC reduced runs là non-publishable engineering validation. P7B đã completed: CART engineering-feasibility 60/60 fit không lỗi và final CART-A 12-candidate grid đã khóa, nhưng telemetry runtime/RSS của pilot vẫn chỉ là bằng chứng kỹ thuật non-publishable. Core replication run và kết quả nghiên cứu chính thức vẫn chưa được công bố.
 
 ## Replication core
 
@@ -27,8 +27,8 @@ Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái 
 
 ## Bước tiếp theo
 
-- Phase 6 đã hoàn thành MLP infrastructure/hardening validation; Phase 7 - Core replication run là bước tiếp theo. Các reduced validation artifacts vẫn không phải kết quả khoa học.
-- Core replication chỉ được bắt đầu sau khi model factory và baseline models dùng lại đúng preprocessing, nested-CV và metric-validation foundation của Phase 3-4.
+- P7B đã closed với decision record và final CART-A manifest. P7C là checkpoint kế tiếp nhưng chưa chạy; CART lock không tự động khóa budget/search space của các model khác.
+- Core replication chỉ được bắt đầu cho scope đã khóa, sau khi xác nhận model factory/baseline dùng lại đúng preprocessing, nested-CV và metric-validation foundation của Phase 3-4. Không có pilot metric nào được dùng để chọn CART candidate.
 
 ## Modern reassessment
 
