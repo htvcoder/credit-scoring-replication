@@ -1,6 +1,6 @@
 # Phương pháp dự kiến
 
-Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái nghiệm thu kỹ thuật. Phase 6 đã hoàn thành MLP infrastructure/hardening; GC/TC reduced runs là non-publishable engineering validation. P7C đang thực hiện P7C.1 protocol inventory/planning sau khi CART-A 12-candidate grid được khóa; chưa có scientific execution hoặc kết quả nghiên cứu chính thức.
+Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái nghiệm thu kỹ thuật. Phase 6 đã hoàn thành MLP infrastructure/hardening; GC/TC reduced runs là non-publishable engineering validation. P7C.1 và P7C.2.1 đã completed sau khi CART-A 12-candidate grid được khóa; P7C.2.2 RF/XGBoost research pilot vẫn Not Run. Chưa có scientific execution hoặc kết quả nghiên cứu chính thức.
 
 ## Replication core
 
@@ -27,7 +27,7 @@ Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái 
 
 ## Bước tiếp theo
 
-- P7C.1 đang hoàn tất inventory/readiness; P7C.2 là quyết định RF/XGBoost. CART lock không tự động khóa budget/search space của các model khác.
+- P7C.1 inventory/readiness và P7C.2.1 immutable 60-fit RF/XGBoost engineering harness đã completed. P7C.2.2 research pilot là bước tiếp theo nhưng vẫn Not Run; P7C.2.3 protocol decision còn pending. Synthetic integration tests và telemetry không phải kết quả khoa học. CART lock không tự động khóa RF/XGBoost budget/search space hoặc budget/search space của model khác.
 - Core replication chỉ được bắt đầu cho scope đã khóa sau P7C.7 readiness gate. Không có pilot metric nào được dùng để chọn CART candidate.
 
 ## Modern reassessment

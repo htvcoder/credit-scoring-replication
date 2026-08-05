@@ -1,0 +1,43 @@
+schema_version: 1
+checkpoint_id: P7C.2.1
+status: planned
+execution_status: not_run
+purpose: engineering_feasibility_only
+scientific_boundary: no_predictive_ranking_no_selection_no_outer_refit_non_publishable
+source_manifest: configs/protocols/p7a/p7a_candidate_manifest.yaml
+source_manifest_sha256: 62b5bddc29017cf152607dab029d790e7c6f822bcf840a814b81a90228025f4e
+models:
+- model_id: random_forest
+  implementation: sklearn.ensemble.RandomForestClassifier
+  library: scikit-learn
+  candidate_selection: deterministic_coverage_low_medium_high_tree_and_feature_cost
+  candidates:
+  - id: rf_low
+    parameters: {n_estimators: 100, max_features_multiplier_of_sqrt_m: 0.1}
+  - id: rf_medium
+    parameters: {n_estimators: 500, max_features_multiplier_of_sqrt_m: 1}
+  - id: rf_high
+    parameters: {n_estimators: 1000, max_features_multiplier_of_sqrt_m: 4}
+- model_id: xgboost
+  implementation: xgboost.XGBClassifier
+  library: xgboost
+  candidate_selection: deterministic_coverage_low_medium_high_round_depth_sampling_cost
+  candidates:
+  - id: xgb_low
+    parameters: {n_estimators: 50, max_depth: 1, learning_rate: 0.3, colsample_bytree: 0.6, subsample: 0.5}
+  - id: xgb_medium
+    parameters: {n_estimators: 100, max_depth: 2, learning_rate: 0.4, colsample_bytree: 0.8, subsample: 0.75}
+  - id: xgb_high
+    parameters: {n_estimators: 150, max_depth: 3, learning_rate: 0.4, colsample_bytree: 0.8, subsample: 1.0}
+datasets: [AC, GMC]
+outer_partition: {repeat_index: 0, fold_index: 0, selection: deterministic_first_partition_not_metric_selected}
+inner_folds: 5
+expected_fits: {random_forest: 30, xgboost: 30, total: 60}
+seed: 42
+threading: {fits_parallelism: 1, estimator_threads: 1, allow_n_jobs_minus_one: false, gpu_enabled: false}
+telemetry: {rss_sample_interval_seconds: 0.05, include_children: false, process_cpu_time: true}
+artifact_root: artifacts/p7c2-rf-xgboost-feasibility
+resume_policy: require_matching_plan_digest_skip_valid_completed
+retry_policy: {max_retry_attempts: 1, transient_errors_only: true}
+non_goals: [full_reference_grid, scientific_metrics, predictive_ranking, outer_selected_model_refit, gpu, cloud]
+lock: {algorithm: sha256-canonical-json, plan_sha256: 1f3a6cd5b9f4d766fe89b34676ba66cf3ec731b49b27ff3769af042d83f08516}

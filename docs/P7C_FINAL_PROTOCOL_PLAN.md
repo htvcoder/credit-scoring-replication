@@ -33,6 +33,8 @@ P7C.1 lập inventory, readiness matrix và decision register cho P7C; không ch
 | P7C.6 | FT-Transformer extension decision | P7C.1 → scope/GPU/budget decision | Có thể, nhưng non-publishable pilot riêng |
 | P7C.7 | Unified final manifest and readiness gate | P7C.2–.6 decisions resolved/deferred explicitly → all references/hashes/tests pass | Không; đây là gate trước execution |
 
+P7C.2 được triển khai theo ba sub-checkpoint: P7C.2.1 hoàn tất immutable 60-fit plan và execution harness; P7C.2.2 là research-data engineering pilot chưa chạy; P7C.2.3 lập decision record và chỉ khi evidence đủ mới có thể khóa RF/XGBoost final grid/budget. Việc P7C.2.1 completed không thay đổi trạng thái Open của DR-P7C-01/02 và không làm full scientific execution ready.
+
 P7C.7 chỉ có thể tuyên bố full protocol ready khi dataset/CV/preprocessing/seed policy, model scope, concurrency/retry/retention policy và tất cả search-space/budget decision bắt buộc đều có manifest/decision evidence. P7C.1 complete không làm full scientific execution ready.
 
 ## Decision register

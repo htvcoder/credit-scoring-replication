@@ -59,3 +59,4 @@ docs/presentations
 reports/*.xlsx
 
 /artifacts/p7b-cart-feasibility/
+/artifacts/p7c2-rf-xgboost-feasibility/

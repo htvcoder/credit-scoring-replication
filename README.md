@@ -587,7 +587,12 @@ Phase 6 checkpoints:
 Phase 7 checkpoints:
 - P7A: Completed - Protocol bất biến, candidate manifest P7B, provenance Table 2/3, CART-A Grid 2 approved cho pilot non-publishable, validator và CLI đã hoàn thành; final scientific search space chờ P7B closeout.
 - P7B: Completed - P7B.1 runner/hardening và P7B.2 CART engineering-feasibility đã completed: run-002 tại Git 989997a9dd8cb792636d99f5e2b243b5775807ed có 60/60 fit, 0 failed, 0 pending, artifact validated. Decision record đã khóa final CART-A grid 12 candidates; runtime/RSS vẫn chỉ là bằng chứng kỹ thuật non-publishable.
-- P7C: In Progress - P7C.1 protocol inventory, readiness matrix, decision register và validator đã completed. P7C.2 (RF/XGBoost decision) là bước tiếp theo; CART-A final grid đã locked, nhưng search space/budget của LR, RF, XGBoost, MLP-1/3/5, CatBoost, TabNet và FT-Transformer chưa đầy đủ nên full scientific run chưa ready và chưa chạy.
+- P7C: In Progress - P7C đang In Progress. P7C.1 đã completed; P7C.2 đang thực hiện RF/XGBoost engineering-feasibility và protocol decision. Các checkpoint P7C.3–P7C.7 chưa hoàn tất nên full scientific execution NOT READY.
+- P7C.1: Completed - Protocol inventory, readiness matrix, decision register và validator đã completed; không chạy training hoặc tạo scientific result.
+- P7C.2: In Progress - RF/XGBoost engineering-feasibility đang In Progress: technical harness đã hoàn tất, research pilot chưa chạy và protocol decision còn pending.
+- P7C.2.1: Completed - Immutable 60-fit plan, runner, CLI, atomic artifacts, telemetry, resume/retry và artifact validator đã hoàn thành và qua acceptance tests; research-data fits bằng 0.
+- P7C.2.2: Next - Research pilot là bước Next và hiện Not Run; chỉ tạo non-publishable engineering evidence theo immutable plan digest.
+- P7C.2.3: Planned - Protocol decision Pending; RF final protocol/search space, XGBoost final protocol/search space và final compute budget đều Not Locked.
 
 Current scope limits:
 - Core replication has not run.
