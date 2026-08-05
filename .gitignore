@@ -57,6 +57,7 @@ client_secret*.json
 *.egg-info/
 docs/presentations
 reports/*.xlsx
+reports/draft*
 
 /artifacts/p7b-cart-feasibility/
 /artifacts/p7c2-rf-xgboost-feasibility/
