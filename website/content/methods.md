@@ -1,6 +1,6 @@
 # Phương pháp dự kiến
 
-Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái nghiệm thu kỹ thuật. Phase 6 đã hoàn thành MLP infrastructure/hardening; GC/TC reduced runs là non-publishable engineering validation. P7B đã completed: CART engineering-feasibility 60/60 fit không lỗi và final CART-A 12-candidate grid đã khóa, nhưng telemetry runtime/RSS của pilot vẫn chỉ là bằng chứng kỹ thuật non-publishable. Core replication run và kết quả nghiên cứu chính thức vẫn chưa được công bố.
+Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái nghiệm thu kỹ thuật. Phase 6 đã hoàn thành MLP infrastructure/hardening; GC/TC reduced runs là non-publishable engineering validation. P7C đang thực hiện P7C.1 protocol inventory/planning sau khi CART-A 12-candidate grid được khóa; chưa có scientific execution hoặc kết quả nghiên cứu chính thức.
 
 ## Replication core
 
@@ -27,8 +27,8 @@ Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái 
 
 ## Bước tiếp theo
 
-- P7B đã closed với decision record và final CART-A manifest. P7C là checkpoint kế tiếp nhưng chưa chạy; CART lock không tự động khóa budget/search space của các model khác.
-- Core replication chỉ được bắt đầu cho scope đã khóa, sau khi xác nhận model factory/baseline dùng lại đúng preprocessing, nested-CV và metric-validation foundation của Phase 3-4. Không có pilot metric nào được dùng để chọn CART candidate.
+- P7C.1 đang hoàn tất inventory/readiness; P7C.2 là quyết định RF/XGBoost. CART lock không tự động khóa budget/search space của các model khác.
+- Core replication chỉ được bắt đầu cho scope đã khóa sau P7C.7 readiness gate. Không có pilot metric nào được dùng để chọn CART candidate.
 
 ## Modern reassessment
 

@@ -4,7 +4,7 @@ project:
   current_phase: 7
   next_phase: 7
   updated_at: "2026-08-05"
-  current_status_summary: "Phase 6 đã hoàn thành nền tảng và hardening MLP-1, MLP-3 và MLP-5; reduced runs không phải kết quả khoa học. P7A đã khóa protocol bất biến; P7B đã completed: P7B.2 CART engineering-feasibility 60/60 fit không lỗi và final CART grid 12 candidates đã khóa. P7C là checkpoint kế tiếp nhưng chưa chạy, các search space model khác chưa được khóa và chưa có kết quả nghiên cứu chính thức."
+  current_status_summary: "Phase 6 đã hoàn thành nền tảng và hardening MLP-1, MLP-3 và MLP-5; reduced runs không phải kết quả khoa học. P7A đã khóa protocol bất biến và P7B đã completed; final CART grid 12 candidates đã khóa. P7C đang in progress ở P7C.1 protocol inventory/planning; các search space/budget model khác chưa được khóa, chưa chạy scientific execution và chưa có kết quả nghiên cứu chính thức."
 status_enum:
   - planned
   - next
@@ -192,7 +192,7 @@ phases:
     numeric_id: 7
     title: "Core replication run"
     status: "in_progress"
-    summary: "P7A đã khóa protocol bất biến và candidate manifest P7B theo Table 2/3 của bài báo. P7B đã completed với P7B.2 CART engineering-feasibility 60/60 fit không lỗi và final CART-A grid 12 candidates đã khóa; đây chỉ là bằng chứng kỹ thuật non-publishable. P7C chưa chạy và các search space model khác vẫn chưa được khóa."
+    summary: "P7A/P7B đã completed và final CART-A grid 12 candidates đã khóa bằng evidence engineering non-publishable. P7C đang in progress ở P7C.1 protocol inventory/planning: chưa chạy scientific execution, các search space/budget ngoài CART vẫn chưa được khóa và full protocol chưa ready."
     tasks:
       - "P7A: khóa protocol/candidate manifest và kiểm tra integrity trước pilot."
       - "P7B: chạy feasibility pilot non-publishable; không dùng predictive performance để quyết định inclusion."
@@ -211,8 +211,8 @@ phases:
         status: "completed"
         summary: "P7B.1 runner/hardening và P7B.2 CART engineering-feasibility đã completed: run-002 tại Git 989997a9dd8cb792636d99f5e2b243b5775807ed có 60/60 fit, 0 failed, 0 pending, artifact validated. Decision record đã khóa final CART-A grid 12 candidates; runtime/RSS vẫn chỉ là bằng chứng kỹ thuật non-publishable."
       - id: "P7C"
-        status: "next"
-        summary: "P7C chưa chạy. Final CART-A grid đã khóa, nhưng search space/budget của RF, XGBoost, MLP-1/3/5, CatBoost, TabNet và FT-Transformer chưa tự động được khóa; không được tuyên bố P7C ready cho full scientific run."
+        status: "in_progress"
+        summary: "P7C.1 protocol inventory, readiness matrix, decision register và validator đã completed. P7C.2 (RF/XGBoost decision) là bước tiếp theo; CART-A final grid đã locked, nhưng search space/budget của LR, RF, XGBoost, MLP-1/3/5, CatBoost, TabNet và FT-Transformer chưa đầy đủ nên full scientific run chưa ready và chưa chạy."
   - id: "Phase 8"
     numeric_id: 8
     title: "Modern reassessment"
