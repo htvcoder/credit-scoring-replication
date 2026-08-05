@@ -14,6 +14,8 @@ Telemetry của mỗi fit ghi thời gian, attempts, rows/features, leaf fractio
 
 `plan` là dry-run plan-only, không fit model. Nó có thể tạo artifact non-training/non-publishable khi provenance không lấy được; record phải phản ánh điều này và không làm suy yếu fail-fast của `run`/`resume`. `validate-artifacts` tái đọc plan, snapshot, environment, summary và từng fit artifact; kiểm tra hash/config/identity, paths, provenance, summary, retry, telemetry RSS và trạng thái completed/failed. `validator.json` chỉ là record của một lần validation, không phải nguồn sự thật; validator không tin giá trị `valid=true` cũ. Plan-only dry-run được báo là `training_artifacts_validated=false`, không bao giờ được mô tả là completed training run.
 
+Khi chạy P7B.2, CLI in progress đã flush: provenance đã xác thực, load dataset, tạo nested-CV definition, plan 60 fit, bắt đầu và kết thúc/từ chối từng fit. Runner tạo nested-CV definition đúng một lần cho mỗi dataset rồi tái sử dụng cho các fit đã khóa; hash fold vẫn giữ nguyên contract cũ nhưng đọc target theo positional array thay vì scalar pandas indexing lặp lại. `Ctrl+C` tạo `engineering_summary.json` với `completion_status=interrupted`, không tạo result/failure giả cho fit chưa bắt đầu. Training run thiếu summary sau interruption cũ được validator phân loại `incomplete`/`resumable` khi các artifact hiện có nhất quán; không bị nhầm với plan-only. `run` từ chối overwrite output directory đã tồn tại; `resume` yêu cầu artifact hợp lệ/resumable và Git HEAD cùng working-tree provenance phải khớp chính xác với environment record, nên không trộn output giữa các revision.
+
 Lệnh dry-run P7B.1 (không fit model):
 
 ```powershell

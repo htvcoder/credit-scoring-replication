@@ -207,8 +207,8 @@ def test_run_fails_before_training_when_git_provenance_is_unavailable(
 
     monkeypatch.setattr(p7b_cart, "capture_git_provenance", fail)
     with pytest.raises(p7b_cart.GitProvenanceError, match="safe-directory"):
-        p7b_cart.run(plan, tmp_path, repo_root=_root())
-    assert not (tmp_path / "plan.json").exists()
+        p7b_cart.run(plan, tmp_path / "run", repo_root=_root())
+    assert not (tmp_path / "run" / "plan.json").exists()
 
 
 def test_capture_git_provenance_rejects_non_sha(monkeypatch, tmp_path: Path):
@@ -229,3 +229,84 @@ def test_validate_artifacts_cli_returns_nonzero_for_invalid_tree(
         "sys.argv", ["p7b_cli", "validate-artifacts", "--output-dir", str(tmp_path)]
     )
     assert p7b_cli.main() == 2
+
+
+def test_partial_training_run_without_summary_is_resumable(plan: dict, tmp_path: Path):
+    _valid_training_artifacts(plan, tmp_path)
+    (tmp_path / "engineering_summary.json").unlink()
+    (tmp_path / plan["fits"][0]["artifact_path"]).unlink()
+    report = p7b_cart.validate_artifacts(plan, tmp_path)
+    assert report["valid"] is True
+    assert report["completion_status"] == "incomplete"
+    assert report["resumable"] is True
+    assert report["completed"] == 59
+    assert report["pending"] == 1
+
+
+def test_interrupted_training_summary_is_resumable(plan: dict, tmp_path: Path):
+    _valid_training_artifacts(plan, tmp_path)
+    (tmp_path / plan["fits"][0]["artifact_path"]).unlink()
+    summary = json.loads(
+        (tmp_path / "engineering_summary.json").read_text(encoding="utf-8")
+    )
+    summary.update({"completed": 59, "pending": 1, "completion_status": "interrupted"})
+    p7b_cart._write(tmp_path / "engineering_summary.json", summary)
+    report = p7b_cart.validate_artifacts(plan, tmp_path)
+    assert report["valid"] is True
+    assert report["resumable"] is True
+
+
+def test_resume_rejects_changed_provenance_before_loading_data(
+    plan: dict, tmp_path: Path, monkeypatch
+):
+    _valid_training_artifacts(plan, tmp_path)
+    (tmp_path / plan["fits"][0]["artifact_path"]).unlink()
+    summary = json.loads(
+        (tmp_path / "engineering_summary.json").read_text(encoding="utf-8")
+    )
+    summary.update({"completed": 59, "pending": 1, "completion_status": "interrupted"})
+    p7b_cart._write(tmp_path / "engineering_summary.json", summary)
+    monkeypatch.setattr(
+        p7b_cart,
+        "capture_git_provenance",
+        lambda *_args, **_kwargs: {
+            "git_head": "b" * 40,
+            "working_tree": "clean",
+            "working_tree_details": {"is_dirty": False, "porcelain_v1": []},
+        },
+    )
+    with pytest.raises(p7b_cart.P7BContractError, match="different Git provenance"):
+        p7b_cart.run(plan, tmp_path, repo_root=_root(), resume=True)
+
+
+def test_run_interrupt_before_first_fit_writes_clear_partial_state(
+    plan: dict, tmp_path: Path, monkeypatch
+):
+    output_dir = tmp_path / "interrupted-run"
+    messages: list[str] = []
+    monkeypatch.setattr(
+        p7b_cart,
+        "capture_git_provenance",
+        lambda *_args, **_kwargs: {
+            "git_head": "a" * 40,
+            "working_tree": "clean",
+            "working_tree_details": {"is_dirty": False, "porcelain_v1": []},
+        },
+    )
+    monkeypatch.setattr(p7b_cart, "_progress", messages.append)
+    monkeypatch.setattr(
+        p7b_cart,
+        "load_dataset",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(KeyboardInterrupt()),
+    )
+    with pytest.raises(KeyboardInterrupt):
+        p7b_cart.run(plan, output_dir, repo_root=_root())
+    summary = json.loads(
+        (output_dir / "engineering_summary.json").read_text(encoding="utf-8")
+    )
+    assert summary["completion_status"] == "interrupted"
+    assert summary["completed"] == summary["failed"] == 0
+    assert summary["pending"] == 60
+    assert not list((output_dir / "fits").rglob("*.json"))
+    assert "Git provenance validated" in messages
+    assert "Loading dataset AC" in messages

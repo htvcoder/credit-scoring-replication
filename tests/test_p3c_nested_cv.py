@@ -9,26 +9,37 @@ from dataclasses import replace
 from pathlib import Path
 
 import pandas as pd
+import numpy as np
 import pytest
 import yaml
 
 from creditrep.artifacts.exceptions import ArtifactError
-from creditrep.artifacts.nested_cv import create_nested_cv_artifact, validate_nested_cv_artifact
-from creditrep.checksums import get_dataset_checksum
+from creditrep.artifacts.nested_cv import (
+    create_nested_cv_artifact,
+    validate_nested_cv_artifact,
+)
 from creditrep.config.exceptions import ConfigError
-from creditrep.config.loader import sha256_canonical
 from creditrep.config.nested import NestedCVConfig, parse_nested_cv_config
-from creditrep.datasets.loader import load_dataset
 from creditrep.datasets.models import LoadedDataset
-from creditrep.experiments.nested_cv import FakeCandidateEstimator, run_nested_cv_validation
+from creditrep.experiments.nested_cv import (
+    FakeCandidateEstimator,
+    run_nested_cv_validation,
+)
 from creditrep.preprocessing import ProtocolAConfig
 from creditrep.splitting.exceptions import SplitError
-from creditrep.splitting.nested import create_nested_cv_definition, derive_seed, validate_nested_cv_definition
+from creditrep.splitting.nested import (
+    _fold_hash_payload,
+    create_nested_cv_definition,
+    derive_seed,
+    validate_nested_cv_definition,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def toy_dataset(*, test_shift: float = 0.0, test_label_flip: bool = False) -> LoadedDataset:
+def toy_dataset(
+    *, test_shift: float = 0.0, test_label_flip: bool = False
+) -> LoadedDataset:
     rows = []
     target = []
     for i in range(12):
@@ -66,6 +77,53 @@ def toy_dataset(*, test_shift: float = 0.0, test_label_flip: bool = False) -> Lo
     )
 
 
+@pytest.mark.parametrize(
+    ("target", "train", "validation"),
+    [
+        (pd.Series([0, 1, 0, 1]), (0, 2), (1, 3)),
+        (pd.Series([0, 1, 0, 1], index=[10, 5, 99, -1]), (3, 1), (2, 0)),
+        (pd.Series([0, 1]), (), ()),
+    ],
+)
+def test_fold_hash_payload_vectorized_targets_match_scalar_iloc_contract(
+    target: pd.Series, train: tuple[int, ...], validation: tuple[int, ...]
+):
+    dataset = toy_dataset()
+    dataset = replace(dataset, target=target)
+    legacy = {
+        "dataset": {
+            "checksum_sha256": "fixture",
+            "id": dataset.dataset_id,
+            "source_file": dataset.metadata.get("source_file"),
+        },
+        "fold": {
+            "fold_id": "fold",
+            "partition_name": "validation_indices",
+            "seed": 17,
+            "strategy": "stratified_kfold",
+            "train_indices": list(train),
+            "validation_indices": list(validation),
+            "target_values": [
+                int(dataset.target.iloc[int(row)]) for row in sorted(train + validation)
+            ],
+        },
+    }
+    actual = _fold_hash_payload(
+        dataset=dataset,
+        checksum="fixture",
+        fold_id="fold",
+        strategy="stratified_kfold",
+        seed=17,
+        train_indices=tuple(np.array(train, dtype="int64")),
+        validation_or_test_indices=tuple(np.array(validation, dtype="int64")),
+        partition_name="validation_indices",
+        target_values=tuple(
+            int(value) for value in dataset.target.to_numpy(copy=False)
+        ),
+    )
+    assert actual == legacy
+
+
 def nested_config(tmp_path: Path | None = None) -> NestedCVConfig:
     return NestedCVConfig(
         experiment_name="toy_nested_cv",
@@ -99,13 +157,18 @@ def make_definition(dataset: LoadedDataset | None = None):
     )
 
 
-def test_outer_repeated_twofold_is_deterministic_and_covers_rows_once_per_repeat() -> None:
+def test_outer_repeated_twofold_is_deterministic_and_covers_rows_once_per_repeat() -> (
+    None
+):
     dataset = toy_dataset()
     first = make_definition(dataset)
     second = make_definition(dataset)
 
     assert first.nested_cv_hash == second.nested_cv_hash
-    assert [fold.outer_fold_id for fold in first.outer_folds] == ["repeat_00_fold_00", "repeat_00_fold_01"]
+    assert [fold.outer_fold_id for fold in first.outer_folds] == [
+        "repeat_00_fold_00",
+        "repeat_00_fold_01",
+    ]
     for outer in first.outer_folds:
         assert not set(outer.train_indices) & set(outer.test_indices)
         assert set(outer.train_indices) | set(outer.test_indices) == set(range(24))
@@ -119,15 +182,21 @@ def test_outer_repeated_twofold_is_deterministic_and_covers_rows_once_per_repeat
 def test_nested_cv_hash_changes_with_seed_and_seed_derivation_is_stable() -> None:
     dataset = toy_dataset()
     first = make_definition(dataset)
-    changed = create_nested_cv_definition(dataset, dataset_checksum="ABC123", outer_n_repeats=1, inner_n_splits=2, random_seed=7)
+    changed = create_nested_cv_definition(
+        dataset,
+        dataset_checksum="ABC123",
+        outer_n_repeats=1,
+        inner_n_splits=2,
+        random_seed=7,
+    )
 
     assert first.nested_cv_hash != changed.nested_cv_hash
-    assert derive_seed(42, stage="inner", repeat_index=0, outer_fold_index=1) == derive_seed(
+    assert derive_seed(
         42, stage="inner", repeat_index=0, outer_fold_index=1
-    )
-    assert derive_seed(42, stage="outer", repeat_index=0, outer_fold_index=0) != derive_seed(
-        42, stage="inner", repeat_index=0, outer_fold_index=0
-    )
+    ) == derive_seed(42, stage="inner", repeat_index=0, outer_fold_index=1)
+    assert derive_seed(
+        42, stage="outer", repeat_index=0, outer_fold_index=0
+    ) != derive_seed(42, stage="inner", repeat_index=0, outer_fold_index=0)
 
 
 def test_inner_folds_are_subset_of_outer_train_and_cover_validation_once() -> None:
@@ -188,14 +257,20 @@ def test_per_fold_preprocessing_is_fresh_numeric_finite_and_metadata_stable() ->
         assert metadata["preprocessing"]["fitted_row_count"] == 12
 
 
-def test_outer_test_labels_and_features_do_not_change_first_outer_inner_state_or_selected_candidate() -> None:
+def test_outer_test_labels_and_features_do_not_change_first_outer_inner_state_or_selected_candidate() -> (
+    None
+):
     base = toy_dataset()
     definition = make_definition(base)
     outer = definition.outer_folds[0]
     mutated_features = base.features.copy(deep=True)
     mutated_target = base.target.copy(deep=True)
-    mutated_features.iloc[list(outer.test_indices), mutated_features.columns.get_loc("num")] = 999999.0
-    mutated_target.iloc[list(outer.test_indices)] = 1 - mutated_target.iloc[list(outer.test_indices)]
+    mutated_features.iloc[
+        list(outer.test_indices), mutated_features.columns.get_loc("num")
+    ] = 999999.0
+    mutated_target.iloc[list(outer.test_indices)] = (
+        1 - mutated_target.iloc[list(outer.test_indices)]
+    )
     mutated = replace(base, features=mutated_features, target=mutated_target)
 
     base_result = run_nested_cv_validation(
@@ -212,12 +287,19 @@ def test_outer_test_labels_and_features_do_not_change_first_outer_inner_state_or
     )
 
     for inner in outer.inner_folds:
-        assert base_result.inner_preprocessing[inner.inner_fold_id] == mutated_result.inner_preprocessing[inner.inner_fold_id]
+        assert (
+            base_result.inner_preprocessing[inner.inner_fold_id]
+            == mutated_result.inner_preprocessing[inner.inner_fold_id]
+        )
     assert (
         base_result.tuning_summaries[outer.outer_fold_id]["selected_candidate_index"]
-        == mutated_result.tuning_summaries[outer.outer_fold_id]["selected_candidate_index"]
+        == mutated_result.tuning_summaries[outer.outer_fold_id][
+            "selected_candidate_index"
+        ]
     )
-    assert base_result.tuning_summaries[outer.outer_fold_id]["outer_test_metric"] is None
+    assert (
+        base_result.tuning_summaries[outer.outer_fold_id]["outer_test_metric"] is None
+    )
 
 
 def test_tuning_uses_fresh_estimators_and_tie_breaks_by_candidate_order() -> None:
@@ -231,13 +313,19 @@ def test_tuning_uses_fresh_estimators_and_tie_breaks_by_candidate_order() -> Non
         protocol_config=protocol_config(),
     )
     summary = result.tuning_summaries["repeat_00_fold_00"]
-    fit_ids = [fit_id for candidate in summary["candidate_results"] for fit_id in candidate["estimator_fit_ids"]]
+    fit_ids = [
+        fit_id
+        for candidate in summary["candidate_results"]
+        for fit_id in candidate["estimator_fit_ids"]
+    ]
 
     assert len(fit_ids) == len(set(fit_ids))
     assert summary["selected_candidate_index"] == 0
 
 
-def test_artifact_round_trip_no_overwrite_and_corruption_detection(tmp_path: Path) -> None:
+def test_artifact_round_trip_no_overwrite_and_corruption_detection(
+    tmp_path: Path,
+) -> None:
     dataset = toy_dataset()
     definition = make_definition(dataset)
     result = run_nested_cv_validation(
@@ -246,7 +334,11 @@ def test_artifact_round_trip_no_overwrite_and_corruption_detection(tmp_path: Pat
         nested_cv=definition,
         protocol_config=protocol_config(),
     )
-    checksum = type("Checksum", (), {"actual_sha256": "ABC123", "declared_sha256": "ABC123", "matches": True})()
+    checksum = type(
+        "Checksum",
+        (),
+        {"actual_sha256": "ABC123", "declared_sha256": "ABC123", "matches": True},
+    )()
     artifact_dir, manifest = create_nested_cv_artifact(
         config=nested_config(tmp_path),
         protocol_config=protocol_config(),
@@ -259,7 +351,9 @@ def test_artifact_round_trip_no_overwrite_and_corruption_detection(tmp_path: Pat
 
     assert manifest["publishable"] is False
     assert manifest["result_scope"] == "preprocessing_validation"
-    artifact_text = "\n".join(path.read_text(encoding="utf-8") for path in artifact_dir.rglob("*.json"))
+    artifact_text = "\n".join(
+        path.read_text(encoding="utf-8") for path in artifact_dir.rglob("*.json")
+    )
     assert "predictions" in artifact_text
     assert "999999" not in artifact_text
     validate_nested_cv_artifact(artifact_dir, target=dataset.target)
@@ -275,7 +369,9 @@ def test_artifact_round_trip_no_overwrite_and_corruption_detection(tmp_path: Pat
         )
     folds_path = artifact_dir / "nested_cv" / "outer_folds.json"
     payload = json.loads(folds_path.read_text(encoding="utf-8"))
-    payload["outer_folds"][0]["test_indices"] = payload["outer_folds"][0]["test_indices"][:-1]
+    payload["outer_folds"][0]["test_indices"] = payload["outer_folds"][0][
+        "test_indices"
+    ][:-1]
     folds_path.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(ArtifactError, match="hash mismatch|does not cover"):
         validate_nested_cv_artifact(artifact_dir, target=dataset.target)
@@ -291,7 +387,9 @@ def prepare_cli_repo(tmp_path: Path) -> Path:
     for i in range(8):
         rows.append({"num": float(i), "cat": "a" if i % 2 == 0 else "b", "BAD": 0})
     for i in range(8):
-        rows.append({"num": float(100 + i), "cat": "c" if i % 2 == 0 else "d", "BAD": 1})
+        rows.append(
+            {"num": float(100 + i), "cat": "c" if i % 2 == 0 else "d", "BAD": 1}
+        )
     data_path = tmp_path / "data" / "raw" / "toy.csv"
     data_path.parent.mkdir(parents=True)
     pd.DataFrame(rows).to_csv(data_path, index=False)
@@ -327,9 +425,21 @@ def prepare_cli_repo(tmp_path: Path) -> Path:
                 "version": "p3b-v1",
                 "numeric_imputation": {"strategy": "mean"},
                 "categorical_imputation": {"strategy": "most_frequent"},
-                "unseen_category": {"strategy": "reserved_token", "token": "__UNKNOWN__"},
-                "woe": {"enabled": True, "scope": "categorical", "smoothing": 0.5, "unknown_value": 0.0},
-                "vif": {"enabled": False, "threshold": 10.0, "minimum_features_to_keep": 1},
+                "unseen_category": {
+                    "strategy": "reserved_token",
+                    "token": "__UNKNOWN__",
+                },
+                "woe": {
+                    "enabled": True,
+                    "scope": "categorical",
+                    "smoothing": 0.5,
+                    "unknown_value": 0.0,
+                },
+                "vif": {
+                    "enabled": False,
+                    "threshold": 10.0,
+                    "minimum_features_to_keep": 1,
+                },
                 "scaling": {"enabled": False, "strategy": "standard"},
             }
         },
@@ -338,7 +448,11 @@ def prepare_cli_repo(tmp_path: Path) -> Path:
     write_yaml(
         config_path,
         {
-            "experiment": {"name": "nested_cv_toy", "result_scope": "preprocessing_validation", "publishable": False},
+            "experiment": {
+                "name": "nested_cv_toy",
+                "result_scope": "preprocessing_validation",
+                "publishable": False,
+            },
             "dataset": {"id": "TOY"},
             "cross_validation": {
                 "outer": {
@@ -356,14 +470,18 @@ def prepare_cli_repo(tmp_path: Path) -> Path:
                 },
             },
             "preprocessing": {"protocol_config": "configs/protocols/protocol_a.yaml"},
-            "tuning": {"candidates": [{"name": "a", "bias": 0.0}, {"name": "b", "bias": 0.1}]},
+            "tuning": {
+                "candidates": [{"name": "a", "bias": 0.0}, {"name": "b", "bias": 0.1}]
+            },
             "output": {"root_dir": "artifacts/experiments"},
         },
     )
     return config_path
 
 
-def test_cli_creates_reduced_nested_cv_artifact_and_rejects_overwrite(tmp_path: Path) -> None:
+def test_cli_creates_reduced_nested_cv_artifact_and_rejects_overwrite(
+    tmp_path: Path,
+) -> None:
     config_path = prepare_cli_repo(tmp_path)
     script = ROOT / "scripts" / "create_nested_cv_artifact.py"
     completed = subprocess.run(

@@ -108,6 +108,11 @@ def _now() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
+def _progress(message: str) -> None:
+    """Emit coarse, flushed CLI progress without exposing dataset values."""
+    print(f"[P7B] {message}", flush=True)
+
+
 def _write(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -518,10 +523,8 @@ def validate_artifacts(
         errors.append(
             {"code": "config_snapshot_mismatch", "path": "config_snapshot.json"}
         )
-    if (
-        environment.get("artifact_kind") == "plan_only_dry_run"
-        or not (root / "engineering_summary.json").exists()
-    ):
+    artifact_kind = environment.get("artifact_kind")
+    if artifact_kind == "plan_only_dry_run":
         # A plan-only artifact has no fits and may intentionally lack provenance in legacy dry-runs.
         fit_files = (
             list((root / "fits").rglob("*.json")) if (root / "fits").exists() else []
@@ -545,9 +548,15 @@ def validate_artifacts(
         errors.append(
             {"code": "invalid_working_tree_provenance", "path": "environment.json"}
         )
-    summary = _read_json(
-        root / "engineering_summary.json", errors, "engineering_summary.json"
+    if artifact_kind != "training_run":
+        errors.append({"code": "invalid_artifact_kind", "path": "environment.json"})
+    summary_path = root / "engineering_summary.json"
+    summary = (
+        _read_json(summary_path, errors, "engineering_summary.json")
+        if summary_path.exists()
+        else None
     )
+    partial_without_summary = summary is None
     seen: set[str] = set()
     completed = failed = 0
     for fit in expected_plan["fits"]:
@@ -575,10 +584,16 @@ def validate_artifacts(
                     payload, fit, "failed", errors, f"fits/{fit_id}/failure.json"
                 )
             failed += 1
-        else:
+        elif (
+            not partial_without_summary
+            and summary.get("completion_status") != "interrupted"
+        ):
             errors.append({"code": "missing_fit_output", "path": f"fits/{fit_id}"})
+    pending = len(expected_plan["fits"]) - completed - failed
+    completion_status = (
+        "incomplete" if partial_without_summary else summary.get("completion_status")
+    )
     if summary is not None:
-        pending = len(expected_plan["fits"]) - completed - failed
         expected_counts = {
             "planned": 60,
             "completed": completed,
@@ -596,7 +611,10 @@ def validate_artifacts(
             if pending == 0
             else "incomplete"
         )
-        if summary.get("completion_status") != expected_state:
+        allowed_states = {expected_state}
+        if pending > 0:
+            allowed_states.add("interrupted")
+        if summary.get("completion_status") not in allowed_states:
             errors.append(
                 {
                     "code": "completion_status_mismatch",
@@ -611,6 +629,11 @@ def validate_artifacts(
         "planned": 60,
         "completed": completed,
         "failed": failed,
+        "pending": pending,
+        "resumable": not errors
+        and pending > 0
+        and completion_status in {"incomplete", "interrupted"},
+        "completion_status": completion_status,
         "errors": errors,
         "validated_at": _now(),
     }
@@ -641,117 +664,202 @@ def run(
     """Execute only planned inner fits. No scoring, ranking, selection or outer refit exists here."""
     validate_plan(plan)
     root = (repo_root or find_repo_root()).resolve()
+    if output_dir.exists() and not resume:
+        raise P7BContractError(
+            f"Refusing to overwrite existing P7B output directory: {output_dir}. "
+            "Inspect it and use resume only for a validated compatible run."
+        )
+    if resume and not output_dir.exists():
+        raise P7BContractError(
+            f"Cannot resume missing P7B output directory: {output_dir}."
+        )
+    if resume:
+        existing = validate_artifacts(plan, output_dir, repo_root=root)
+        if not existing.get("valid") or not existing.get("resumable"):
+            raise P7BContractError(
+                "Refusing to resume incompatible or non-resumable P7B artifacts: "
+                f"{output_dir}. Validate and inspect the existing run first."
+            )
     # This happens before rendering or loading any dataset, hence before the first fit.
     provenance = capture_git_provenance(root, required=True)
-    render_plan(
-        plan,
-        output_dir,
-        repo_root=root,
-        provenance=provenance,
-        artifact_kind="training_run",
-    )
-    protocol = load_protocol_a_config(repo_root=root)
-    datasets = {key: load_dataset(key, repo_root=root) for key in EXPECTED_DATASETS}
+    if resume:
+        try:
+            saved_environment = json.loads(
+                (output_dir / "environment.json").read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError) as exc:
+            raise P7BContractError(
+                "Cannot resume without a readable environment provenance record."
+            ) from exc
+        provenance_keys = ("git_head", "working_tree", "working_tree_details")
+        if any(
+            saved_environment.get(key) != provenance.get(key) for key in provenance_keys
+        ):
+            raise P7BContractError(
+                "Refusing to resume artifacts created under different Git provenance or "
+                "working-tree state. Start a new output directory after preserving the old run."
+            )
+    _progress("Git provenance validated")
+    if not resume:
+        render_plan(
+            plan,
+            output_dir,
+            repo_root=root,
+            provenance=provenance,
+            artifact_kind="training_run",
+        )
     completed = 0
     skipped = 0
     failed = 0
-    for fit in plan["fits"]:
-        result_path = output_dir / fit["artifact_path"]
-        if resume and _completed(result_path, fit, plan["run_config_hash"]):
-            skipped += 1
-            continue
-        attempts = 0
-        while True:
-            attempts += 1
-            started = time.perf_counter()
-            stamp = _now()
-            sampler = ProcessRssSampler()
-            sampler.start()
-            fit_identity = {
-                key: fit[key]
-                for key in (
-                    "fit_id",
-                    "dataset_id",
-                    "candidate_id",
-                    "inner_fold_index",
-                    "derived_seed",
-                )
-            }
-            try:
-                tracemalloc.start()
-                dataset = datasets[fit["dataset_id"]]
-                nested = create_nested_cv_definition(
-                    dataset,
-                    dataset_checksum=fit["dataset_checksum"],
-                    outer_n_repeats=1,
-                    outer_n_splits=2,
-                    inner_n_splits=5,
-                    random_seed=42,
-                )
-                outer = next(
-                    item
-                    for item in nested.outer_folds
-                    if item.outer_fold_id == EXPECTED_OUTER
-                )
-                inner = outer.inner_folds[fit["inner_fold_index"]]
-                _, X_train, _ = _fit_preprocessing(
-                    dataset,
-                    train_indices=inner.train_indices,
-                    transform_indices=inner.validation_indices,
-                    protocol_config=protocol,
-                )
-                create_model(
-                    "decision_tree", fit["parameters"], random_seed=fit["derived_seed"]
-                ).fit(X_train, dataset.target.iloc[list(inner.train_indices)])
-                _, peak = tracemalloc.get_traced_memory()
-                tracemalloc.stop()
-                rss = sampler.stop()
-                payload = {
-                    **P7B_FLAGS,
-                    **fit_identity,
-                    "run_config_hash": plan["run_config_hash"],
-                    "status": "completed",
-                    "attempt_count": attempts,
-                    "started_at": stamp,
-                    "ended_at": _now(),
-                    "elapsed_wall_seconds": time.perf_counter() - started,
-                    "rows": len(X_train),
-                    "feature_count": X_train.shape[1],
-                    "configured_min_samples_leaf": fit["parameters"][
-                        "min_samples_leaf"
-                    ],
-                    "effective_min_samples_leaf": fit["effective_min_samples_leaf"],
-                    **rss,
-                    "python_tracemalloc_peak_bytes": int(peak),
-                    "artifact_bytes": 0,
+
+    def write_interrupted_summary() -> None:
+        _write(
+            output_dir / "engineering_summary.json",
+            {
+                **P7B_FLAGS,
+                "planned": len(plan["fits"]),
+                "completed": completed + skipped,
+                "skipped_on_resume": skipped,
+                "failed": failed,
+                "pending": len(plan["fits"]) - completed - skipped - failed,
+                "completion_status": "interrupted",
+                "run_config_hash": plan["run_config_hash"],
+            },
+        )
+
+    try:
+        protocol = load_protocol_a_config(repo_root=root)
+        datasets: dict[str, Any] = {}
+        outer_definitions: dict[str, Any] = {}
+        for dataset_id in EXPECTED_DATASETS:
+            _progress(f"Loading dataset {dataset_id}")
+            dataset = load_dataset(dataset_id, repo_root=root)
+            datasets[dataset_id] = dataset
+            checksum = next(
+                fit["dataset_checksum"]
+                for fit in plan["fits"]
+                if fit["dataset_id"] == dataset_id
+            )
+            _progress(f"Creating nested-CV definition for {dataset_id}")
+            nested = create_nested_cv_definition(
+                dataset,
+                dataset_checksum=checksum,
+                outer_n_repeats=1,
+                outer_n_splits=2,
+                inner_n_splits=5,
+                random_seed=42,
+            )
+            outer_definitions[dataset_id] = next(
+                item
+                for item in nested.outer_folds
+                if item.outer_fold_id == EXPECTED_OUTER
+            )
+        _progress(f"Plan ready: {len(plan['fits'])} fits")
+    except KeyboardInterrupt:
+        write_interrupted_summary()
+        _progress("Interrupted; no unstarted fit artifact was written")
+        raise
+    try:
+        for fit_number, fit in enumerate(plan["fits"], start=1):
+            result_path = output_dir / fit["artifact_path"]
+            if resume and _completed(result_path, fit, plan["run_config_hash"]):
+                skipped += 1
+                continue
+            _progress(
+                f"Starting fit {fit_number}/{len(plan['fits'])}: {fit['dataset_id']}/{fit['candidate_id']}"
+            )
+            attempts = 0
+            while True:
+                attempts += 1
+                started = time.perf_counter()
+                stamp = _now()
+                sampler = ProcessRssSampler()
+                sampler.start()
+                fit_identity = {
+                    key: fit[key]
+                    for key in (
+                        "fit_id",
+                        "dataset_id",
+                        "candidate_id",
+                        "inner_fold_index",
+                        "derived_seed",
+                    )
                 }
-                _write(result_path, payload)
-                completed += 1
-                break
-            except Exception as exc:
-                if tracemalloc.is_tracing():
+                try:
+                    tracemalloc.start()
+                    dataset = datasets[fit["dataset_id"]]
+                    outer = outer_definitions[fit["dataset_id"]]
+                    inner = outer.inner_folds[fit["inner_fold_index"]]
+                    _, X_train, _ = _fit_preprocessing(
+                        dataset,
+                        train_indices=inner.train_indices,
+                        transform_indices=inner.validation_indices,
+                        protocol_config=protocol,
+                    )
+                    create_model(
+                        "decision_tree",
+                        fit["parameters"],
+                        random_seed=fit["derived_seed"],
+                    ).fit(X_train, dataset.target.iloc[list(inner.train_indices)])
+                    _, peak = tracemalloc.get_traced_memory()
                     tracemalloc.stop()
-                rss = sampler.stop()
-                failure = {
-                    **P7B_FLAGS,
-                    **fit_identity,
-                    "run_config_hash": plan["run_config_hash"],
-                    "status": "failed",
-                    "attempt_count": attempts,
-                    "started_at": stamp,
-                    "ended_at": _now(),
-                    "elapsed_wall_seconds": time.perf_counter() - started,
-                    **rss,
-                    "failure": _safe_exception(exc),
-                }
-                _write(output_dir / "fits" / fit["fit_id"] / "failure.json", failure)
-                if (
-                    isinstance(exc, (OSError, TimeoutError))
-                    and attempts <= max_retry_attempts
-                ):
-                    continue
-                failed += 1
-                break
+                    rss = sampler.stop()
+                    payload = {
+                        **P7B_FLAGS,
+                        **fit_identity,
+                        "run_config_hash": plan["run_config_hash"],
+                        "status": "completed",
+                        "attempt_count": attempts,
+                        "started_at": stamp,
+                        "ended_at": _now(),
+                        "elapsed_wall_seconds": time.perf_counter() - started,
+                        "rows": len(X_train),
+                        "feature_count": X_train.shape[1],
+                        "configured_min_samples_leaf": fit["parameters"][
+                            "min_samples_leaf"
+                        ],
+                        "effective_min_samples_leaf": fit["effective_min_samples_leaf"],
+                        **rss,
+                        "python_tracemalloc_peak_bytes": int(peak),
+                        "artifact_bytes": 0,
+                    }
+                    _write(result_path, payload)
+                    completed += 1
+                    _progress(
+                        f"Completed fit {fit_number}/{len(plan['fits'])} in {payload['elapsed_wall_seconds']:.2f}s"
+                    )
+                    break
+                except Exception as exc:
+                    if tracemalloc.is_tracing():
+                        tracemalloc.stop()
+                    rss = sampler.stop()
+                    failure = {
+                        **P7B_FLAGS,
+                        **fit_identity,
+                        "run_config_hash": plan["run_config_hash"],
+                        "status": "failed",
+                        "attempt_count": attempts,
+                        "started_at": stamp,
+                        "ended_at": _now(),
+                        "elapsed_wall_seconds": time.perf_counter() - started,
+                        **rss,
+                        "failure": _safe_exception(exc),
+                    }
+                    _write(
+                        output_dir / "fits" / fit["fit_id"] / "failure.json", failure
+                    )
+                    if (
+                        isinstance(exc, (OSError, TimeoutError))
+                        and attempts <= max_retry_attempts
+                    ):
+                        continue
+                    failed += 1
+                    _progress(f"Failed fit {fit_number}/{len(plan['fits'])}")
+                    break
+    except KeyboardInterrupt:
+        write_interrupted_summary()
+        _progress("Interrupted; no unstarted fit artifact was written")
+        raise
     summary = {
         **P7B_FLAGS,
         "planned": len(plan["fits"]),

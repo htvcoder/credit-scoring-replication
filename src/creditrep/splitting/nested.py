@@ -161,10 +161,16 @@ def _stratified_partitions(
     n_splits: int,
     seed: int,
     shuffle: bool,
+    target_values: tuple[int, ...] | None = None,
 ) -> list[tuple[int, ...]]:
+    values = (
+        target_values
+        if target_values is not None
+        else tuple(int(value) for value in target.to_numpy(copy=False))
+    )
     by_class: dict[int, list[int]] = {0: [], 1: []}
     for row_position in indices:
-        by_class[int(target.iloc[row_position])].append(row_position)
+        by_class[values[int(row_position)]].append(int(row_position))
     rng = random.Random(seed)
     folds: list[list[int]] = [[] for _ in range(n_splits)]
     for klass in sorted(by_class):
@@ -186,7 +192,14 @@ def _fold_hash_payload(
     train_indices: tuple[int, ...],
     validation_or_test_indices: tuple[int, ...],
     partition_name: str,
+    target_values: tuple[int, ...] | None = None,
 ) -> dict[str, Any]:
+    # Positional values preserve .iloc semantics for non-default Series indexes.
+    values = (
+        target_values
+        if target_values is not None
+        else tuple(int(value) for value in dataset.target.to_numpy(copy=False))
+    )
     return {
         "dataset": {
             "checksum_sha256": checksum,
@@ -201,7 +214,7 @@ def _fold_hash_payload(
             "train_indices": list(train_indices),
             partition_name: list(validation_or_test_indices),
             "target_values": [
-                int(dataset.target.iloc[row])
+                values[int(row)]
                 for row in sorted(train_indices + validation_or_test_indices)
             ],
         },
@@ -258,6 +271,7 @@ def create_nested_cv_definition(
         n_splits=outer_n_splits,
         context=f"{dataset.dataset_id} outer CV",
     )
+    target_values = tuple(int(value) for value in dataset.target.to_numpy(copy=False))
 
     all_indices = tuple(range(len(dataset.target)))
     outer_folds: list[OuterFoldDefinition] = []
@@ -271,6 +285,7 @@ def create_nested_cv_definition(
             n_splits=2,
             seed=outer_seed,
             shuffle=shuffle,
+            target_values=target_values,
         )
         seen_test: set[int] = set()
         for fold_index, test_indices in enumerate(test_partitions):
@@ -298,6 +313,7 @@ def create_nested_cv_definition(
                 train_indices=train_indices,
                 validation_or_test_indices=test_indices,
                 partition_name="test_indices",
+                target_values=target_values,
             )
             outer_hash = split_hash(outer_payload)
             inner_seed = derive_seed(
@@ -312,6 +328,7 @@ def create_nested_cv_definition(
                 n_splits=inner_n_splits,
                 seed=inner_seed,
                 shuffle=shuffle,
+                target_values=target_values,
             )
             inner_folds: list[InnerFoldDefinition] = []
             for inner_index, validation_indices in enumerate(validation_partitions):
@@ -336,6 +353,7 @@ def create_nested_cv_definition(
                     train_indices=inner_train,
                     validation_or_test_indices=validation_indices,
                     partition_name="validation_indices",
+                    target_values=target_values,
                 )
                 inner_folds.append(
                     InnerFoldDefinition(
