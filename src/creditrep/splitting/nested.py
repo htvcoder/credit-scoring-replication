@@ -33,8 +33,12 @@ class InnerFoldDefinition:
             "inner_fold_id": self.inner_fold_id,
             "train_indices": list(self.train_indices),
             "validation_indices": list(self.validation_indices),
-            "train_class_counts": {str(key): value for key, value in self.train_class_counts.items()},
-            "validation_class_counts": {str(key): value for key, value in self.validation_class_counts.items()},
+            "train_class_counts": {
+                str(key): value for key, value in self.train_class_counts.items()
+            },
+            "validation_class_counts": {
+                str(key): value for key, value in self.validation_class_counts.items()
+            },
             "seed": self.seed,
             "split_hash": self.split_hash,
         }
@@ -60,8 +64,12 @@ class OuterFoldDefinition:
             "fold_index": self.fold_index,
             "train_indices": list(self.train_indices),
             "test_indices": list(self.test_indices),
-            "train_class_counts": {str(key): value for key, value in self.train_class_counts.items()},
-            "test_class_counts": {str(key): value for key, value in self.test_class_counts.items()},
+            "train_class_counts": {
+                str(key): value for key, value in self.train_class_counts.items()
+            },
+            "test_class_counts": {
+                str(key): value for key, value in self.test_class_counts.items()
+            },
             "seed": self.seed,
             "split_hash": self.split_hash,
             "inner_folds": [fold.to_dict() for fold in self.inner_folds],
@@ -124,7 +132,10 @@ def derive_seed(
 
 def _class_counts(target: pd.Series, indices: tuple[int, ...]) -> dict[int, int]:
     values = target.iloc[list(indices)]
-    return {int(key): int(value) for key, value in values.value_counts().sort_index().items()}
+    return {
+        int(key): int(value)
+        for key, value in values.value_counts().sort_index().items()
+    }
 
 
 def _validate_target(target: pd.Series, *, n_splits: int, context: str) -> None:
@@ -132,11 +143,15 @@ def _validate_target(target: pd.Series, *, n_splits: int, context: str) -> None:
         raise SplitError(f"{context}: target contains missing values.")
     domain = set(int(value) for value in target.unique())
     if domain != {0, 1}:
-        raise SplitError(f"{context}: target must contain exactly classes 0 and 1, got {sorted(domain)}.")
+        raise SplitError(
+            f"{context}: target must contain exactly classes 0 and 1, got {sorted(domain)}."
+        )
     counts = target.value_counts()
     min_count = int(counts.min())
     if min_count < n_splits:
-        raise SplitError(f"{context}: minority class count {min_count} is smaller than n_splits={n_splits}.")
+        raise SplitError(
+            f"{context}: minority class count {min_count} is smaller than n_splits={n_splits}."
+        )
 
 
 def _stratified_partitions(
@@ -146,10 +161,16 @@ def _stratified_partitions(
     n_splits: int,
     seed: int,
     shuffle: bool,
+    target_values: tuple[int, ...] | None = None,
 ) -> list[tuple[int, ...]]:
+    values = (
+        target_values
+        if target_values is not None
+        else tuple(int(value) for value in target.to_numpy(copy=False))
+    )
     by_class: dict[int, list[int]] = {0: [], 1: []}
     for row_position in indices:
-        by_class[int(target.iloc[row_position])].append(row_position)
+        by_class[values[int(row_position)]].append(int(row_position))
     rng = random.Random(seed)
     folds: list[list[int]] = [[] for _ in range(n_splits)]
     for klass in sorted(by_class):
@@ -171,7 +192,14 @@ def _fold_hash_payload(
     train_indices: tuple[int, ...],
     validation_or_test_indices: tuple[int, ...],
     partition_name: str,
+    target_values: tuple[int, ...] | None = None,
 ) -> dict[str, Any]:
+    # Positional values preserve .iloc semantics for non-default Series indexes.
+    values = (
+        target_values
+        if target_values is not None
+        else tuple(int(value) for value in dataset.target.to_numpy(copy=False))
+    )
     return {
         "dataset": {
             "checksum_sha256": checksum,
@@ -185,7 +213,10 @@ def _fold_hash_payload(
             "strategy": strategy,
             "train_indices": list(train_indices),
             partition_name: list(validation_or_test_indices),
-            "target_values": [int(dataset.target.iloc[row]) for row in sorted(train_indices + validation_or_test_indices)],
+            "target_values": [
+                values[int(row)]
+                for row in sorted(train_indices + validation_or_test_indices)
+            ],
         },
     }
 
@@ -221,7 +252,11 @@ def create_nested_cv_definition(
                 f"outer_n_repeats mapping has no entry for dataset {dataset.dataset_id.upper()}."
             )
         outer_n_repeats = requested
-    if not isinstance(outer_n_repeats, int) or isinstance(outer_n_repeats, bool) or outer_n_repeats < 1:
+    if (
+        not isinstance(outer_n_repeats, int)
+        or isinstance(outer_n_repeats, bool)
+        or outer_n_repeats < 1
+    ):
         raise SplitError("outer_n_repeats must be >= 1.")
     if inner_strategy != "stratified_kfold":
         raise SplitError(f"Unsupported inner CV strategy {inner_strategy!r}.")
@@ -231,23 +266,32 @@ def create_nested_cv_definition(
         raise SplitError("nested CV random_seed must be an integer.")
     if len(dataset.features) != len(dataset.target):
         raise SplitError(f"{dataset.dataset_id}: features/target length mismatch.")
-    _validate_target(dataset.target, n_splits=outer_n_splits, context=f"{dataset.dataset_id} outer CV")
+    _validate_target(
+        dataset.target,
+        n_splits=outer_n_splits,
+        context=f"{dataset.dataset_id} outer CV",
+    )
+    target_values = tuple(int(value) for value in dataset.target.to_numpy(copy=False))
 
     all_indices = tuple(range(len(dataset.target)))
     outer_folds: list[OuterFoldDefinition] = []
     for repeat in range(outer_n_repeats):
-        outer_seed = derive_seed(random_seed, stage="outer", repeat_index=repeat, outer_fold_index=0)
+        outer_seed = derive_seed(
+            random_seed, stage="outer", repeat_index=repeat, outer_fold_index=0
+        )
         test_partitions = _stratified_partitions(
             dataset.target,
             indices=all_indices,
             n_splits=2,
             seed=outer_seed,
             shuffle=shuffle,
+            target_values=target_values,
         )
         seen_test: set[int] = set()
         for fold_index, test_indices in enumerate(test_partitions):
             outer_fold_id = f"repeat_{repeat:02d}_fold_{fold_index:02d}"
-            train_indices = tuple(row for row in all_indices if row not in set(test_indices))
+            test_set = set(test_indices)
+            train_indices = tuple(row for row in all_indices if row not in test_set)
             seen_test.update(test_indices)
             outer_fold_seed = derive_seed(
                 random_seed,
@@ -255,7 +299,11 @@ def create_nested_cv_definition(
                 repeat_index=repeat,
                 outer_fold_index=fold_index,
             )
-            _validate_target(dataset.target.iloc[list(train_indices)], n_splits=inner_n_splits, context=outer_fold_id)
+            _validate_target(
+                dataset.target.iloc[list(train_indices)],
+                n_splits=inner_n_splits,
+                context=outer_fold_id,
+            )
             outer_payload = _fold_hash_payload(
                 dataset=dataset,
                 checksum=dataset_checksum,
@@ -265,6 +313,7 @@ def create_nested_cv_definition(
                 train_indices=train_indices,
                 validation_or_test_indices=test_indices,
                 partition_name="test_indices",
+                target_values=target_values,
             )
             outer_hash = split_hash(outer_payload)
             inner_seed = derive_seed(
@@ -279,11 +328,15 @@ def create_nested_cv_definition(
                 n_splits=inner_n_splits,
                 seed=inner_seed,
                 shuffle=shuffle,
+                target_values=target_values,
             )
             inner_folds: list[InnerFoldDefinition] = []
             for inner_index, validation_indices in enumerate(validation_partitions):
                 inner_fold_id = f"{outer_fold_id}_inner_{inner_index:02d}"
-                inner_train = tuple(row for row in train_indices if row not in set(validation_indices))
+                validation_set = set(validation_indices)
+                inner_train = tuple(
+                    row for row in train_indices if row not in validation_set
+                )
                 seed = derive_seed(
                     random_seed,
                     stage="inner_fold",
@@ -300,6 +353,7 @@ def create_nested_cv_definition(
                     train_indices=inner_train,
                     validation_or_test_indices=validation_indices,
                     partition_name="validation_indices",
+                    target_values=target_values,
                 )
                 inner_folds.append(
                     InnerFoldDefinition(
@@ -308,7 +362,9 @@ def create_nested_cv_definition(
                         train_indices=inner_train,
                         validation_indices=validation_indices,
                         train_class_counts=_class_counts(dataset.target, inner_train),
-                        validation_class_counts=_class_counts(dataset.target, validation_indices),
+                        validation_class_counts=_class_counts(
+                            dataset.target, validation_indices
+                        ),
                         seed=seed,
                         split_hash=split_hash(inner_payload),
                     )
@@ -361,7 +417,9 @@ def create_nested_cv_definition(
     )
 
 
-def validate_nested_cv_definition(definition: NestedCVDefinition, target: pd.Series) -> None:
+def validate_nested_cv_definition(
+    definition: NestedCVDefinition, target: pd.Series
+) -> None:
     """Validate fold coverage, parent-child isolation and nested hash."""
 
     all_rows = set(range(len(target)))
@@ -369,18 +427,28 @@ def validate_nested_cv_definition(definition: NestedCVDefinition, target: pd.Ser
         raise SplitError("Nested CV row_count does not match target length.")
     for repeat in range(definition.outer_n_repeats):
         test_seen: list[int] = []
-        repeat_folds = [fold for fold in definition.outer_folds if fold.repeat_index == repeat]
+        repeat_folds = [
+            fold for fold in definition.outer_folds if fold.repeat_index == repeat
+        ]
         if len(repeat_folds) != definition.outer_n_splits:
-            raise SplitError(f"repeat_{repeat:02d}: expected {definition.outer_n_splits} outer folds.")
+            raise SplitError(
+                f"repeat_{repeat:02d}: expected {definition.outer_n_splits} outer folds."
+            )
         for outer in repeat_folds:
             train = set(outer.train_indices)
             test = set(outer.test_indices)
             if train & test:
                 raise SplitError(f"{outer.outer_fold_id}: outer train/test overlap.")
             if train | test != all_rows:
-                raise SplitError(f"{outer.outer_fold_id}: outer fold does not cover all rows.")
-            if len(train) != len(outer.train_indices) or len(test) != len(outer.test_indices):
-                raise SplitError(f"{outer.outer_fold_id}: duplicate row in outer partition.")
+                raise SplitError(
+                    f"{outer.outer_fold_id}: outer fold does not cover all rows."
+                )
+            if len(train) != len(outer.train_indices) or len(test) != len(
+                outer.test_indices
+            ):
+                raise SplitError(
+                    f"{outer.outer_fold_id}: duplicate row in outer partition."
+                )
             if _class_counts(target, outer.train_indices) != outer.train_class_counts:
                 raise SplitError(f"{outer.outer_fold_id}: train class counts mismatch.")
             if _class_counts(target, outer.test_indices) != outer.test_class_counts:
@@ -389,20 +457,32 @@ def validate_nested_cv_definition(definition: NestedCVDefinition, target: pd.Ser
             validation_seen: list[int] = []
             for inner in outer.inner_folds:
                 if inner.parent_outer_fold_id != outer.outer_fold_id:
-                    raise SplitError(f"{inner.inner_fold_id}: parent outer fold mismatch.")
+                    raise SplitError(
+                        f"{inner.inner_fold_id}: parent outer fold mismatch."
+                    )
                 inner_train = set(inner.train_indices)
                 validation = set(inner.validation_indices)
                 if inner_train & validation:
-                    raise SplitError(f"{inner.inner_fold_id}: inner train/validation overlap.")
+                    raise SplitError(
+                        f"{inner.inner_fold_id}: inner train/validation overlap."
+                    )
                 if not inner_train <= train or not validation <= train:
-                    raise SplitError(f"{inner.inner_fold_id}: inner rows must be subset of outer train.")
+                    raise SplitError(
+                        f"{inner.inner_fold_id}: inner rows must be subset of outer train."
+                    )
                 if validation & test or inner_train & test:
-                    raise SplitError(f"{inner.inner_fold_id}: outer test row leaked into inner folds.")
+                    raise SplitError(
+                        f"{inner.inner_fold_id}: outer test row leaked into inner folds."
+                    )
                 validation_seen.extend(inner.validation_indices)
             if sorted(validation_seen) != sorted(outer.train_indices):
-                raise SplitError(f"{outer.outer_fold_id}: inner validation rows do not cover outer train once.")
+                raise SplitError(
+                    f"{outer.outer_fold_id}: inner validation rows do not cover outer train once."
+                )
         if sorted(test_seen) != sorted(all_rows):
-            raise SplitError(f"repeat_{repeat:02d}: outer test rows do not cover all rows once.")
+            raise SplitError(
+                f"repeat_{repeat:02d}: outer test rows do not cover all rows once."
+            )
     expected = split_hash(_nested_hash_payload(definition.to_dict()))
     if expected != definition.nested_cv_hash:
         raise SplitError("Nested CV hash mismatch.")

@@ -57,3 +57,5 @@ client_secret*.json
 *.egg-info/
 docs/presentations
 reports/*.xlsx
+
+/artifacts/p7b-cart-feasibility/

@@ -112,8 +112,8 @@ if (typeof homepageSummary !== "string" || !homepageSummary.trim()) {
   if (!/Phase 6.*hoàn thành/i.test(homepageSummary)) {
     fail("Homepage status summary must state that Phase 6 is completed.");
   }
-  if (!/P7A.*P7B feasibility pilot.*bước tiếp theo/i.test(homepageSummary)) {
-    fail("Homepage status summary must state that P7A completed and P7B is next.");
+  if (!/P7B.*completed.*12 candidates.*P7C.*chưa chạy/i.test(homepageSummary)) {
+    fail("Homepage status summary must state that P7B completed, CART has 12 locked candidates, and P7C has not run.");
   }
   if (!/không phải kết quả khoa học/i.test(homepageSummary)) {
     fail("Homepage status summary must keep engineering validation non-scientific.");
