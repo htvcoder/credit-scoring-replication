@@ -63,7 +63,7 @@ def test_homepage_and_roadmap_use_the_source_status_summary() -> None:
     assert checkpoints["P7C.2.1"] == "completed"
     assert checkpoints["P7C.2.2"] == "completed"
     assert checkpoints["P7C.2.3"] == "completed"
-    assert checkpoints["P7C.3"] == "next"
+    assert checkpoints["P7C.3"] == "in_progress"
 
     homepage = HOMEPAGE_PATH.read_text(encoding="utf-8")
     content = CONTENT_PATH.read_text(encoding="utf-8")

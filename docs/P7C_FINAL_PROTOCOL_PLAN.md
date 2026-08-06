@@ -12,9 +12,9 @@ P7C.1 lập inventory, readiness matrix và decision register cho P7C; không ch
 | CART | replication baseline | CART-A depth 3/5/7/9 × leaf .005/.01/.02 | Locked | 12 | CPU | P7B decision + final manifest | P7C.7 |
 | Random Forest | replication baseline | Full P7A/Table-2 reference grid | Locked | 30 | CPU | P7C.2.2 validated; DR-P7C-01 approved | P7C.7 |
 | XGBoost | replication baseline | Full P7A/Table-2 reference grid | Locked | 108 | CPU/GPU | P7C.2.2 validated; DR-P7C-02 approved | P7C.7 |
-| MLP-1 | replication baseline | Paper reference | Unlocked | 144 | CPU/GPU | Budget feasibility | P7C.3 |
-| MLP-3 | replication baseline | Paper reference | Unlocked | 720 | CPU/GPU | Budget feasibility | P7C.3 |
-| MLP-5 | replication baseline | Paper reference | Decision pending | 2,016 | GPU khuyến nghị | Scope + budget cần user approval | P7C.3 |
+| MLP-1 | replication baseline | Paper reference | Unlocked | 144 | CPU/GPU | P7C.3 preregistered feasibility plan prepared, **NOT RUN**; threshold/budget approval outstanding | P7C.3 |
+| MLP-3 | replication baseline | Paper reference | Unlocked | 720 | CPU/GPU | P7C.3 preregistered feasibility plan prepared, **NOT RUN**; threshold/budget approval outstanding | P7C.3 |
+| MLP-5 | replication baseline | Paper reference | Decision pending | 2,016 | GPU khuyến nghị | P7C.3 plan prepared, **NOT RUN**; scope/budget and threshold approval outstanding; no predictive exclusion | P7C.3 |
 | CatBoost | main-results extension | Chưa có grid | Decision pending | TBD | CPU/GPU | Protocol A/B, grid, budget | P7C.4 |
 | TabNet | main-results extension | Chưa có grid | Feasibility required | TBD | GPU khuyến nghị | GPU + protocol + grid | P7C.5 |
 | FT-Transformer | optional extension | Chưa có grid | Feasibility required | TBD | GPU khuyến nghị | Scope approval + GPU + grid | P7C.6 |
@@ -27,13 +27,15 @@ P7C.1 lập inventory, readiness matrix và decision register cho P7C; không ch
 | --- | --- | --- | --- |
 | P7C.1 | Inventory, validator, readiness matrix, decision register | P7B closed → inventory validated, docs/status/build pass | Không |
 | P7C.2 | RF/XGBoost decision records và final manifests | Completed: full grids/provenance locked and protocol tests pass | P7C.2.2 pilot đã completed/validated; không phải scientific execution |
-| P7C.3 | MLP-1/3/5 scope và budget decisions | **Next:** P7C.1 → MLP-5 inclusion decision, budgets/manifests validated | Chỉ pilot được phê duyệt riêng |
+| P7C.3 | MLP-1/3/5 scope và budget decisions | **In progress:** immutable preregistered feasibility plan and readiness record prepared; plan is **NOT RUN**, so thresholds, scope/budget and final manifests remain unresolved | Chỉ feasibility execution được phê duyệt riêng; không dùng predictive metric để loại MLP-5 hoặc giảm grid |
 | P7C.4 | CatBoost Protocol A/B và final decision | P7C.1 → preprocessing scope, grid/budget locked | Chỉ pilot được phê duyệt riêng |
 | P7C.5 | TabNet feasibility/final decision | P7C.1 → GPU evidence + bounded protocol decision | Có thể, nhưng non-publishable pilot riêng |
 | P7C.6 | FT-Transformer extension decision | P7C.1 → scope/GPU/budget decision | Có thể, nhưng non-publishable pilot riêng |
 | P7C.7 | Unified final manifest and readiness gate | P7C.2–.6 decisions resolved/deferred explicitly → all references/hashes/tests pass | Không; đây là gate trước execution |
 
 P7C.2 được triển khai theo ba sub-checkpoint: P7C.2.1 hoàn tất immutable 60-fit plan và execution harness; P7C.2.2 đã completed và artifact validation pass với 60/60 fits; P7C.2.3 đã hoàn tất analysis/decision record. Theo approval `user_task_instruction`, DR-P7C-01/02 khóa full P7A/Table-2 grids cho RF/XGBoost trong `configs/protocols/p7c/p7c_rf_xgboost_final_manifest.yaml`. Việc hoàn tất P7C.2 không làm full scientific execution ready.
+
+P7C.3 chọn Branch B: `configs/protocols/p7c/p7c3_mlp_feasibility_plan.yaml` là kế hoạch engineering-feasibility bất biến, không phải final search-space/budget manifest và chưa được chạy. Kế hoạch giữ MLP-1/3/5 trong intended replication core, ghi rõ các threshold compute còn phải được phê duyệt trước execution, và cấm dùng kết quả feasibility/predictive để loại MLP-5 hoặc chọn/reduce grid hậu nghiệm.
 
 P7C.7 chỉ có thể tuyên bố full protocol ready khi dataset/CV/preprocessing/seed policy, model scope, concurrency/retry/retention policy và tất cả search-space/budget decision bắt buộc đều có manifest/decision evidence. P7C.1 complete không làm full scientific execution ready.
 
