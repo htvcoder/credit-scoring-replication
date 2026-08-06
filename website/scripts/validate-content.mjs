@@ -112,8 +112,8 @@ if (typeof homepageSummary !== "string" || !homepageSummary.trim()) {
   if (!/Phase 6.*hoàn thành/i.test(homepageSummary)) {
     fail("Homepage status summary must state that Phase 6 is completed.");
   }
-  if (!/P7A.*P7B.*completed.*12 candidates.*P7C\.1.*P7C\.2.*completed.*P7C\.2\.1.*completed.*P7C\.2\.2.*60\/60 fit.*validate.*P7C\.2\.3.*30 candidates.*XGBoost 108 candidates.*P7C\.3.*In Progress.*NOT RUN.*threshold.*scope\/budget.*unresolved/i.test(homepageSummary)) {
-    fail("Homepage status summary must state the completed P7C.2 closeout and P7C.3 in-progress, not-run MLP plan with unresolved approvals.");
+  if (!/P7A.*P7B.*completed.*P7C\.2\.1.*completed.*P7C\.2\.2.*60\/60 fit.*validate.*P7C\.3.*In Progress.*execution-ready.*CPU policy.*NOT RUN.*runtime.*RSS.*projection.*CPU\/GPU/i.test(homepageSummary)) {
+    fail("Homepage status summary must state the completed P7C.2 closeout and the execution-ready, not-run P7C.3 MLP plan without results or a CPU/GPU decision.");
   }
   if (!/full scientific execution NOT STARTED.*chưa được authorize.*P7C\.7/i.test(homepageSummary)) {
     fail("Homepage status summary must keep full scientific execution not started and gated by P7C.7.");

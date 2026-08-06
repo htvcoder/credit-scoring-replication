@@ -52,7 +52,8 @@ def test_mlp_feasibility_plan_happy_path():
     plan = load_mlp_feasibility_plan(MLP_FEASIBILITY_PLAN)
     assert [item["model_id"] for item in plan["models"]] == ["mlp_1", "mlp_3", "mlp_5"]
     assert plan["expected_fits"] == {"per_model": 20, "total": 60}
-    assert plan["execution_approval"]["status"] == "required_before_execution"
+    assert plan["execution_approval"]["status"] == "authorized_for_feasibility_only"
+    assert plan["compute_policy"]["per_fit_timeout_seconds"] == 1800
 
 
 @pytest.mark.parametrize(
@@ -142,10 +143,8 @@ def test_final_manifest_rejects_contract_violations(mutation, match):
             "outside P7A reference values",
         ),
         (
-            lambda value: value["execution_approval"].__setitem__(
-                "unresolved_thresholds", []
-            ),
-            "thresholds must remain explicit and unresolved",
+            lambda value: value["compute_policy"].__setitem__("concurrent_fits", 2),
+            "approved compute policy mismatch",
         ),
         (
             lambda value: value["lock"].__setitem__("plan_sha256", "0" * 64),

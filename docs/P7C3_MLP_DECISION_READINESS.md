@@ -2,7 +2,7 @@
 
 ## Status
 
-**In progress — plan prepared, not run.** P7C.3 does not lock the final MLP scientific grids or compute budget yet. It prepares the evidence needed to make that decision without using predictive performance post hoc.
+**In progress — execution-ready, not run.** P7C.3 does not lock the final MLP scientific grids or compute budget yet. It prepares the evidence needed to make that decision without using predictive performance post hoc.
 
 ## Fact: reference protocol and implementation readiness
 
@@ -22,8 +22,8 @@ P7C.3 follows **Branch B**. MLP-1, MLP-3 and MLP-5 remain in the intended core r
 
 The plan fixes TC/GMC, one deterministic outer partition, five inner folds, two predeclared engineering candidates per depth, CPU-only sequential execution and 60 fits. It deliberately contains no predictive metric, ranking, candidate selection, outer refit, scientific result, or rule that can reduce the final grid.
 
-The plan cannot be executed until the user/mentor explicitly approves the unresolved operational thresholds recorded in the plan: maximum wall time, peak RSS, timeout, and CPU/GPU decision thresholds. Until then, every compute decision is preregistered as **inconclusive**, not silently treated as pass or fail.
+The execution-ready plan locks the approved project operational policy: CPU-only sequential execution, one concurrent fit, two PyTorch/BLAS threads, 30-minute per-fit timeout, one retry only for transient/infrastructure failure, 12-hour feasibility ceiling, 10 GiB RSS warning, 11.5 GiB RSS hard stop, and a 15 GiB disk floor. The 7-day target and 14-day hard CPU projection ceiling are project policy, not paper requirements. Runtime/RSS/projection evidence and the CPU/GPU decision remain **inconclusive** until the 60 fits run.
 
 ## Recommendation
 
-Approve the operational thresholds and execution authorization for the immutable P7C.3 plan, or directly approve a scientifically justified full-grid compute budget. Do not move to P7C.4 or start scientific execution while P7C.3 remains in progress.
+Run the approved feasibility command only on the designated CPU VM, then validate its artifacts and produce the separate decision output. Do not move to P7C.4 or start scientific execution while P7C.3 remains in progress.

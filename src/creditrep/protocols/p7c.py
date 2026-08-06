@@ -169,13 +169,13 @@ def mlp_feasibility_plan_hash(plan: dict[str, Any]) -> str:
 def validate_mlp_feasibility_plan(
     payload: Any, *, repo_root: Path | None = None
 ) -> dict[str, Any]:
-    """Validate a preregistered, non-executable-until-approved P7C.3 plan."""
+    """Validate the immutable, execution-ready but not-yet-run P7C.3 plan."""
     root = (repo_root or find_repo_root()).resolve()
     if not isinstance(payload, dict) or payload.get("schema_version") != 1:
         _error("mlp feasibility plan: schema_version must be 1.")
     if (
         payload.get("checkpoint_id") != "P7C.3"
-        or payload.get("status") != "planned"
+        or payload.get("status") != "execution_ready"
         or payload.get("execution_status") != "not_run"
         or payload.get("purpose") != "engineering_feasibility_only"
         or payload.get("scientific_boundary")
@@ -221,18 +221,26 @@ def validate_mlp_feasibility_plan(
         or payload.get("expected_fits") != {"per_model": 20, "total": 60}
     ):
         _error("mlp feasibility plan: coverage or expected-fit contract mismatch.")
-    if payload.get("execution_approval", {}).get("status") != "required_before_execution" or set(
-        payload.get("execution_approval", {}).get("unresolved_thresholds", [])
-    ) != {
-        "maximum_wall_clock_seconds_per_fit",
-        "maximum_peak_rss_bytes_per_fit",
-        "timeout_seconds",
-        "cpu_feasible_decision_threshold",
-        "gpu_preferred_or_required_decision_threshold",
+    if payload.get("execution_approval") != {
+        "status": "authorized_for_feasibility_only",
+        "authorization_boundary": "run_requires_explicit_operator_command_on_approved_cpu_vm",
     }:
-        _error("mlp feasibility plan: execution approval thresholds must remain explicit and unresolved.")
+        _error("mlp feasibility plan: execution authorization boundary mismatch.")
+    if payload.get("compute_policy") != {
+        "execution_mode": "cpu_only_sequential", "concurrent_fits": 1,
+        "torch_intraop_threads": 2, "per_fit_timeout_seconds": 1800,
+        "retry_maximum": 1, "retry_only": "transient_infrastructure",
+        "total_wall_time_seconds": 43200, "rss_warning_bytes": 10737418240,
+        "rss_hard_bytes": 12348030976, "disk_free_floor_bytes": 16106127360,
+        "full_scientific_cpu_target_seconds": 604800,
+        "full_scientific_cpu_hard_ceiling_seconds": 1209600,
+        "cpu_projection_over_hard_ceiling": "gpu_benchmark_or_proposal_required_before_full_run",
+        "predictive_performance_ranking": "forbidden", "automatic_mlp_5_exclusion": "forbidden",
+        "automatic_grid_reduction": "forbidden",
+    }:
+        _error("mlp feasibility plan: approved compute policy mismatch.")
     rules = payload.get("decision_rules", {})
-    if not isinstance(rules, dict) or rules.get("resource_decision") != "inconclusive_until_all_execution_approval_thresholds_are_explicitly_approved_before_run":
+    if not isinstance(rules, dict) or rules.get("resource_decision") != "inconclusive_until_60_fits_complete_and_projected_against_project_compute_policy":
         _error("mlp feasibility plan: resource decision must remain inconclusive before approval.")
     if rules.get("mlp_5") != "must_not_be_excluded_from_core_scope_on_predictive_results_or_this_engineering_plan_alone" or rules.get(
         "full_or_reduced_grid"
