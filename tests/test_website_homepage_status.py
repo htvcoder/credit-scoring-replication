@@ -47,10 +47,23 @@ def test_homepage_status_data_contains_completed_phases_and_next_phase() -> None
 
 
 def test_homepage_and_roadmap_use_the_source_status_summary() -> None:
-    summary = load_status()["project"]["current_status_summary"]
+    status = load_status()
+    summary = status["project"]["current_status_summary"]
     assert "Phase 6 đã hoàn thành" in summary
     assert "P7A đã khóa protocol bất biến" in summary
     assert "không phải kết quả khoa học" in summary
+    assert "P7C.2.1 execution harness đã completed" in summary
+    assert "P7C.2.2 research pilot" in summary and "60/60 fit đã validate" in summary
+    assert "full scientific execution NOT STARTED" in summary
+
+    phase7 = next(phase for phase in status["phases"] if phase["numeric_id"] == 7)
+    checkpoints = {item["id"]: item["status"] for item in phase7["checkpoints"]}
+    assert checkpoints["P7C.1"] == "completed"
+    assert checkpoints["P7C.2"] == "completed"
+    assert checkpoints["P7C.2.1"] == "completed"
+    assert checkpoints["P7C.2.2"] == "completed"
+    assert checkpoints["P7C.2.3"] == "completed"
+    assert checkpoints["P7C.3"] == "in_progress"
 
     homepage = HOMEPAGE_PATH.read_text(encoding="utf-8")
     content = CONTENT_PATH.read_text(encoding="utf-8")

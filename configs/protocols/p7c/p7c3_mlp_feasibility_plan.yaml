@@ -1,0 +1,121 @@
+schema_version: 1
+checkpoint_id: P7C.3
+status: execution_ready
+execution_status: not_run
+purpose: engineering_feasibility_only
+scientific_boundary: no_predictive_ranking_no_model_exclusion_no_grid_reduction_no_outer_refit_non_publishable
+source_manifest: configs/protocols/p7a/p7a_candidate_manifest.yaml
+source_manifest_sha256: 62b5bddc29017cf152607dab029d790e7c6f822bcf840a814b81a90228025f4e
+question: can_the_project_execute_a_bounded_cpu_engineering_sample_of_each_paper_depth_without_failure_or_contract_violation
+hypothesis: all_three_depths_can_complete_the_predeclared_non_publishable_sample_on_cpu_subject_to_resource_thresholds_approved_before_execution
+models:
+- model_id: mlp_1
+  hidden_depth: 1
+  reference_candidate_count: 144
+  candidates:
+  - id: low_stress
+    hidden_units: [5]
+    dropout: 0.0
+    l2: 0.0
+    batch_normalization: false
+    learning_rate: 0.0001
+  - id: high_stress
+    hidden_units: [20]
+    dropout: 0.5
+    l2: 0.1
+    batch_normalization: true
+    learning_rate: 0.01
+- model_id: mlp_3
+  hidden_depth: 3
+  reference_candidate_count: 720
+  candidates:
+  - id: low_stress
+    hidden_units: [5, 5, 5]
+    dropout: 0.0
+    l2: 0.0
+    batch_normalization: false
+    learning_rate: 0.0001
+  - id: high_stress
+    hidden_units: [20, 20, 20]
+    dropout: 0.5
+    l2: 0.1
+    batch_normalization: true
+    learning_rate: 0.01
+- model_id: mlp_5
+  hidden_depth: 5
+  reference_candidate_count: 2016
+  candidates:
+  - id: low_stress
+    hidden_units: [5, 5, 5, 5, 5]
+    dropout: 0.0
+    l2: 0.0
+    batch_normalization: false
+    learning_rate: 1.0e-05
+  - id: high_stress
+    hidden_units: [20, 20, 20, 20, 20]
+    dropout: 0.5
+    l2: 0.1
+    batch_normalization: true
+    learning_rate: 0.001
+datasets: [TC, GMC]
+outer_partition: {repeat_index: 0, fold_index: 0, selection: deterministic_first_partition_not_metric_selected}
+inner_folds: 5
+expected_fits: {per_model: 20, total: 60}
+training_policy:
+  optimizer: adam
+  batch_size: 32
+  max_epochs: 200
+  early_stopping: {enabled: true, patience: 20, min_delta: 0.0001, validation_fraction: 0.2}
+  seed: 42
+  deterministic: best_effort_pytorch_runtime
+  device_policy: cpu
+  planned_fit_parallelism: 1
+  estimator_threads: 1
+  warmup_policy: no_unrecorded_warmup_all_planned_fits_are_evidence
+  repeat_policy: one_attempt_per_identity_retry_only_after_approved_policy
+telemetry:
+  required: [wall_clock_seconds, process_cpu_seconds, failure_status]
+  rss_peak: required_if_portable_measurement_is_available
+  gpu_memory: not_applicable_under_cpu_policy
+artifact_contract:
+  root: artifacts/p7c3-mlp-feasibility
+  publishable: false
+  result_scope: engineering_feasibility
+  forbid: [predictions, metrics_for_ranking, model_weights, checkpoints, raw_rows, transformed_features, absolute_paths]
+  resume_policy: require_matching_plan_digest_and_valid_completed_identity
+  validation: exact_identity_coverage_no_duplicate_no_corrupt_no_unexpected
+execution_approval:
+  status: authorized_for_feasibility_only
+  authorization_boundary: run_requires_explicit_operator_command_on_approved_cpu_vm
+compute_policy:
+  execution_mode: cpu_only_sequential
+  concurrent_fits: 1
+  torch_intraop_threads: 2
+  per_fit_timeout_seconds: 1800
+  retry_maximum: 1
+  retry_only: transient_infrastructure
+  total_wall_time_seconds: 43200
+  rss_warning_bytes: 10737418240
+  rss_hard_bytes: 12348030976
+  disk_free_floor_bytes: 16106127360
+  full_scientific_cpu_target_seconds: 604800
+  full_scientific_cpu_hard_ceiling_seconds: 1209600
+  cpu_projection_over_hard_ceiling: gpu_benchmark_or_proposal_required_before_full_run
+  predictive_performance_ranking: forbidden
+  automatic_mlp_5_exclusion: forbidden
+  automatic_grid_reduction: forbidden
+decision_rules:
+  artifact_completion_pass: all_60_identities_complete_and_validate_with_no_unexpected_duplicate_or_corrupt_artifact
+  artifact_completion_fail: any_non_retryable_contract_failure_or_missing_identity_after_approved_retry_policy
+  resource_decision: inconclusive_until_60_fits_complete_and_projected_against_project_compute_policy
+  cpu_feasible: cannot_be_declared_without_approved_cpu_thresholds
+  gpu_required_or_preferred: cannot_be_declared_without_approved_thresholds_or_gpu_evidence
+  mlp_5: must_not_be_excluded_from_core_scope_on_predictive_results_or_this_engineering_plan_alone
+  full_or_reduced_grid: no_grid_reduction_or_candidate_selection_from_this_plan
+scientific_execution:
+  status: not_authorized
+  prerequisite: p7c_3_decision_then_p7c_4_through_p7c_7_readiness_gate
+lock:
+  algorithm: sha256-canonical-json
+  plan_sha256: 9df1e48d9531859a246f91aacf5551a9d4aaa8b6510f8c3b3950f2dd26b5ad24
+  lock_scope: all_fields_except_lock

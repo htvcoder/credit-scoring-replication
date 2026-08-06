@@ -10,11 +10,11 @@ P7C.1 lập inventory, readiness matrix và decision register cho P7C; không ch
 | --- | --- | --- | --- | ---: | --- | --- | --- |
 | Logistic Regression | replication baseline | Paper: không tuning | Chưa có final contract | 1 | CPU | Cần ghi contract baseline | P7C.7 |
 | CART | replication baseline | CART-A depth 3/5/7/9 × leaf .005/.01/.02 | Locked | 12 | CPU | P7B decision + final manifest | P7C.7 |
-| Random Forest | replication baseline | Paper reference | Unlocked | 30 | CPU | Final grid/budget | P7C.2 |
-| XGBoost | replication baseline | Paper reference | Unlocked | 108 | CPU/GPU | Final grid/budget | P7C.2 |
-| MLP-1 | replication baseline | Paper reference | Unlocked | 144 | CPU/GPU | Budget feasibility | P7C.3 |
-| MLP-3 | replication baseline | Paper reference | Unlocked | 720 | CPU/GPU | Budget feasibility | P7C.3 |
-| MLP-5 | replication baseline | Paper reference | Decision pending | 2,016 | GPU khuyến nghị | Scope + budget cần user approval | P7C.3 |
+| Random Forest | replication baseline | Full P7A/Table-2 reference grid | Locked | 30 | CPU | P7C.2.2 validated; DR-P7C-01 approved | P7C.7 |
+| XGBoost | replication baseline | Full P7A/Table-2 reference grid | Locked | 108 | CPU/GPU | P7C.2.2 validated; DR-P7C-02 approved | P7C.7 |
+| MLP-1 | replication baseline | Paper reference | Unlocked | 144 | CPU/GPU | P7C.3 execution-ready CPU feasibility plan, **NOT RUN**; runtime/budget decision outstanding | P7C.3 |
+| MLP-3 | replication baseline | Unlocked | 720 | CPU/GPU | P7C.3 execution-ready CPU feasibility plan, **NOT RUN**; runtime/budget decision outstanding | P7C.3 |
+| MLP-5 | replication baseline | Paper reference | Decision pending | 2,016 | GPU khuyến nghị | P7C.3 execution-ready plan, **NOT RUN**; no predictive exclusion; scope/budget decision outstanding | P7C.3 |
 | CatBoost | main-results extension | Chưa có grid | Decision pending | TBD | CPU/GPU | Protocol A/B, grid, budget | P7C.4 |
 | TabNet | main-results extension | Chưa có grid | Feasibility required | TBD | GPU khuyến nghị | GPU + protocol + grid | P7C.5 |
 | FT-Transformer | optional extension | Chưa có grid | Feasibility required | TBD | GPU khuyến nghị | Scope approval + GPU + grid | P7C.6 |
@@ -26,12 +26,16 @@ P7C.1 lập inventory, readiness matrix và decision register cho P7C; không ch
 | Checkpoint | Nội dung/output | Entry → exit/validation | Có feasibility training? |
 | --- | --- | --- | --- |
 | P7C.1 | Inventory, validator, readiness matrix, decision register | P7B closed → inventory validated, docs/status/build pass | Không |
-| P7C.2 | RF/XGBoost decision records và final manifests | P7C.1 → grid/budget/provenance locked, protocol tests | Chỉ pilot được phê duyệt riêng |
-| P7C.3 | MLP-1/3/5 scope và budget decisions | P7C.1 → MLP-5 inclusion decision, budgets/manifests validated | Chỉ pilot được phê duyệt riêng |
+| P7C.2 | RF/XGBoost decision records và final manifests | Completed: full grids/provenance locked and protocol tests pass | P7C.2.2 pilot đã completed/validated; không phải scientific execution |
+| P7C.3 | MLP-1/3/5 scope và budget decisions | **In progress:** immutable CPU-only feasibility plan, runner and artifact validation are execution-ready; plan is **NOT RUN**, so runtime/RSS/projection, scope/budget and final manifests remain unresolved | Chỉ feasibility execution được phê duyệt riêng; không dùng predictive metric để loại MLP-5 hoặc giảm grid |
 | P7C.4 | CatBoost Protocol A/B và final decision | P7C.1 → preprocessing scope, grid/budget locked | Chỉ pilot được phê duyệt riêng |
 | P7C.5 | TabNet feasibility/final decision | P7C.1 → GPU evidence + bounded protocol decision | Có thể, nhưng non-publishable pilot riêng |
 | P7C.6 | FT-Transformer extension decision | P7C.1 → scope/GPU/budget decision | Có thể, nhưng non-publishable pilot riêng |
 | P7C.7 | Unified final manifest and readiness gate | P7C.2–.6 decisions resolved/deferred explicitly → all references/hashes/tests pass | Không; đây là gate trước execution |
+
+P7C.2 được triển khai theo ba sub-checkpoint: P7C.2.1 hoàn tất immutable 60-fit plan và execution harness; P7C.2.2 đã completed và artifact validation pass với 60/60 fits; P7C.2.3 đã hoàn tất analysis/decision record. Theo approval `user_task_instruction`, DR-P7C-01/02 khóa full P7A/Table-2 grids cho RF/XGBoost trong `configs/protocols/p7c/p7c_rf_xgboost_final_manifest.yaml`. Việc hoàn tất P7C.2 không làm full scientific execution ready.
+
+P7C.3 chọn Branch B: `configs/protocols/p7c/p7c3_mlp_feasibility_plan.yaml` là kế hoạch engineering-feasibility bất biến, không phải final search-space/budget manifest và chưa được chạy. Kế hoạch khóa CPU-only sequential policy và cấm dùng kết quả feasibility/predictive để loại MLP-5 hoặc chọn/reduce grid hậu nghiệm.
 
 P7C.7 chỉ có thể tuyên bố full protocol ready khi dataset/CV/preprocessing/seed policy, model scope, concurrency/retry/retention policy và tất cả search-space/budget decision bắt buộc đều có manifest/decision evidence. P7C.1 complete không làm full scientific execution ready.
 
@@ -39,8 +43,8 @@ P7C.7 chỉ có thể tuyên bố full protocol ready khi dataset/CV/preprocessi
 
 | ID | Quyết định | Trạng thái | Evidence cần có | Checkpoint | Blocking | Hệ quả/artifact |
 | --- | --- | --- | --- | --- | --- | --- |
-| DR-P7C-01 | RF final grid/budget | Open | Paper grid, CPU feasibility, approval | .2 | Có | RF manifest/record |
-| DR-P7C-02 | XGBoost final grid/budget | Open | Paper grid, backend/budget approval | .2 | Có | XGB manifest/record |
+| DR-P7C-01 | RF final grid/budget | Resolved | Full P7A/Table-2 grid, validated CPU pilot, user-task approval | .2 | Không | Shared RF/XGB manifest/record |
+| DR-P7C-02 | XGBoost final grid/budget | Resolved | Full P7A/Table-2 grid, validated CPU pilot, user-task approval | .2 | Không | Shared RF/XGB manifest/record |
 | DR-P7C-03 | MLP-1/3 budget | Open | Training budget + feasibility evidence | .3 | Có | MLP manifest/record |
 | DR-P7C-04 | Keep or exclude MLP-5 | User approval required | Scope and compute evidence | .3 | Có | Decision record |
 | DR-P7C-05 | CatBoost grid and Protocol A/B | Open | Extension scope, native-preprocessing decision | .4 | Có cho extension | Manifest/record |

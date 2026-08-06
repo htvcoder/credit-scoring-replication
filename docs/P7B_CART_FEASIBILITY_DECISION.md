@@ -30,4 +30,4 @@ The locked CART workload is 5,400 inner candidate-evaluation fits and 90 outer s
 
 The C4.5-to-CART deviation remains material. GC, TH02, and TC have not been benchmarked directly; process-local RSS is not whole-system capacity; and a changed machine, parallel execution plan, data/protocol change, repeated failure, or an operational budget breach requires reconsidering this decision before execution.
 
-This unlocks only the CART final search-space prerequisite. P7C is the next planned checkpoint but is **not ready to start** as the full scientific program: the final search spaces/budgets for RF, XGBoost, MLP-1/3/5, CatBoost, TabNet, and FT-Transformer are not locked by this decision. No P7C training is authorized or performed by this record.
+At the time of this P7B decision, it unlocked only the CART final search-space prerequisite and did not lock the other model decisions. RF/XGBoost were subsequently locked by `docs/P7C2_RF_XGBOOST_DECISION.md`; MLP-1/3/5, CatBoost, TabNet and FT-Transformer remain governed by their P7C checkpoints. No P7C training is authorized or performed by this P7B record.

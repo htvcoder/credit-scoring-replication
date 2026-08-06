@@ -39,6 +39,7 @@ SEARCH_STATUSES = {
 BACKENDS = {"cpu", "cpu_or_gpu", "gpu_recommended"}
 FEASIBILITY = {"engineering_evidenced", "not_assessed", "feasibility_required"}
 BUDGETS = {"locked", "unresolved"}
+LOCKED_FINAL_MODELS = {"cart": 12, "random_forest": 30, "xgboost": 108}
 
 
 def _error(message: str) -> None:
@@ -56,6 +57,214 @@ def _relative_reference(
         _error(f"{field} must not be an absolute path.")
     if not (root / value).is_file():
         _error(f"{field} does not exist: {value}")
+
+
+def canonical_final_manifest_payload(manifest: dict[str, Any]) -> dict[str, Any]:
+    """Return the hashable portion of a final P7C model manifest."""
+    value = deepcopy(manifest)
+    value.pop("lock", None)
+    return value
+
+
+def final_manifest_hash(manifest: dict[str, Any]) -> str:
+    """Hash a final P7C manifest with the repository canonical JSON algorithm."""
+    from creditrep.config.loader import sha256_canonical
+
+    return sha256_canonical(canonical_final_manifest_payload(manifest))
+
+
+def validate_rf_xgboost_final_manifest(
+    payload: Any, *, repo_root: Path | None = None
+) -> dict[str, Any]:
+    """Validate the locked full-reference RF/XGBoost P7C.2.3 manifest."""
+    root = (repo_root or find_repo_root()).resolve()
+    if not isinstance(payload, dict) or payload.get("schema_version") != 1:
+        _error("final_manifest: schema_version must be 1.")
+    protocol = payload.get("protocol")
+    if not isinstance(protocol, dict) or protocol != {
+        "id": "p7c-rf-xgboost-final-scientific-search-space",
+        "version": "1.0.0",
+        "status": "locked",
+        "scope": "rf_xgboost_full_reference_search_space",
+        "decision_record": "docs/P7C2_RF_XGBOOST_DECISION.md",
+        "source_manifest": "configs/protocols/p7a/p7a_candidate_manifest.yaml",
+    }:
+        _error("final_manifest.protocol: unexpected final protocol identity.")
+    p7a = load_manifest(root / protocol["source_manifest"])
+    if payload.get("source_manifest_sha256") != manifest_hash(p7a):
+        _error("final_manifest.source_manifest_sha256: must bind the P7A manifest.")
+    if payload.get("decision_approval") != {
+        "source": "user_task_instruction",
+        "decision": "approve_full_reference_grids_no_reduced_grid_no_additional_pilot",
+    }:
+        _error("final_manifest.decision_approval: must record the approved decision provenance.")
+    if payload.get("scientific_execution") != {
+        "status": "not_authorized",
+        "prerequisite": "p7c_3_through_p7c_7_readiness_gate",
+    }:
+        _error("final_manifest.scientific_execution: must preserve the P7C.7 execution gate.")
+    models = payload.get("models")
+    if not isinstance(models, list) or [item.get("id") for item in models if isinstance(item, dict)] != [
+        "random_forest",
+        "xgboost",
+    ]:
+        _error("final_manifest.models: must contain RF then XGBoost.")
+    references = p7a["reference_search_spaces"]
+    for item, model_id, implementation, count in (
+        (models[0], "random_forest", "sklearn.ensemble.RandomForestClassifier", 30),
+        (models[1], "xgboost", "xgboost.XGBClassifier", 108),
+    ):
+        if not isinstance(item, dict) or item.get("implementation") != implementation:
+                _error(f"final_manifest.models.{model_id}: implementation mismatch.")
+        if item.get("search_space") != {
+            "selection": "full_reference_grid",
+            "candidate_count": count,
+            "parameters": references[model_id]["parameters"],
+        }:
+                _error(f"final_manifest.models.{model_id}: must exactly preserve the P7A reference grid.")
+    workload = payload.get("workload")
+    if workload != {
+        "outer_partitions": 90,
+        "inner_folds": 5,
+        "random_forest": {
+            "inner_candidate_evaluation_fits": 13500,
+            "outer_selected_model_refits": 90,
+            "total_estimator_fits": 13590,
+        },
+        "xgboost": {
+            "inner_candidate_evaluation_fits": 48600,
+            "outer_selected_model_refits": 90,
+            "total_estimator_fits": 48690,
+        },
+        "combined_total_estimator_fits": 62280,
+    }:
+        _error("final_manifest.workload: workload must match the full reference grids.")
+    lock = payload.get("lock")
+    if not isinstance(lock, dict) or lock.get("algorithm") != "sha256-canonical-json" or lock.get(
+        "manifest_sha256"
+    ) != final_manifest_hash(payload):
+        _error("final_manifest.lock: manifest hash mismatch.")
+    return deepcopy(payload)
+
+
+def load_rf_xgboost_final_manifest(
+    path: str | Path, *, repo_root: Path | None = None
+) -> dict[str, Any]:
+    try:
+        payload = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as exc:
+        raise P7CInventoryError(f"cannot read final manifest: {exc}") from exc
+    return validate_rf_xgboost_final_manifest(payload, repo_root=repo_root)
+
+
+def mlp_feasibility_plan_hash(plan: dict[str, Any]) -> str:
+    """Hash the immutable P7C.3 engineering-plan payload."""
+    from creditrep.config.loader import sha256_canonical
+
+    value = deepcopy(plan)
+    value.pop("lock", None)
+    return sha256_canonical(value)
+
+
+def validate_mlp_feasibility_plan(
+    payload: Any, *, repo_root: Path | None = None
+) -> dict[str, Any]:
+    """Validate the immutable, execution-ready but not-yet-run P7C.3 plan."""
+    root = (repo_root or find_repo_root()).resolve()
+    if not isinstance(payload, dict) or payload.get("schema_version") != 1:
+        _error("mlp feasibility plan: schema_version must be 1.")
+    if (
+        payload.get("checkpoint_id") != "P7C.3"
+        or payload.get("status") != "execution_ready"
+        or payload.get("execution_status") != "not_run"
+        or payload.get("purpose") != "engineering_feasibility_only"
+        or payload.get("scientific_boundary")
+        != "no_predictive_ranking_no_model_exclusion_no_grid_reduction_no_outer_refit_non_publishable"
+    ):
+        _error("mlp feasibility plan: checkpoint/status/scientific boundary mismatch.")
+    p7a = load_manifest(root / "configs/protocols/p7a/p7a_candidate_manifest.yaml")
+    if payload.get("source_manifest") != "configs/protocols/p7a/p7a_candidate_manifest.yaml" or payload.get(
+        "source_manifest_sha256"
+    ) != manifest_hash(p7a):
+        _error("mlp feasibility plan: P7A manifest binding mismatch.")
+    models = payload.get("models")
+    expected_ids = ("mlp_1", "mlp_3", "mlp_5")
+    if not isinstance(models, list) or tuple(item.get("model_id") for item in models if isinstance(item, dict)) != expected_ids:
+        _error("mlp feasibility plan: models must be MLP-1, MLP-3, MLP-5 in order.")
+    reference_mlp = p7a["reference_search_spaces"]["mlp"]
+    for item, model_id, depth, count in zip(models, expected_ids, (1, 3, 5), (144, 720, 2016), strict=True):
+        if (
+            item.get("hidden_depth") != depth
+            or item.get("reference_candidate_count") != count
+            or not isinstance(item.get("candidates"), list)
+            or [candidate.get("id") for candidate in item["candidates"]] != ["low_stress", "high_stress"]
+        ):
+            _error(f"mlp feasibility plan: invalid {model_id} coverage.")
+        for candidate in item["candidates"]:
+            units = candidate.get("hidden_units")
+            if (
+                not isinstance(units, list)
+                or len(units) != depth
+                or any(value not in reference_mlp["shared"]["hidden_units"] for value in units)
+                or any(left < right for left, right in zip(units, units[1:]))
+                or candidate.get("dropout") not in reference_mlp["shared"]["dropout"]
+                or candidate.get("l2") not in reference_mlp["shared"]["l2"]
+                or candidate.get("batch_normalization") not in reference_mlp["shared"]["batch_normalization"]
+                or candidate.get("learning_rate") not in reference_mlp[model_id]["learning_rate"]
+            ):
+                _error(f"mlp feasibility plan: {model_id} candidate is outside P7A reference values.")
+    if (
+        payload.get("datasets") != ["TC", "GMC"]
+        or payload.get("outer_partition")
+        != {"repeat_index": 0, "fold_index": 0, "selection": "deterministic_first_partition_not_metric_selected"}
+        or payload.get("inner_folds") != 5
+        or payload.get("expected_fits") != {"per_model": 20, "total": 60}
+    ):
+        _error("mlp feasibility plan: coverage or expected-fit contract mismatch.")
+    if payload.get("execution_approval") != {
+        "status": "authorized_for_feasibility_only",
+        "authorization_boundary": "run_requires_explicit_operator_command_on_approved_cpu_vm",
+    }:
+        _error("mlp feasibility plan: execution authorization boundary mismatch.")
+    if payload.get("compute_policy") != {
+        "execution_mode": "cpu_only_sequential", "concurrent_fits": 1,
+        "torch_intraop_threads": 2, "per_fit_timeout_seconds": 1800,
+        "retry_maximum": 1, "retry_only": "transient_infrastructure",
+        "total_wall_time_seconds": 43200, "rss_warning_bytes": 10737418240,
+        "rss_hard_bytes": 12348030976, "disk_free_floor_bytes": 16106127360,
+        "full_scientific_cpu_target_seconds": 604800,
+        "full_scientific_cpu_hard_ceiling_seconds": 1209600,
+        "cpu_projection_over_hard_ceiling": "gpu_benchmark_or_proposal_required_before_full_run",
+        "predictive_performance_ranking": "forbidden", "automatic_mlp_5_exclusion": "forbidden",
+        "automatic_grid_reduction": "forbidden",
+    }:
+        _error("mlp feasibility plan: approved compute policy mismatch.")
+    rules = payload.get("decision_rules", {})
+    if not isinstance(rules, dict) or rules.get("resource_decision") != "inconclusive_until_60_fits_complete_and_projected_against_project_compute_policy":
+        _error("mlp feasibility plan: resource decision must remain inconclusive before approval.")
+    if rules.get("mlp_5") != "must_not_be_excluded_from_core_scope_on_predictive_results_or_this_engineering_plan_alone" or rules.get(
+        "full_or_reduced_grid"
+    ) != "no_grid_reduction_or_candidate_selection_from_this_plan":
+        _error("mlp feasibility plan: anti-post-hoc decision rules mismatch.")
+    if payload.get("scientific_execution") != {
+        "status": "not_authorized",
+        "prerequisite": "p7c_3_decision_then_p7c_4_through_p7c_7_readiness_gate",
+    }:
+        _error("mlp feasibility plan: scientific execution gate mismatch.")
+    lock = payload.get("lock", {})
+    if lock.get("algorithm") != "sha256-canonical-json" or lock.get("plan_sha256") != mlp_feasibility_plan_hash(payload):
+        _error("mlp feasibility plan: plan digest mismatch.")
+    return deepcopy(payload)
+
+
+def load_mlp_feasibility_plan(
+    path: str | Path, *, repo_root: Path | None = None
+) -> dict[str, Any]:
+    try:
+        payload = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as exc:
+        raise P7CInventoryError(f"cannot read MLP feasibility plan: {exc}") from exc
+    return validate_mlp_feasibility_plan(payload, repo_root=repo_root)
 
 
 def validate_protocol_inventory(
@@ -126,26 +335,32 @@ def validate_protocol_inventory(
             "decision_record_reference",
         ):
             _relative_reference(item[field], root, f"{item['model_id']}.{field}")
-    cart = models[3]
-    if cart["search_space_status"] != "locked" or cart["candidate_count"] != 12:
-        _error("cart must be locked with exactly 12 candidates.")
-    _relative_reference(
-        cart["final_manifest_reference"],
-        root,
-        "cart.final_manifest_reference",
-        required=True,
-    )
-    _relative_reference(
-        cart["decision_record_reference"],
-        root,
-        "cart.decision_record_reference",
-        required=True,
-    )
-    if cart["blockers"]:
-        _error("locked cart must not retain unresolved blockers.")
+        if "feasibility_plan_reference" in item:
+            _relative_reference(
+                item["feasibility_plan_reference"],
+                root,
+                f"{item['model_id']}.feasibility_plan_reference",
+            )
     for item in models:
-        if item["model_id"] != "cart" and item["search_space_status"] == "locked":
-            _error(f"{item['model_id']}: only CART is locked in P7C.1.")
+        model_id = item["model_id"]
+        if item["search_space_status"] == "locked":
+            expected_count = LOCKED_FINAL_MODELS.get(model_id)
+            if expected_count is None or item["candidate_count"] != expected_count:
+                _error(f"{model_id}: invalid locked-model candidate count.")
+            _relative_reference(
+                item["final_manifest_reference"],
+                root,
+                f"{model_id}.final_manifest_reference",
+                required=True,
+            )
+            _relative_reference(
+                item["decision_record_reference"],
+                root,
+                f"{model_id}.decision_record_reference",
+                required=True,
+            )
+            if item["blockers"]:
+                _error(f"locked {model_id} must not retain unresolved blockers.")
         if (
             item["search_space_status"] != "locked"
             and item["compute_budget_status"] == "locked"
@@ -153,6 +368,33 @@ def validate_protocol_inventory(
             _error(
                 f"{item['model_id']}: unresolved search space cannot have a locked budget."
             )
+    rf = models[1]
+    xgb = models[2]
+    if rf["search_space_status"] == xgb["search_space_status"] == "locked":
+        if rf["final_manifest_reference"] != xgb["final_manifest_reference"]:
+            _error("RF/XGBoost must share one final manifest.")
+        if rf["decision_record_reference"] != xgb["decision_record_reference"]:
+            _error("RF/XGBoost must share one decision record.")
+        final_manifest = load_rf_xgboost_final_manifest(
+            root / rf["final_manifest_reference"], repo_root=root
+        )
+        if final_manifest["models"][0]["search_space"]["candidate_count"] != rf["candidate_count"] or final_manifest[
+            "models"
+        ][1]["search_space"]["candidate_count"] != xgb["candidate_count"]:
+            _error("RF/XGBoost inventory counts disagree with final manifest.")
+    mlps = models[4:7]
+    plan_references = [item.get("feasibility_plan_reference") for item in mlps]
+    if any(plan_references):
+        if len(set(plan_references)) != 1 or plan_references[0] is None:
+            _error("MLP models must share one feasibility-plan reference.")
+        for item in mlps:
+            if item.get("decision_record_reference") != "docs/P7C3_MLP_DECISION_READINESS.md":
+                _error("MLP feasibility plan requires the shared P7C.3 readiness record.")
+        plan = load_mlp_feasibility_plan(root / plan_references[0], repo_root=root)
+        if [item["reference_candidate_count"] for item in plan["models"]] != [
+            item["candidate_count"] for item in mlps
+        ]:
+            _error("MLP inventory counts disagree with feasibility plan.")
     return deepcopy(payload)
 
 

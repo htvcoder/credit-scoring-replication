@@ -22,33 +22,33 @@ models:
   study_role: replication_baseline
   source_protocol: paper_table_2
   tuning_required: true
-  search_space_status: reference_unlocked
+  search_space_status: locked
   search_space_reference: configs/protocols/p7a/p7a_candidate_manifest.yaml
-  final_manifest_reference: null
-  decision_record_reference: null
+  final_manifest_reference: configs/protocols/p7c/p7c_rf_xgboost_final_manifest.yaml
+  decision_record_reference: docs/P7C2_RF_XGBOOST_DECISION.md
   candidate_count: 30
   compute_backend: cpu
-  feasibility_status: feasibility_required
-  compute_budget_status: unresolved
+  feasibility_status: engineering_evidenced
+  compute_budget_status: locked
   scientific_execution_status: not_started
-  blockers: [final_grid_decision, compute_budget]
-  next_checkpoint: P7C.2
+  blockers: []
+  next_checkpoint: P7C.7
 - model_id: xgboost
   display_name: XGBoost
   study_role: replication_baseline
   source_protocol: paper_table_2
   tuning_required: true
-  search_space_status: reference_unlocked
+  search_space_status: locked
   search_space_reference: configs/protocols/p7a/p7a_candidate_manifest.yaml
-  final_manifest_reference: null
-  decision_record_reference: null
+  final_manifest_reference: configs/protocols/p7c/p7c_rf_xgboost_final_manifest.yaml
+  decision_record_reference: docs/P7C2_RF_XGBOOST_DECISION.md
   candidate_count: 108
   compute_backend: cpu_or_gpu
-  feasibility_status: feasibility_required
-  compute_budget_status: unresolved
+  feasibility_status: engineering_evidenced
+  compute_budget_status: locked
   scientific_execution_status: not_started
-  blockers: [final_grid_decision, compute_budget]
-  next_checkpoint: P7C.2
+  blockers: []
+  next_checkpoint: P7C.7
 - model_id: cart
   display_name: Decision Tree CART-A
   study_role: replication_baseline
@@ -73,13 +73,14 @@ models:
   search_space_status: reference_unlocked
   search_space_reference: configs/protocols/p7a/p7a_candidate_manifest.yaml
   final_manifest_reference: null
-  decision_record_reference: null
+  decision_record_reference: docs/P7C3_MLP_DECISION_READINESS.md
+  feasibility_plan_reference: configs/protocols/p7c/p7c3_mlp_feasibility_plan.yaml
   candidate_count: 144
   compute_backend: cpu_or_gpu
   feasibility_status: feasibility_required
   compute_budget_status: unresolved
   scientific_execution_status: not_started
-  blockers: [final_budget_decision, compute_budget]
+  blockers: [preregistered_feasibility_not_run, compute_threshold_approval, final_budget_decision]
   next_checkpoint: P7C.3
 - model_id: mlp_3
   display_name: MLP-3
@@ -89,13 +90,14 @@ models:
   search_space_status: reference_unlocked
   search_space_reference: configs/protocols/p7a/p7a_candidate_manifest.yaml
   final_manifest_reference: null
-  decision_record_reference: null
+  decision_record_reference: docs/P7C3_MLP_DECISION_READINESS.md
+  feasibility_plan_reference: configs/protocols/p7c/p7c3_mlp_feasibility_plan.yaml
   candidate_count: 720
   compute_backend: cpu_or_gpu
   feasibility_status: feasibility_required
   compute_budget_status: unresolved
   scientific_execution_status: not_started
-  blockers: [final_budget_decision, compute_budget]
+  blockers: [preregistered_feasibility_not_run, compute_threshold_approval, final_budget_decision]
   next_checkpoint: P7C.3
 - model_id: mlp_5
   display_name: MLP-5
@@ -105,13 +107,14 @@ models:
   search_space_status: decision_pending
   search_space_reference: configs/protocols/p7a/p7a_candidate_manifest.yaml
   final_manifest_reference: null
-  decision_record_reference: null
+  decision_record_reference: docs/P7C3_MLP_DECISION_READINESS.md
+  feasibility_plan_reference: configs/protocols/p7c/p7c3_mlp_feasibility_plan.yaml
   candidate_count: 2016
   compute_backend: gpu_recommended
   feasibility_status: feasibility_required
   compute_budget_status: unresolved
   scientific_execution_status: not_started
-  blockers: [scope_approval, final_budget_decision, compute_budget]
+  blockers: [preregistered_feasibility_not_run, compute_threshold_approval, scope_decision_pending, final_budget_decision]
   next_checkpoint: P7C.3
 - model_id: catboost
   display_name: CatBoost
