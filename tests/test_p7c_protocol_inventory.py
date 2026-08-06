@@ -8,22 +8,37 @@ import yaml
 
 from creditrep.protocols.p7c import (
     P7CInventoryError,
+    load_rf_xgboost_final_manifest,
     load_protocol_inventory,
+    validate_rf_xgboost_final_manifest,
     validate_protocol_inventory,
 )
 
 
 INVENTORY = Path("configs/protocols/p7c/p7c_protocol_inventory.yaml")
+FINAL_MANIFEST = Path("configs/protocols/p7c/p7c_rf_xgboost_final_manifest.yaml")
 
 
 def payload():
     return yaml.safe_load(INVENTORY.read_text(encoding="utf-8"))
 
 
+def final_payload():
+    return yaml.safe_load(FINAL_MANIFEST.read_text(encoding="utf-8"))
+
+
 def test_inventory_happy_path():
-    assert [item["model_id"] for item in load_protocol_inventory(INVENTORY)["models"]][
-        3
-    ] == "cart"
+    models = load_protocol_inventory(INVENTORY)["models"]
+    assert [item["model_id"] for item in models][3] == "cart"
+    assert models[1]["search_space_status"] == models[2]["search_space_status"] == "locked"
+    assert models[1]["candidate_count"] == 30
+    assert models[2]["candidate_count"] == 108
+
+
+def test_rf_xgboost_final_manifest_happy_path():
+    manifest = load_rf_xgboost_final_manifest(FINAL_MANIFEST)
+    assert manifest["models"][0]["search_space"]["candidate_count"] == 30
+    assert manifest["models"][1]["search_space"]["candidate_count"] == 108
 
 
 @pytest.mark.parametrize(
@@ -46,10 +61,10 @@ def test_inventory_happy_path():
         ),
         (
             lambda value: value["models"][3].__setitem__("candidate_count", 11),
-            "exactly 12",
+            "invalid locked-model candidate count",
         ),
         (
-            lambda value: value["models"][1].__setitem__(
+            lambda value: value["models"][4].__setitem__(
                 "compute_budget_status", "locked"
             ),
             "unresolved search space",
@@ -73,3 +88,31 @@ def test_inventory_rejects_contract_violations(mutation, match):
     mutation(broken)
     with pytest.raises(P7CInventoryError, match=match):
         validate_protocol_inventory(broken)
+
+
+@pytest.mark.parametrize(
+    "mutation, match",
+    [
+        (
+            lambda value: value["models"][0]["search_space"].__setitem__(
+                "candidate_count", 29
+            ),
+            "exactly preserve",
+        ),
+        (
+            lambda value: value.__setitem__(
+                "scientific_execution", {"status": "authorized"}
+            ),
+            "scientific_execution",
+        ),
+        (
+            lambda value: value["lock"].__setitem__("manifest_sha256", "0" * 64),
+            "hash mismatch",
+        ),
+    ],
+)
+def test_final_manifest_rejects_contract_violations(mutation, match):
+    broken = deepcopy(final_payload())
+    mutation(broken)
+    with pytest.raises(P7CInventoryError, match=match):
+        validate_rf_xgboost_final_manifest(broken)

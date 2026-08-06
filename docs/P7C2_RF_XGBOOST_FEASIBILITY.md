@@ -52,10 +52,10 @@ RSS là process-local sampling theo chu kỳ 0.05 giây, không bao phủ toàn 
 
 `validate-artifacts` không fit model. Validator đối chiếu đủ 60 identities và báo expected/completed/failed/missing/unexpected; đồng thời phát hiện duplicate identity, corrupt JSON/schema, incomplete temporary file, plan mismatch, provenance/telemetry thiếu, completed artifact không hợp lệ, forbidden payload và failure vượt retry contract.
 
-## Gate cho P7C.2.2 và giới hạn ngoại suy
+## Gate P7C.2.2, closeout P7C.2.3 và giới hạn ngoại suy
 
 P7C.2.2 chỉ pass khi plan/digest được giữ nguyên, cả 60 planned fits có completed artifact hợp lệ, không còn failed/missing/unexpected/duplicate/corrupt artifact, artifact validator pass và không vi phạm single-thread/CPU-only policy. Interrupt có thể được tiếp tục bằng `resume`; completion của pilot không tự động khóa final protocols.
 
 Runtime của 60 fits trên một outer partition không được ngoại suy tuyến tính thành cam kết thời gian cho full 90 outer partitions, full RF/XGBoost grids hoặc model khác. Chi phí preprocessing, dataset size, tree growth, cache, OS và tải máy đều có thể phi tuyến. P7C.2.3 phải review engineering evidence và lập decision record trước mọi thay đổi final grid/budget.
 
-Sau closeout P7C.2.1: research pilot vẫn **Not Run**; RF final protocol/search space, XGBoost final protocol/search space và final compute budget vẫn **Not Locked**; full scientific execution vẫn **NOT READY**.
+P7C.2.2 đã completed và artifact validation pass: immutable plan/digest được giữ nguyên, 60 planned fits có completed artifact hợp lệ, không có failed/missing/unexpected/duplicate/corrupt artifact và single-thread/CPU-only policy được giữ. P7C.2.3 đã khóa RF full 30-candidate và XGBoost full 108-candidate P7A/Table-2 reference grids theo `docs/P7C2_RF_XGBOOST_DECISION.md` và `configs/protocols/p7c/p7c_rf_xgboost_final_manifest.yaml`. P7C.3 là checkpoint tiếp theo; full scientific execution vẫn **NOT STARTED** và chưa được authorize trước P7C.7.

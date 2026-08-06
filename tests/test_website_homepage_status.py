@@ -53,16 +53,17 @@ def test_homepage_and_roadmap_use_the_source_status_summary() -> None:
     assert "P7A đã khóa protocol bất biến" in summary
     assert "không phải kết quả khoa học" in summary
     assert "P7C.2.1 execution harness đã completed" in summary
-    assert "P7C.2.2 research pilot" in summary and "Not Run" in summary
-    assert "full scientific execution NOT READY" in summary
+    assert "P7C.2.2 research pilot" in summary and "60/60 fit đã validate" in summary
+    assert "full scientific execution NOT STARTED" in summary
 
     phase7 = next(phase for phase in status["phases"] if phase["numeric_id"] == 7)
     checkpoints = {item["id"]: item["status"] for item in phase7["checkpoints"]}
     assert checkpoints["P7C.1"] == "completed"
-    assert checkpoints["P7C.2"] == "in_progress"
+    assert checkpoints["P7C.2"] == "completed"
     assert checkpoints["P7C.2.1"] == "completed"
-    assert checkpoints["P7C.2.2"] == "next"
-    assert checkpoints["P7C.2.3"] == "planned"
+    assert checkpoints["P7C.2.2"] == "completed"
+    assert checkpoints["P7C.2.3"] == "completed"
+    assert checkpoints["P7C.3"] == "next"
 
     homepage = HOMEPAGE_PATH.read_text(encoding="utf-8")
     content = CONTENT_PATH.read_text(encoding="utf-8")

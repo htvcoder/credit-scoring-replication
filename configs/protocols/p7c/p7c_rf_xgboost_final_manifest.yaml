@@ -1,0 +1,52 @@
+schema_version: 1
+protocol:
+  id: p7c-rf-xgboost-final-scientific-search-space
+  version: 1.0.0
+  status: locked
+  scope: rf_xgboost_full_reference_search_space
+  decision_record: docs/P7C2_RF_XGBOOST_DECISION.md
+  source_manifest: configs/protocols/p7a/p7a_candidate_manifest.yaml
+source_manifest_sha256: 62b5bddc29017cf152607dab029d790e7c6f822bcf840a814b81a90228025f4e
+decision_date: '2026-08-06'
+decision_approval:
+  source: user_task_instruction
+  decision: approve_full_reference_grids_no_reduced_grid_no_additional_pilot
+scientific_execution:
+  status: not_authorized
+  prerequisite: p7c_3_through_p7c_7_readiness_gate
+models:
+- id: random_forest
+  implementation: sklearn.ensemble.RandomForestClassifier
+  search_space:
+    selection: full_reference_grid
+    candidate_count: 30
+    parameters:
+      n_estimators: [100, 250, 500, 750, 1000]
+      max_features_multiplier_of_sqrt_m: [0.1, 0.25, 0.5, 1, 2, 4]
+- id: xgboost
+  implementation: xgboost.XGBClassifier
+  search_space:
+    selection: full_reference_grid
+    candidate_count: 108
+    parameters:
+      n_estimators: [50, 100, 150]
+      max_depth: [1, 2, 3]
+      learning_rate: [0.3, 0.4]
+      colsample_bytree: [0.6, 0.8]
+      subsample: [0.5, 0.75, 1.0]
+workload:
+  outer_partitions: 90
+  inner_folds: 5
+  random_forest:
+    inner_candidate_evaluation_fits: 13500
+    outer_selected_model_refits: 90
+    total_estimator_fits: 13590
+  xgboost:
+    inner_candidate_evaluation_fits: 48600
+    outer_selected_model_refits: 90
+    total_estimator_fits: 48690
+  combined_total_estimator_fits: 62280
+lock:
+  algorithm: sha256-canonical-json
+  manifest_sha256: cc470d8dbecb2e855e7293257de84c12d812942594dab9c8ff48f4cd20f945c2
+  lock_scope: all_fields_except_lock

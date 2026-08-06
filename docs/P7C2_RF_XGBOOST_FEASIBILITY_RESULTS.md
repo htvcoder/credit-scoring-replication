@@ -1,4 +1,4 @@
-# P7C.2.3 — Phân tích feasibility pilot RF/XGBoost và dự thảo quyết định
+# P7C.2.3 — Phân tích feasibility pilot RF/XGBoost và quyết định final protocol
 
 ## Tóm tắt điều hành
 
@@ -6,14 +6,14 @@
 
 Pilot cho thấy cả hai implementation đều chạy ổn định trên AC và GMC tại ba mức độ phức tạp được định trước. Tuy nhiên, tài liệu khóa trước pilot không quy định ngưỡng pass/fail định lượng cho runtime, RSS, hay quy tắc ánh xạ từ ba candidate sang full grid; `docs/P7C_FINAL_PROTOCOL_PLAN.md` còn nêu rõ RF/XGBoost cần CPU/backend feasibility **và approval** trước khi final grid/budget được khóa. Vì vậy, bằng chứng đủ để lập ngân sách tham khảo có kiểm soát, nhưng không đủ để tự động khóa scientific protocol mà không tạo quy tắc hậu nghiệm.
 
-Kết luận đề xuất:
+Kết luận sau approval `user_task_instruction`:
 
 | Model | Kết luận P7C.2.3 | Final protocol |
 | --- | --- | --- |
-| Random Forest | `DECISION_BLOCKED` | `NOT LOCKED` |
-| XGBoost | `DECISION_BLOCKED` | `NOT LOCKED` |
+| Random Forest | `FULL_REFERENCE_GRID_APPROVED` | `LOCKED` (30 candidates) |
+| XGBoost | `FULL_REFERENCE_GRID_APPROVED` | `LOCKED` (108 candidates) |
 
-Blocker là governance/scientific-decision criterion bị thiếu, không phải hỏng artifact hay failure kỹ thuật. Dự thảo khuyến nghị người dùng/mentor phê duyệt rõ một trong các lựa chọn tại mục “Nội dung cần phê duyệt”; không chạy thêm pilot trong checkpoint này.
+Trước approval, blocker là governance/scientific-decision criterion bị thiếu, không phải hỏng artifact hay failure kỹ thuật. Approval của task P7C.2.3 chọn fidelity với full reference grids, không reduced grid và không additional pilot. Decision record chính thức là `docs/P7C2_RF_XGBOOST_DECISION.md`; full scientific execution vẫn chưa được authorize.
 
 ## Provenance và phạm vi
 
@@ -116,35 +116,29 @@ RAM planning bảo thủ cho chạy tuần tự là peak process-local đã th�
 | Quy tắc extrapolation/candidate mapping để lock budget | **Không được định nghĩa** | **Không được định nghĩa** | docs cấm blind extrapolation |
 | Approval final grid/budget | Pending | Pending | DR-P7C-01/02 vẫn Open |
 
-Do ba criteria cuối không có quyết định khóa trước kết quả, `LOCK_FULL_REFERENCE_SPACE` và `LOCK_REDUCED_SPACE` đều không được chọn. `ADDITIONAL_PILOT_REQUIRED` cũng không được tự chọn: không có lỗi kỹ thuật yêu cầu pilot thêm, và chỉ mentor/người dùng nên ủy quyền một pilot tối thiểu sau khi xác định câu hỏi cần trả lời. `DECISION_BLOCKED` là kết luận trung thực duy nhất không biến telemetry sau hoc thành threshold.
+Trước approval, ba criteria cuối khiến `DECISION_BLOCKED` là kết luận trung thực duy nhất không biến telemetry sau hoc thành threshold. Approval của task P7C.2.3 hiện đã chọn `LOCK_FULL_REFERENCE_SPACE`; `LOCK_REDUCED_SPACE` không được chọn và `ADDITIONAL_PILOT_REQUIRED` không cần thiết.
 
 ## Đề xuất protocol RF và XGBoost
 
-RF: `DECISION_BLOCKED`, final protocol `NOT LOCKED`. Nếu được phê duyệt full reference, không gian chính xác là `n_estimators ∈ {100,250,500,750,1000}` × `max_features_multiplier_of_sqrt_m ∈ {0.1,0.25,0.5,1,2,4}` (30). Không đề xuất reduced space: không có evidence predictive hoặc rule khoa học được khóa trước để loại vùng grid.
+RF: `FULL_REFERENCE_GRID_APPROVED`, final protocol `LOCKED`. Không gian chính xác là `n_estimators ∈ {100,250,500,750,1000}` × `max_features_multiplier_of_sqrt_m ∈ {0.1,0.25,0.5,1,2,4}` (30). Không dùng evidence predictive hoặc rule hậu nghiệm để loại vùng grid.
 
-XGBoost: `DECISION_BLOCKED`, final protocol `NOT LOCKED`. Nếu được phê duyệt full reference, không gian chính xác là `n_estimators ∈ {50,100,150}` × `max_depth ∈ {1,2,3}` × `learning_rate ∈ {0.3,0.4}` × `colsample_bytree ∈ {0.6,0.8}` × `subsample ∈ {0.5,0.75,1.0}` (108). Không đề xuất reduced space vì cùng lý do; pilot không dùng để chọn candidate nhanh hơn.
+XGBoost: `FULL_REFERENCE_GRID_APPROVED`, final protocol `LOCKED`. Không gian chính xác là `n_estimators ∈ {50,100,150}` × `max_depth ∈ {1,2,3}` × `learning_rate ∈ {0.3,0.4}` × `colsample_bytree ∈ {0.6,0.8}` × `subsample ∈ {0.5,0.75,1.0}` (108). Pilot không dùng để chọn candidate nhanh hơn.
 
-Các phương án không chọn: full/reduced lock (thiếu approval và criteria định lượng); additional pilot (không có failure, nhưng chỉ hợp lệ khi được ủy quyền với câu hỏi rõ, ví dụ đo cost của những tổ hợp RF `max_features=2` và dataset chưa pilot); GPU/cloud (ngoài scope, không được suy ra từ pilot CPU và không có giá thuê được tra cứu).
+Các phương án không chọn: reduced lock (không có rationale khoa học độc lập để giảm grid); additional pilot (không có failure và approval chọn không chạy thêm); GPU/cloud (ngoài scope của pilot và không được suy ra từ telemetry CPU).
 
 ## Scientific limitations và nội dung cần phê duyệt
 
 Pilot chỉ có một outer partition, hai trong sáu dataset, năm inner folds và telemetry Windows process-local. Nó không xác minh predictive quality, chọn model/candidate, biến thiên giữa outer partitions, hay final nested-CV. Runtime/RSS không phải publication result.
 
-Người dùng/mentor cần phê duyệt một lựa chọn rõ ràng:
-
-1. Chấp thuận full reference spaces RF 30 và XGBoost 108 cùng budget worksheet khoảng 41.1–43.2 giờ sequential CPU có buffer; hoặc
-2. Ủy quyền một pilot tối thiểu, với hypothesis và predeclared threshold/mapping cụ thể; hoặc
-3. Phê duyệt reduced space bằng một lý do khoa học độc lập với predictive ranking pilot.
-
-Không có approval, P7C.2.3 chỉ hoàn tất phần evidence analysis; closeout, final manifests, status/website synchronization và full scientific execution vẫn không được thực hiện.
+Approval `user_task_instruction` đã chọn full reference spaces RF 30 và XGBoost 108, đồng thời chấp nhận worksheet khoảng 41.1–43.2 giờ sequential CPU có buffer cho planning. Đây không phải runtime guarantee, scheduling authorization hay full scientific execution authorization. Không chạy additional pilot và không chọn reduced space.
 
 ## Trạng thái
 
 - P7C.2.2 execution: `COMPLETED`.
 - P7C.2.2 artifact validation: `PASS`.
 - P7C.2.3 evidence analysis: `COMPLETED`.
-- RF final protocol: `NOT LOCKED`.
-- XGBoost final protocol: `NOT LOCKED`.
-- Final compute budget: `NOT LOCKED` (worksheet được đề xuất để phê duyệt).
-- Full scientific execution: `NOT READY`.
-- P7C.2.3 closeout: `PENDING`.
+- RF final protocol: `LOCKED` (full 30-candidate P7A/Table-2 reference grid).
+- XGBoost final protocol: `LOCKED` (full 108-candidate P7A/Table-2 reference grid).
+- Compute worksheet: accepted for P7C planning only; scheduling/concurrency/retry policy remains P7C.7 work.
+- Full scientific execution: `NOT STARTED` and not authorized by this decision.
+- P7C.2.3 closeout: `COMPLETED`.

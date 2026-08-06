@@ -112,11 +112,11 @@ if (typeof homepageSummary !== "string" || !homepageSummary.trim()) {
   if (!/Phase 6.*hoàn thành/i.test(homepageSummary)) {
     fail("Homepage status summary must state that Phase 6 is completed.");
   }
-  if (!/P7A.*P7B.*completed.*12 candidates.*P7C\.1.*completed.*P7C\.2.*in progress.*P7C\.2\.1.*completed.*P7C\.2\.2.*Not Run/i.test(homepageSummary)) {
-    fail("Homepage status summary must state the P7C.2.1 closeout and that P7C.2.2 is Not Run.");
+  if (!/P7A.*P7B.*completed.*12 candidates.*P7C\.1.*P7C\.2.*completed.*P7C\.2\.1.*completed.*P7C\.2\.2.*60\/60 fit.*validate.*P7C\.2\.3.*30 candidates.*XGBoost 108 candidates.*P7C\.3.*bước tiếp theo/i.test(homepageSummary)) {
+    fail("Homepage status summary must state the completed P7C.2 closeout, locked full grids, and P7C.3 next checkpoint.");
   }
-  if (!/RF\/XGBoost final protocol.*chưa khóa.*full scientific execution NOT READY/i.test(homepageSummary)) {
-    fail("Homepage status summary must keep RF/XGBoost protocols unlocked and full execution not ready.");
+  if (!/full scientific execution NOT STARTED.*chưa được authorize.*P7C\.7/i.test(homepageSummary)) {
+    fail("Homepage status summary must keep full scientific execution not started and gated by P7C.7.");
   }
   if (!/không phải kết quả khoa học/i.test(homepageSummary)) {
     fail("Homepage status summary must keep engineering validation non-scientific.");

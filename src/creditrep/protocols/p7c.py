@@ -39,6 +39,7 @@ SEARCH_STATUSES = {
 BACKENDS = {"cpu", "cpu_or_gpu", "gpu_recommended"}
 FEASIBILITY = {"engineering_evidenced", "not_assessed", "feasibility_required"}
 BUDGETS = {"locked", "unresolved"}
+LOCKED_FINAL_MODELS = {"cart": 12, "random_forest": 30, "xgboost": 108}
 
 
 def _error(message: str) -> None:
@@ -56,6 +57,104 @@ def _relative_reference(
         _error(f"{field} must not be an absolute path.")
     if not (root / value).is_file():
         _error(f"{field} does not exist: {value}")
+
+
+def canonical_final_manifest_payload(manifest: dict[str, Any]) -> dict[str, Any]:
+    """Return the hashable portion of a final P7C model manifest."""
+    value = deepcopy(manifest)
+    value.pop("lock", None)
+    return value
+
+
+def final_manifest_hash(manifest: dict[str, Any]) -> str:
+    """Hash a final P7C manifest with the repository canonical JSON algorithm."""
+    from creditrep.config.loader import sha256_canonical
+
+    return sha256_canonical(canonical_final_manifest_payload(manifest))
+
+
+def validate_rf_xgboost_final_manifest(
+    payload: Any, *, repo_root: Path | None = None
+) -> dict[str, Any]:
+    """Validate the locked full-reference RF/XGBoost P7C.2.3 manifest."""
+    root = (repo_root or find_repo_root()).resolve()
+    if not isinstance(payload, dict) or payload.get("schema_version") != 1:
+        _error("final_manifest: schema_version must be 1.")
+    protocol = payload.get("protocol")
+    if not isinstance(protocol, dict) or protocol != {
+        "id": "p7c-rf-xgboost-final-scientific-search-space",
+        "version": "1.0.0",
+        "status": "locked",
+        "scope": "rf_xgboost_full_reference_search_space",
+        "decision_record": "docs/P7C2_RF_XGBOOST_DECISION.md",
+        "source_manifest": "configs/protocols/p7a/p7a_candidate_manifest.yaml",
+    }:
+        _error("final_manifest.protocol: unexpected final protocol identity.")
+    p7a = load_manifest(root / protocol["source_manifest"])
+    if payload.get("source_manifest_sha256") != manifest_hash(p7a):
+        _error("final_manifest.source_manifest_sha256: must bind the P7A manifest.")
+    if payload.get("decision_approval") != {
+        "source": "user_task_instruction",
+        "decision": "approve_full_reference_grids_no_reduced_grid_no_additional_pilot",
+    }:
+        _error("final_manifest.decision_approval: must record the approved decision provenance.")
+    if payload.get("scientific_execution") != {
+        "status": "not_authorized",
+        "prerequisite": "p7c_3_through_p7c_7_readiness_gate",
+    }:
+        _error("final_manifest.scientific_execution: must preserve the P7C.7 execution gate.")
+    models = payload.get("models")
+    if not isinstance(models, list) or [item.get("id") for item in models if isinstance(item, dict)] != [
+        "random_forest",
+        "xgboost",
+    ]:
+        _error("final_manifest.models: must contain RF then XGBoost.")
+    references = p7a["reference_search_spaces"]
+    for item, model_id, implementation, count in (
+        (models[0], "random_forest", "sklearn.ensemble.RandomForestClassifier", 30),
+        (models[1], "xgboost", "xgboost.XGBClassifier", 108),
+    ):
+        if not isinstance(item, dict) or item.get("implementation") != implementation:
+                _error(f"final_manifest.models.{model_id}: implementation mismatch.")
+        if item.get("search_space") != {
+            "selection": "full_reference_grid",
+            "candidate_count": count,
+            "parameters": references[model_id]["parameters"],
+        }:
+                _error(f"final_manifest.models.{model_id}: must exactly preserve the P7A reference grid.")
+    workload = payload.get("workload")
+    if workload != {
+        "outer_partitions": 90,
+        "inner_folds": 5,
+        "random_forest": {
+            "inner_candidate_evaluation_fits": 13500,
+            "outer_selected_model_refits": 90,
+            "total_estimator_fits": 13590,
+        },
+        "xgboost": {
+            "inner_candidate_evaluation_fits": 48600,
+            "outer_selected_model_refits": 90,
+            "total_estimator_fits": 48690,
+        },
+        "combined_total_estimator_fits": 62280,
+    }:
+        _error("final_manifest.workload: workload must match the full reference grids.")
+    lock = payload.get("lock")
+    if not isinstance(lock, dict) or lock.get("algorithm") != "sha256-canonical-json" or lock.get(
+        "manifest_sha256"
+    ) != final_manifest_hash(payload):
+        _error("final_manifest.lock: manifest hash mismatch.")
+    return deepcopy(payload)
+
+
+def load_rf_xgboost_final_manifest(
+    path: str | Path, *, repo_root: Path | None = None
+) -> dict[str, Any]:
+    try:
+        payload = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as exc:
+        raise P7CInventoryError(f"cannot read final manifest: {exc}") from exc
+    return validate_rf_xgboost_final_manifest(payload, repo_root=repo_root)
 
 
 def validate_protocol_inventory(
@@ -126,26 +225,26 @@ def validate_protocol_inventory(
             "decision_record_reference",
         ):
             _relative_reference(item[field], root, f"{item['model_id']}.{field}")
-    cart = models[3]
-    if cart["search_space_status"] != "locked" or cart["candidate_count"] != 12:
-        _error("cart must be locked with exactly 12 candidates.")
-    _relative_reference(
-        cart["final_manifest_reference"],
-        root,
-        "cart.final_manifest_reference",
-        required=True,
-    )
-    _relative_reference(
-        cart["decision_record_reference"],
-        root,
-        "cart.decision_record_reference",
-        required=True,
-    )
-    if cart["blockers"]:
-        _error("locked cart must not retain unresolved blockers.")
     for item in models:
-        if item["model_id"] != "cart" and item["search_space_status"] == "locked":
-            _error(f"{item['model_id']}: only CART is locked in P7C.1.")
+        model_id = item["model_id"]
+        if item["search_space_status"] == "locked":
+            expected_count = LOCKED_FINAL_MODELS.get(model_id)
+            if expected_count is None or item["candidate_count"] != expected_count:
+                _error(f"{model_id}: invalid locked-model candidate count.")
+            _relative_reference(
+                item["final_manifest_reference"],
+                root,
+                f"{model_id}.final_manifest_reference",
+                required=True,
+            )
+            _relative_reference(
+                item["decision_record_reference"],
+                root,
+                f"{model_id}.decision_record_reference",
+                required=True,
+            )
+            if item["blockers"]:
+                _error(f"locked {model_id} must not retain unresolved blockers.")
         if (
             item["search_space_status"] != "locked"
             and item["compute_budget_status"] == "locked"
@@ -153,6 +252,20 @@ def validate_protocol_inventory(
             _error(
                 f"{item['model_id']}: unresolved search space cannot have a locked budget."
             )
+    rf = models[1]
+    xgb = models[2]
+    if rf["search_space_status"] == xgb["search_space_status"] == "locked":
+        if rf["final_manifest_reference"] != xgb["final_manifest_reference"]:
+            _error("RF/XGBoost must share one final manifest.")
+        if rf["decision_record_reference"] != xgb["decision_record_reference"]:
+            _error("RF/XGBoost must share one decision record.")
+        final_manifest = load_rf_xgboost_final_manifest(
+            root / rf["final_manifest_reference"], repo_root=root
+        )
+        if final_manifest["models"][0]["search_space"]["candidate_count"] != rf["candidate_count"] or final_manifest[
+            "models"
+        ][1]["search_space"]["candidate_count"] != xgb["candidate_count"]:
+            _error("RF/XGBoost inventory counts disagree with final manifest.")
     return deepcopy(payload)
 
 
