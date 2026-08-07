@@ -150,6 +150,31 @@ def test_canonical_stress_candidates_map_to_strict_mlp_contract(model_id, depth)
         assert estimator.config.weight_decay == candidate["l2"]
 
 
+def test_execution_plan_applies_the_candidate_adapter_before_worker_execution():
+    execution = harness.build_execution_plan(
+        "configs/protocols/p7c/p7c3_mlp_feasibility_plan.yaml"
+    )
+    assert harness.validate_execution_plan(execution)["unique_fit_ids"] == 60
+    first = next(
+        fit
+        for fit in execution["fits"]
+        if fit["model_id"] == "mlp_3" and fit["candidate_id"] == "high_stress"
+    )
+    assert first["parameters"] == {
+        "hidden_layers": (20, 20, 20),
+        "dropout": 0.5,
+        "batch_normalization": True,
+        "weight_decay": 0.1,
+        "learning_rate": 0.01,
+        "optimizer": "adam",
+        "batch_size": 32,
+        "max_epochs": 200,
+        "early_stopping_patience": 20,
+        "early_stopping_min_delta": 0.0001,
+        "device_policy": "cpu",
+    }
+
+
 @pytest.mark.parametrize("model_id", ["mlp_1", "mlp_3", "mlp_5"])
 def test_tiny_real_fit_uses_p7c3_production_model_path(model_id):
     source = _canonical_source()
