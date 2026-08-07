@@ -109,8 +109,8 @@ const homepageSummary = progress.project?.current_status_summary;
 if (typeof homepageSummary !== "string" || !homepageSummary.trim()) {
   fail("project.current_status_summary is required for homepage and roadmap status copy.");
 } else {
-  if (!/P7C\.3 is In Progress.*vm-run-002 is invalid.*GMC completed 30\/30.*TC failed 30\/30 before training.*canonical Protocol A WOE.*plan_mismatch.*no readiness decision.*scientific execution is authorized/i.test(homepageSummary)) {
-    fail("Homepage status summary must state the invalid vm-run-002 WOE and plan-round-trip failures and preserve the no-readiness boundary.");
+  if (!/P7C\.3:\s*Completed — canonical feasibility pilot accepted.*vm-run-003.*CPU feasibility PASS.*memory feasibility PASS.*execution stability PASS.*non-publishable.*không phải kết quả hiệu năng dự báo hoặc kết quả khoa học cuối cùng.*scientific execution.*chưa bắt đầu/i.test(homepageSummary)) {
+    fail("Homepage status summary must state canonical P7C.3 acceptance, PASS boundaries, non-publishable scope, and preserve the no-scientific-execution boundary.");
   }
 }
 
