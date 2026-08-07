@@ -25,6 +25,8 @@ from creditrep.config.loader import sha256_canonical
 from creditrep.datasets import load_dataset
 from creditrep.datasets.registry import find_repo_root
 from creditrep.experiments.model_validation import _fit_for_partition
+from creditrep.models.neural.exceptions import MLPConfigError
+from creditrep.models.neural.specifications import get_mlp_specification
 from creditrep.preprocessing import ProtocolAConfig
 from creditrep.protocols.p7c import load_mlp_feasibility_plan
 from creditrep.splitting import create_nested_cv_definition
@@ -49,6 +51,63 @@ FAILURE_CLASSES = {
     "interrupted_cancelled",
     "policy_violation",
 }
+
+
+def adapt_mlp_feasibility_candidate(
+    model_id: str, candidate: dict[str, Any], training_policy: dict[str, Any]
+) -> dict[str, Any]:
+    """Translate the auditable P7C.3 candidate schema to the MLP factory contract.
+
+    The feasibility plan deliberately retains domain-level names (``hidden_units``
+    and ``l2``).  The production estimator uses ``hidden_layers`` and
+    ``weight_decay``.  Keep this boundary explicit and validate both sides rather
+    than making the factory accept aliases or arbitrary keyword arguments.
+    """
+    required_candidate = {
+        "id",
+        "hidden_units",
+        "dropout",
+        "l2",
+        "batch_normalization",
+        "learning_rate",
+    }
+    missing = sorted(required_candidate - set(candidate))
+    unexpected = sorted(set(candidate) - required_candidate)
+    if missing or unexpected:
+        raise P7C3HarnessError(
+            "MLP feasibility candidate fields mismatch: "
+            f"missing={missing}, unexpected={unexpected}."
+        )
+    early = training_policy.get("early_stopping")
+    if not isinstance(early, dict) or early.get("enabled") is not True:
+        raise P7C3HarnessError("P7C.3 requires enabled early stopping configuration.")
+    required_training = {"optimizer", "batch_size", "max_epochs", "device_policy"}
+    missing_training = sorted(required_training - set(training_policy))
+    if missing_training:
+        raise P7C3HarnessError(
+            f"P7C.3 training policy missing fields: {missing_training}."
+        )
+    mapped = {
+        "hidden_layers": tuple(candidate["hidden_units"]),
+        "dropout": candidate["dropout"],
+        "batch_normalization": candidate["batch_normalization"],
+        "weight_decay": candidate["l2"],
+        "learning_rate": candidate["learning_rate"],
+        "optimizer": training_policy["optimizer"],
+        "batch_size": training_policy["batch_size"],
+        "max_epochs": training_policy["max_epochs"],
+        "early_stopping_patience": early.get("patience"),
+        "early_stopping_min_delta": early.get("min_delta"),
+        "device_policy": training_policy["device_policy"],
+    }
+    try:
+        # This also enforces architecture depth and all model-specific types/ranges.
+        get_mlp_specification(model_id).config(**mapped)
+    except MLPConfigError as exc:
+        raise P7C3HarnessError(
+            f"{model_id}: invalid mapped MLP configuration: {exc}"
+        ) from exc
+    return mapped
 
 
 def _atomic_json(path: Path, payload: dict[str, Any]) -> None:
@@ -129,11 +188,9 @@ def build_execution_plan(
                         identity
                         | {
                             "fit_id": fit_id,
-                            "parameters": {
-                                key: value
-                                for key, value in candidate.items()
-                                if key != "id"
-                            },
+                            "parameters": adapt_mlp_feasibility_candidate(
+                                model["model_id"], candidate, source["training_policy"]
+                            ),
                             "dataset_checksum": checksums[source_path],
                             "artifact_path": f"fits/{fit_id}/result.json",
                         }

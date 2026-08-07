@@ -2,7 +2,7 @@
 
 ## Status
 
-**In progress — execution-ready, not run.** P7C.3 does not lock the final MLP scientific grids or compute budget yet. It prepares the evidence needed to make that decision without using predictive performance post hoc.
+**In progress — hotfix in verification.** `vm-run-001` at commit `c928c118da6711ed714bd9b0ddc1f73c1e098e00` failed 60/60 before training because the P7C.3 plan schema was passed directly to an incompatible MLP factory contract. The failed evidence is retained; it supplies no runtime/RSS/projection evidence and does not lock the final MLP scientific grids or compute budget.
 
 ## Fact: reference protocol and implementation readiness
 
