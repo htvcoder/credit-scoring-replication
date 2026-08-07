@@ -471,13 +471,13 @@ Phase 6 checkpoints:
 Phase 7 checkpoints:
 - P7A: Completed - Protocol bất biến, candidate manifest P7B, provenance Table 2/3, CART-A Grid 2 approved cho pilot non-publishable, validator và CLI đã hoàn thành; final scientific search space chờ P7B closeout.
 - P7B: Completed - P7B.1 runner/hardening và P7B.2 CART engineering-feasibility đã completed: run-002 tại Git 989997a9dd8cb792636d99f5e2b243b5775807ed có 60/60 fit, 0 failed, 0 pending, artifact validated. Decision record đã khóa final CART-A grid 12 candidates; runtime/RSS vẫn chỉ là bằng chứng kỹ thuật non-publishable.
-- P7C: In Progress - P7C is In Progress. P7C.3 historical vm-run-002 is invalid: GMC completed 30/30; TC failed 30/30 before training from omitted canonical Protocol A WOE configuration; JSON tuple/list round-trip caused plan_mismatch. P7C.3–P7C.7 remain incomplete and scientific execution is NOT STARTED.
+- P7C: In Progress - P7C vẫn đang thực hiện. P7C.3 đã completed với canonical `vm-run-003`; P7C.4–P7C.7 còn chưa hoàn tất và scientific execution chưa bắt đầu. `vm-run-001` là historical/non-canonical, `vm-run-002` là historical invalid; không dùng hai artifact này cho workload projection hoặc kết luận khoa học.
 - P7C.1: Completed - Protocol inventory, readiness matrix, decision register và validator đã completed; không chạy training hoặc tạo scientific result.
 - P7C.2: Completed - RF/XGBoost engineering-feasibility và protocol decision đã completed: immutable 60-fit pilot 60/60 completed, artifact validated; final full P7A/Table-2 grids RF 30 và XGBoost 108 candidates đã khóa.
 - P7C.2.1: Completed - Immutable 60-fit plan, runner, CLI, atomic artifacts, telemetry, resume/retry và artifact validator đã hoàn thành và qua acceptance tests.
 - P7C.2.2: Completed - Research pilot đã completed: 60/60 fit, 0 failed, 0 missing; artifact validation PASS. Engineering evidence non-publishable theo immutable plan digest.
 - P7C.2.3: Completed - Analysis và final decision completed: full P7A/Table-2 RF 30-candidate và XGBoost 108-candidate grids locked; compute worksheet chỉ dùng cho planning, không authorize execution.
-- P7C.3: In Progress - In Progress. Historical vm-run-002 is invalid: GMC completed 30/30 and TC failed 30/30 before training because P7C.3 subprocesses omitted canonical Protocol A WOE configuration. A separate JSON tuple/list round-trip defect caused plan_mismatch. Patch review and deployment precede a new output directory; no readiness decision or final manifest.
+- P7C.3: Completed - Completed — canonical feasibility pilot accepted. Canonical `vm-run-003` tại Git `84c71266d0eb375effc317601602fb9deb67d7d2` có artifact validator PASS, 60/60 fit completed, 0 failed/missing, CPU feasibility PASS, memory feasibility PASS và execution stability PASS. GPU không bắt buộc cho correctness/feasibility MLP, nhưng quyết định GPU để tối ưu thời gian còn chờ workload projection và phê duyệt. Artifact engineering này non-publishable, không phải kết quả hiệu năng dự báo hoặc kết quả khoa học cuối cùng.
 
 Current scope limits:
 - Core replication has not run.

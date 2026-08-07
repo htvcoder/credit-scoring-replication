@@ -1,6 +1,6 @@
 # Phương pháp dự kiến
 
-Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái nghiệm thu kỹ thuật. P7C.3 đang In Progress: historical `vm-run-002` là evidence invalid, với GMC 30/30 completed nhưng TC 30/30 failed trước training do subprocess bỏ qua canonical Protocol A WOE configuration; một lỗi JSON tuple/list round-trip độc lập gây `plan_mismatch`. Patch đang chờ review/deployment; chưa có runtime/RSS/projection hợp lệ, CPU/GPU decision, scientific execution hoặc kết quả nghiên cứu chính thức.
+Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái nghiệm thu kỹ thuật. P7C.3: Completed — canonical feasibility pilot accepted. Canonical `vm-run-003` xác nhận CPU feasibility PASS, memory feasibility PASS và execution stability PASS cho 60/60 fit. GPU không bắt buộc cho correctness/feasibility của MLP, nhưng quyết định GPU để tối ưu thời gian vẫn cần workload projection và phê duyệt. Đây là evidence engineering non-publishable, không phải kết quả hiệu năng dự báo hoặc kết quả khoa học cuối cùng. `vm-run-001` là historical/non-canonical và `vm-run-002` là historical invalid; không dùng chúng cho projection hoặc kết luận khoa học.
 
 ## Replication core
 

@@ -77,11 +77,11 @@ models:
   feasibility_plan_reference: configs/protocols/p7c/p7c3_mlp_feasibility_plan.yaml
   candidate_count: 144
   compute_backend: cpu_or_gpu
-  feasibility_status: feasibility_required
+  feasibility_status: feasibility_completed_canonical_vm_run_003
   compute_budget_status: unresolved
   scientific_execution_status: not_started
-  blockers: [preregistered_feasibility_not_run, compute_threshold_approval, final_budget_decision]
-  next_checkpoint: P7C.3
+  blockers: [compute_threshold_approval, final_budget_decision]
+  next_checkpoint: P7C.7
 - model_id: mlp_3
   display_name: MLP-3
   study_role: replication_baseline
@@ -94,11 +94,11 @@ models:
   feasibility_plan_reference: configs/protocols/p7c/p7c3_mlp_feasibility_plan.yaml
   candidate_count: 720
   compute_backend: cpu_or_gpu
-  feasibility_status: feasibility_required
+  feasibility_status: feasibility_completed_canonical_vm_run_003
   compute_budget_status: unresolved
   scientific_execution_status: not_started
-  blockers: [preregistered_feasibility_not_run, compute_threshold_approval, final_budget_decision]
-  next_checkpoint: P7C.3
+  blockers: [compute_threshold_approval, final_budget_decision]
+  next_checkpoint: P7C.7
 - model_id: mlp_5
   display_name: MLP-5
   study_role: replication_baseline
@@ -111,11 +111,11 @@ models:
   feasibility_plan_reference: configs/protocols/p7c/p7c3_mlp_feasibility_plan.yaml
   candidate_count: 2016
   compute_backend: gpu_recommended
-  feasibility_status: feasibility_required
+  feasibility_status: feasibility_completed_canonical_vm_run_003
   compute_budget_status: unresolved
   scientific_execution_status: not_started
-  blockers: [preregistered_feasibility_not_run, compute_threshold_approval, scope_decision_pending, final_budget_decision]
-  next_checkpoint: P7C.3
+  blockers: [compute_threshold_approval, scope_decision_pending, final_budget_decision]
+  next_checkpoint: P7C.7
 - model_id: catboost
   display_name: CatBoost
   study_role: main_results_extension
