@@ -2,7 +2,7 @@
 
 ## Status
 
-**In progress — hotfix in verification.** `vm-run-001` at commit `c928c118da6711ed714bd9b0ddc1f73c1e098e00` failed 60/60 before training because the P7C.3 plan schema was passed directly to an incompatible MLP factory contract. The failed evidence is retained; it supplies no runtime/RSS/projection evidence and does not lock the final MLP scientific grids or compute budget.
+**In progress — patch under review.** Historical `vm-run-002` at commit `666621cbaad7e419ace11d27c0c1d548e3cc7b7f` is invalid evidence: GMC completed 30/30 fits, but TC failed 30/30 before training because P7C.3 subprocesses created the default Protocol A config instead of reconstructing the canonical WOE-enabled contract. An independent JSON tuple/list round-trip defect produced `plan_mismatch`. The failed evidence is retained and supplies no readiness decision, runtime/RSS projection, or authority to lock final MLP grids/budget.
 
 ## Fact: reference protocol and implementation readiness
 

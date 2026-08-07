@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import time
 from copy import deepcopy
+from dataclasses import asdict
 from datetime import UTC, datetime
 from multiprocessing import get_context
 from pathlib import Path
@@ -27,7 +28,7 @@ from creditrep.datasets.registry import find_repo_root
 from creditrep.experiments.model_validation import _fit_for_partition
 from creditrep.models.neural.exceptions import MLPConfigError
 from creditrep.models.neural.specifications import get_mlp_specification
-from creditrep.preprocessing import ProtocolAConfig
+from creditrep.preprocessing import ProtocolAConfig, load_protocol_a_config
 from creditrep.protocols.p7c import load_mlp_feasibility_plan
 from creditrep.splitting import create_nested_cv_definition
 
@@ -51,6 +52,7 @@ FAILURE_CLASSES = {
     "interrupted_cancelled",
     "policy_violation",
 }
+TIMESTAMP_WALL_CLOCK_TOLERANCE_SECONDS = 2.0
 
 
 def adapt_mlp_feasibility_candidate(
@@ -123,6 +125,92 @@ def _now() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
+def _json_safe(value: Any) -> Any:
+    """Normalize an execution payload before it becomes an artifact contract."""
+
+    return json.loads(json.dumps(value, ensure_ascii=False, sort_keys=True))
+
+
+def _protocol_config_payload(config: ProtocolAConfig) -> dict[str, Any]:
+    """Serialize the canonical Protocol A contract into every execution plan."""
+
+    return _json_safe(asdict(config))
+
+
+def _reconstruct_protocol_config(payload: Any) -> ProtocolAConfig:
+    if not isinstance(payload, dict):
+        raise P7C3HarnessError("execution plan preprocessing configuration is missing.")
+    try:
+        return ProtocolAConfig(**payload)
+    except TypeError as exc:
+        raise P7C3HarnessError(
+            "execution plan preprocessing configuration is malformed."
+        ) from exc
+
+
+def _reconstruct_mlp_parameters(payload: Any) -> dict[str, Any]:
+    """Restore the MLP factory's tuple contract after JSON round-tripping."""
+
+    if not isinstance(payload, dict):
+        raise P7C3HarnessError("execution plan MLP parameters are malformed.")
+    parameters = dict(payload)
+    hidden_layers = parameters.get("hidden_layers")
+    if not isinstance(hidden_layers, list):
+        raise P7C3HarnessError("execution plan hidden_layers must be a JSON list.")
+    parameters["hidden_layers"] = tuple(hidden_layers)
+    return parameters
+
+
+def _first_difference(expected: Any, actual: Any, path: str = "$") -> dict[str, str] | None:
+    """Return a precise, JSON-safe explanation of the first plan mismatch."""
+
+    if type(expected) is not type(actual):
+        return {
+            "path": path,
+            "expected": f"{type(expected).__name__}:{expected!r}",
+            "actual": f"{type(actual).__name__}:{actual!r}",
+        }
+    if isinstance(expected, dict):
+        for key in sorted(set(expected) | set(actual)):
+            child = f"{path}.{key}"
+            if key not in expected:
+                return {"path": child, "expected": "<missing>", "actual": repr(actual[key])}
+            if key not in actual:
+                return {"path": child, "expected": repr(expected[key]), "actual": "<missing>"}
+            difference = _first_difference(expected[key], actual[key], child)
+            if difference:
+                return difference
+    elif isinstance(expected, list):
+        if len(expected) != len(actual):
+            return {
+                "path": path,
+                "expected": f"list length {len(expected)}",
+                "actual": f"list length {len(actual)}",
+            }
+        for index, (left, right) in enumerate(zip(expected, actual, strict=True)):
+            difference = _first_difference(left, right, f"{path}[{index}]")
+            if difference:
+                return difference
+    elif expected != actual:
+        return {"path": path, "expected": repr(expected), "actual": repr(actual)}
+    return None
+
+
+def _timestamp_duration_valid(payload: dict[str, Any]) -> bool:
+    """Validate UTC timestamps against the monotonic duration with bounded overhead."""
+
+    try:
+        started = datetime.fromisoformat(payload["started_at"].replace("Z", "+00:00"))
+        completed = datetime.fromisoformat(payload["completed_at"].replace("Z", "+00:00"))
+        duration = float(payload["wall_clock_seconds"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    if started.tzinfo is None or completed.tzinfo is None or duration < 0:
+        return False
+    elapsed = (completed - started).total_seconds()
+    return elapsed >= 0 and abs(elapsed - duration) <= TIMESTAMP_WALL_CLOCK_TOLERANCE_SECONDS
+
+
 def stable_fit_id(identity: dict[str, Any]) -> str:
     return sha256_canonical(identity)
 
@@ -162,8 +250,15 @@ def build_execution_plan(
 ) -> dict[str, Any]:
     root = (repo_root or find_repo_root()).resolve()
     source = load_mlp_feasibility_plan(plan_path, repo_root=root)
-    digest = source["lock"]["plan_sha256"]
+    source_plan_digest = source["lock"]["plan_sha256"]
     checksums = _dataset_checksums(root)
+    protocol_config = _protocol_config_payload(load_protocol_a_config(repo_root=root))
+    digest = sha256_canonical(
+        {
+            "source_plan_digest": source_plan_digest,
+            "preprocessing_config": protocol_config,
+        }
+    )
     fits: list[dict[str, Any]] = []
     for dataset_id in source["datasets"]:
         dataset = load_dataset(dataset_id, repo_root=root)
@@ -200,6 +295,7 @@ def build_execution_plan(
         "checkpoint_id": "P7C.3",
         "purpose": "engineering_feasibility_only",
         "plan_digest": digest,
+        "source_plan_digest": source_plan_digest,
         "artifact_root": ARTIFACT_ROOT,
         "fits": fits,
         "threading": {
@@ -210,7 +306,9 @@ def build_execution_plan(
         },
         "limits": deepcopy(source["compute_policy"]),
         "retry_policy": {"max_retry_attempts": 1, "transient_errors_only": True},
+        "preprocessing_config": protocol_config,
     }
+    execution = _json_safe(execution)
     validate_execution_plan(execution)
     return execution
 
@@ -263,6 +361,8 @@ def validate_execution_plan(plan: dict[str, Any]) -> dict[str, Any]:
         }
         if fit.get("fit_id") != stable_fit_id(identity):
             raise P7C3HarnessError("fit identity digest mismatch")
+        _reconstruct_mlp_parameters(fit.get("parameters"))
+    _reconstruct_protocol_config(plan.get("preprocessing_config"))
     return {
         "valid": True,
         "expected_fits": 60,
@@ -354,14 +454,14 @@ def _child(queue, fit: dict[str, Any], root_text: str) -> None:
         _fit_for_partition(
             dataset=dataset,
             model_id=fit["model_id"],
-            parameters=fit["parameters"],
+            parameters=_reconstruct_mlp_parameters(fit["parameters"]),
             seed=fit["seed"],
             outer_id=outer.outer_fold_id,
             inner_id=inner.inner_fold_id,
             candidate_id=fit["candidate_id"],
             train_indices=inner.train_indices,
             evaluation_indices=inner.validation_indices,
-            protocol_config=ProtocolAConfig(),
+            protocol_config=_reconstruct_protocol_config(fit["preprocessing_config"]),
             model_stage="p7c3_feasibility",
         )
         queue.put({"ok": True, "threads": threads})
@@ -435,38 +535,53 @@ def run(
         attempts = 0
         while True:
             attempts += 1
+            started_at = _now()
             wall = time.monotonic()
-            queue = get_context("spawn").Queue()
-            child = get_context("spawn").Process(
-                target=_child, args=(queue, fit, str(root))
-            )
-            child.start()
-            proc = psutil.Process(child.pid)
-            peak = _tree_rss(proc)
+            queue = None
+            child = None
+            peak = 0
             timeout = False
-            while (
-                child.is_alive()
-                and time.monotonic() - wall <= plan["limits"]["per_fit_timeout_seconds"]
-            ):
-                peak = max(peak, _tree_rss(proc))
-                time.sleep(0.1)
-                if peak > plan["limits"]["rss_hard_bytes"]:
+            try:
+                queue = get_context("spawn").Queue()
+                worker_fit = fit | {"preprocessing_config": plan["preprocessing_config"]}
+                child = get_context("spawn").Process(
+                    target=_child, args=(queue, worker_fit, str(root))
+                )
+                child.start()
+                proc = psutil.Process(child.pid)
+                peak = _tree_rss(proc)
+                while (
+                    child.is_alive()
+                    and time.monotonic() - wall <= plan["limits"]["per_fit_timeout_seconds"]
+                ):
+                    peak = max(peak, _tree_rss(proc))
+                    time.sleep(0.1)
+                    if peak > plan["limits"]["rss_hard_bytes"]:
+                        child.terminate()
+                        break
+                if child.is_alive():
+                    timeout = True
                     child.terminate()
-                    break
-            if child.is_alive():
-                timeout = True
-                child.terminate()
-            child.join(10)
-            peak = max(peak, _tree_rss(proc))
-            message = (
-                queue.get()
-                if not queue.empty()
-                else {
+                child.join(10)
+                peak = max(peak, _tree_rss(proc))
+                message = (
+                    queue.get()
+                    if not queue.empty()
+                    else {
+                        "ok": False,
+                        "error_type": "TimeoutError" if timeout else "WorkerExit",
+                        "message": "worker ended without result",
+                    }
+                )
+            except Exception as exc:
+                if child is not None and child.is_alive():
+                    child.terminate()
+                    child.join(10)
+                message = {
                     "ok": False,
-                    "error_type": "TimeoutError" if timeout else "WorkerExit",
-                    "message": "worker ended without result",
+                    "error_type": type(exc).__name__,
+                    "message": str(exc).splitlines()[0][:200],
                 }
-            )
             status = (
                 "completed"
                 if message.get("ok")
@@ -488,10 +603,10 @@ def run(
                 "status": status,
                 "outcome": status,
                 "attempt_count": attempts,
-                "started_at": _now(),
+                "started_at": started_at,
                 "completed_at": _now(),
                 "wall_clock_seconds": time.monotonic() - wall,
-                "process_exit_code": child.exitcode,
+                "process_exit_code": child.exitcode if child is not None else None,
                 "peak_rss_bytes_process_tree": peak,
                 "rss_threshold_state": "hard_stop"
                 if peak > plan["limits"]["rss_hard_bytes"]
@@ -551,11 +666,12 @@ def validate_artifacts(plan: dict[str, Any], output_dir: Path) -> dict[str, Any]
             "errors": [{"code": "missing_output"}],
         }
     try:
-        if (
-            json.loads((output_dir / "execution_plan.json").read_text(encoding="utf-8"))
-            != plan
-        ):
-            errors.append({"code": "plan_mismatch"})
+        saved_plan = json.loads(
+            (output_dir / "execution_plan.json").read_text(encoding="utf-8")
+        )
+        difference = _first_difference(plan, saved_plan)
+        if difference:
+            errors.append({"code": "plan_mismatch"} | difference)
     except (OSError, json.JSONDecodeError):
         errors.append({"code": "missing_or_corrupt_plan"})
     for temporary in output_dir.rglob("*.tmp"):
@@ -584,6 +700,9 @@ def validate_artifacts(plan: dict[str, Any], output_dir: Path) -> dict[str, Any]
         ):
             errors.append({"code": "invalid_payload", "path": str(path)})
             continue
+        if not _timestamp_duration_valid(payload):
+            errors.append({"code": "invalid_telemetry", "path": str(path)})
+            continue
         if payload.get("status") == "completed":
             completed += 1
         elif payload.get("status") == "failed":
@@ -592,9 +711,21 @@ def validate_artifacts(plan: dict[str, Any], output_dir: Path) -> dict[str, Any]
             errors.append({"code": "invalid_status", "path": str(path)})
     missing = 60 - len(seen)
     blocking = bool(errors)
+    retryable_failed = 0
+    for path in output_dir.glob("fits/*/*.json"):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if (
+            payload.get("status") == "failed"
+            and payload.get("failure_classification") == "transient_infrastructure"
+            and payload.get("attempt_count") == 1
+        ):
+            retryable_failed += 1
     return {
-        "valid": not blocking,
-        "resumable": not blocking and (missing > 0 or failed > 0),
+        "valid": not blocking and completed == 60 and failed == 0,
+        "resumable": not blocking and (missing > 0 or retryable_failed > 0),
         "expected": 60,
         "completed": completed,
         "failed": failed,
