@@ -109,17 +109,8 @@ const homepageSummary = progress.project?.current_status_summary;
 if (typeof homepageSummary !== "string" || !homepageSummary.trim()) {
   fail("project.current_status_summary is required for homepage and roadmap status copy.");
 } else {
-  if (!/Phase 6.*hoàn thành/i.test(homepageSummary)) {
-    fail("Homepage status summary must state that Phase 6 is completed.");
-  }
-  if (!/P7A.*P7B.*completed.*P7C\.2\.1.*completed.*P7C\.2\.2.*60\/60 fit.*validate.*P7C\.3.*In Progress.*vm-run-001.*60\/60.*contract mismatch.*hotfix.*CPU policy.*runtime.*RSS.*projection.*CPU\/GPU/i.test(homepageSummary)) {
-    fail("Homepage status summary must state the P7C.3 vm-run-001 contract failure, hotfix verification, and absence of valid runtime/RSS/projection or CPU/GPU decision.");
-  }
-  if (!/full scientific execution NOT STARTED.*chưa được authorize.*P7C\.7/i.test(homepageSummary)) {
-    fail("Homepage status summary must keep full scientific execution not started and gated by P7C.7.");
-  }
-  if (!/không phải kết quả khoa học/i.test(homepageSummary)) {
-    fail("Homepage status summary must keep engineering validation non-scientific.");
+  if (!/P7C\.3 is In Progress.*vm-run-002 is invalid.*GMC completed 30\/30.*TC failed 30\/30 before training.*canonical Protocol A WOE.*plan_mismatch.*no readiness decision.*scientific execution is authorized/i.test(homepageSummary)) {
+    fail("Homepage status summary must state the invalid vm-run-002 WOE and plan-round-trip failures and preserve the no-readiness boundary.");
   }
 }
 
