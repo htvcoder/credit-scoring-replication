@@ -431,7 +431,7 @@ Generated from website/content/progress.yaml. Do not edit manually.
 - Last completed phase: Phase 6
 - Current phase: Phase 7
 - Next phase: Phase 7 - Core replication run
-- Updated at: 2026-08-07
+- Updated at: 2026-08-08
 
 | Phase | Status | Milestone tag |
 | --- | --- | --- |
@@ -478,6 +478,8 @@ Phase 7 checkpoints:
 - P7C.2.2: Completed - Research pilot đã completed: 60/60 fit, 0 failed, 0 missing; artifact validation PASS. Engineering evidence non-publishable theo immutable plan digest.
 - P7C.2.3: Completed - Analysis và final decision completed: full P7A/Table-2 RF 30-candidate và XGBoost 108-candidate grids locked; compute worksheet chỉ dùng cho planning, không authorize execution.
 - P7C.3: Completed - Completed — canonical feasibility pilot accepted. Canonical `vm-run-003` tại Git `84c71266d0eb375effc317601602fb9deb67d7d2` có artifact validator PASS, 60/60 fit completed, 0 failed/missing, CPU feasibility PASS, memory feasibility PASS và execution stability PASS. GPU không bắt buộc cho correctness/feasibility MLP, nhưng quyết định GPU để tối ưu thời gian còn chờ workload projection và phê duyệt. Artifact engineering này non-publishable, không phải kết quả hiệu năng dự báo hoặc kết quả khoa học cuối cùng.
+- P7C.4A: Completed - Completed — benchmark plan ready for human review: decision study, ba candidate-budget scenario, threshold đề xuất, benchmark matrix, telemetry/artifact contract và digest đã được kiểm tra. Không chạy benchmark; DR-P7C-03/04 chưa approved, final MLP manifest chưa locked và chưa chọn CPU/GPU backend.
+- P7C.4B: Blocked - Blocked awaiting human approval: cần phê duyệt DR-P7C-03/04, scenario candidate budget, threshold vận hành, policy GPU/parallel-2 và seed/retry/retention trước handoff execution.
 
 Current scope limits:
 - Core replication has not run.

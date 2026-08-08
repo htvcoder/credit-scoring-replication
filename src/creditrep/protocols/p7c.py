@@ -37,7 +37,12 @@ SEARCH_STATUSES = {
     "feasibility_required",
 }
 BACKENDS = {"cpu", "cpu_or_gpu", "gpu_recommended"}
-FEASIBILITY = {"engineering_evidenced", "not_assessed", "feasibility_required"}
+FEASIBILITY = {
+    "engineering_evidenced",
+    "feasibility_completed_canonical_vm_run_003",
+    "not_assessed",
+    "feasibility_required",
+}
 BUDGETS = {"locked", "unresolved"}
 LOCKED_FINAL_MODELS = {"cart": 12, "random_forest": 30, "xgboost": 108}
 
@@ -164,6 +169,139 @@ def mlp_feasibility_plan_hash(plan: dict[str, Any]) -> str:
     value = deepcopy(plan)
     value.pop("lock", None)
     return sha256_canonical(value)
+
+
+def mlp_compute_benchmark_plan_hash(plan: dict[str, Any]) -> str:
+    """Hash the P7C.4A planning-only benchmark plan, excluding its lock."""
+    from creditrep.config.loader import sha256_canonical
+
+    value = deepcopy(plan)
+    value.pop("lock", None)
+    return sha256_canonical(value)
+
+
+def validate_mlp_compute_benchmark_plan(
+    payload: Any, *, repo_root: Path | None = None
+) -> dict[str, Any]:
+    """Validate P7C.4A metadata without creating or running a benchmark."""
+    root = (repo_root or find_repo_root()).resolve()
+    if not isinstance(payload, dict) or payload.get("schema_version") != 1:
+        _error("MLP compute benchmark plan: schema_version must be 1.")
+    if payload.get("plan_id") != "p7c4a-mlp-compute-benchmark-v1":
+        _error("MLP compute benchmark plan: unexpected deterministic plan_id.")
+    if payload.get("status") != "completed_plan_ready_for_human_review" or payload.get(
+        "purpose"
+    ) != "engineering_compute_benchmark_only":
+        _error("MLP compute benchmark plan must remain planning-only and review-ready.")
+    if payload.get("execution") != {
+        "runner_implemented": False,
+        "execution_result_present": False,
+    }:
+        _error("MLP compute benchmark plan must not claim an execution result or runner.")
+    if payload.get("reference_candidate_counts") != {
+        "mlp_1": 144,
+        "mlp_3": 720,
+        "mlp_5": 2016,
+    } or payload.get("datasets") != ["TC", "GMC"]:
+        _error("MLP compute benchmark plan has invalid reference coverage.")
+    if payload.get("repetitions") != 3 or payload.get("representative_candidates", {}).get(
+        "selection"
+    ) != "predeclared_coverage_not_metric_selected":
+        _error("MLP compute benchmark plan must preserve the declared coverage policy.")
+    scenarios = payload.get("candidate_budget_scenarios", {}).get("scenarios")
+    expected_scenarios = [
+        ("minimum_viable", {"mlp_1": 12, "mlp_3": 24, "mlp_5": 24}, 27000),
+        ("balanced_recommended", {"mlp_1": 24, "mlp_3": 48, "mlp_5": 48}, 54000),
+        ("high_fidelity", {"mlp_1": 48, "mlp_3": 96, "mlp_5": 96}, 108000),
+    ]
+    if not isinstance(scenarios, list) or len(scenarios) != len(expected_scenarios):
+        _error("MLP compute benchmark plan must declare three candidate-budget scenarios.")
+    for scenario, (scenario_id, counts, inner_fits) in zip(
+        scenarios, expected_scenarios, strict=True
+    ):
+        if (
+            scenario.get("id") != scenario_id
+            or scenario.get("counts") != counts
+            or scenario.get("inner_fits") != inner_fits
+            or scenario.get("outer_refits") != 270
+            or any(
+                scenario.get("mandatory", {}).get(model, 0)
+                + scenario.get("seeded_exploration", {}).get(model, 0)
+                != count
+                for model, count in counts.items()
+            )
+        ):
+            _error("MLP compute benchmark plan has invalid candidate-budget construction.")
+    for field, value in payload.get("source_protocols", {}).items():
+        _relative_reference(value, root, f"MLP compute benchmark plan.{field}", required=True)
+    candidate_source = payload.get("representative_candidates", {}).get("source")
+    _relative_reference(candidate_source, root, "MLP compute benchmark plan.candidate_source", required=True)
+    expected_matrix = [
+        ("cpu", 1),
+        ("cpu", 2),
+        ("gpu", 1),
+        ("gpu", 2),
+    ]
+    matrix = payload.get("matrix")
+    if not isinstance(matrix, list) or [
+        (item.get("backend"), item.get("concurrency")) for item in matrix
+    ] != expected_matrix:
+        _error("MLP compute benchmark plan must declare the bounded CPU/GPU matrix.")
+    accounting = payload.get("matrix_accounting", {})
+    if accounting.get("measured_logical_fits_per_enabled_mode") != 36 or [
+        accounting.get(mode, {}).get("measured_executions")
+        for mode in ("cpu_sequential", "cpu_parallel_2", "gpu_sequential", "gpu_parallel_2")
+    ] != [36, 18, 36, 18]:
+        _error("MLP compute benchmark plan has invalid logical-fit/execution accounting.")
+    if [
+        accounting.get(mode, {}).get("total_executions")
+        for mode in ("cpu_sequential", "cpu_parallel_2", "gpu_sequential", "gpu_parallel_2")
+    ] != [48, 24, 48, 30]:
+        _error("MLP compute benchmark plan has invalid warm-up/preflight accounting.")
+    decisions = payload.get("decision_register")
+    if decisions != {
+        "DR-P7C-03": {
+            "title": "final_mlp_1_and_mlp_3_candidate_budget_and_search_strategy",
+            "scope": "select_one_predeclared_candidate_budget_scenario_for_mlp_1_and_mlp_3_without_pilot_metric_input",
+            "status": "open_pending_human_approval",
+        },
+        "DR-P7C-04": {
+            "title": "mlp_5_core_scope_inclusion_decision",
+            "scope": "retain_or_exclude_mlp_5_from_core_scope_using_scope_and_compute_evidence_not_predictive_performance",
+            "status": "open_pending_human_approval",
+        },
+    }:
+        _error("MLP compute benchmark plan has inconsistent DR-P7C-03/04 mapping.")
+    criteria = payload.get("decision_criteria", {})
+    if criteria.get("approval_status") != "proposed_pending_human_approval" or set(
+        criteria.get("hard_acceptance", {})
+    ) != {
+        "completion_and_stability",
+        "timeout",
+        "host_ram",
+        "vram_and_oom",
+        "allowable_failure_retry",
+        "determinism_and_artifact_validity",
+    }:
+        _error("MLP compute benchmark plan lacks predefined hard decision criteria.")
+    lock = payload.get("lock", {})
+    if lock.get("algorithm") != "sha256-canonical-json" or lock.get(
+        "lock_scope"
+    ) != "all_fields_except_lock":
+        _error("MLP compute benchmark plan has invalid lock metadata.")
+    if lock.get("plan_sha256") != mlp_compute_benchmark_plan_hash(payload):
+        _error("MLP compute benchmark plan digest mismatch.")
+    return deepcopy(payload)
+
+
+def load_mlp_compute_benchmark_plan(
+    path: str | Path, *, repo_root: Path | None = None
+) -> dict[str, Any]:
+    try:
+        payload = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as exc:
+        raise P7CInventoryError(f"cannot read MLP compute benchmark plan: {exc}") from exc
+    return validate_mlp_compute_benchmark_plan(payload, repo_root=repo_root)
 
 
 def validate_mlp_feasibility_plan(
@@ -395,6 +533,28 @@ def validate_protocol_inventory(
             item["candidate_count"] for item in mlps
         ]:
             _error("MLP inventory counts disagree with feasibility plan.")
+        study_references = [item.get("decision_study_reference") for item in mlps]
+        benchmark_references = [
+            item.get("compute_benchmark_plan_reference") for item in mlps
+        ]
+        if len(set(study_references)) != 1 or study_references[0] is None:
+            _error("MLP models must share one P7C.4A decision-study reference.")
+        if len(set(benchmark_references)) != 1 or benchmark_references[0] is None:
+            _error("MLP models must share one P7C.4A benchmark-plan reference.")
+        _relative_reference(
+            study_references[0], root, "MLP decision_study_reference", required=True
+        )
+        benchmark_plan = load_mlp_compute_benchmark_plan(
+            root / benchmark_references[0], repo_root=root
+        )
+        if benchmark_plan["reference_candidate_counts"] != dict(
+            zip(
+                ["mlp_1", "mlp_3", "mlp_5"],
+                [item["candidate_count"] for item in mlps],
+                strict=True,
+            )
+        ):
+            _error("MLP inventory counts disagree with P7C.4A benchmark plan.")
     return deepcopy(payload)
 
 

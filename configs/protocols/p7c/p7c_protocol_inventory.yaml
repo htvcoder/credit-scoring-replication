@@ -75,6 +75,8 @@ models:
   final_manifest_reference: null
   decision_record_reference: docs/P7C3_MLP_DECISION_READINESS.md
   feasibility_plan_reference: configs/protocols/p7c/p7c3_mlp_feasibility_plan.yaml
+  decision_study_reference: docs/P7C4A_MLP_SEARCH_AND_COMPUTE_BENCHMARK_PLAN.md
+  compute_benchmark_plan_reference: configs/protocols/p7c/p7c4a_mlp_compute_benchmark_plan.yaml
   candidate_count: 144
   compute_backend: cpu_or_gpu
   feasibility_status: feasibility_completed_canonical_vm_run_003
@@ -92,6 +94,8 @@ models:
   final_manifest_reference: null
   decision_record_reference: docs/P7C3_MLP_DECISION_READINESS.md
   feasibility_plan_reference: configs/protocols/p7c/p7c3_mlp_feasibility_plan.yaml
+  decision_study_reference: docs/P7C4A_MLP_SEARCH_AND_COMPUTE_BENCHMARK_PLAN.md
+  compute_benchmark_plan_reference: configs/protocols/p7c/p7c4a_mlp_compute_benchmark_plan.yaml
   candidate_count: 720
   compute_backend: cpu_or_gpu
   feasibility_status: feasibility_completed_canonical_vm_run_003
@@ -109,6 +113,8 @@ models:
   final_manifest_reference: null
   decision_record_reference: docs/P7C3_MLP_DECISION_READINESS.md
   feasibility_plan_reference: configs/protocols/p7c/p7c3_mlp_feasibility_plan.yaml
+  decision_study_reference: docs/P7C4A_MLP_SEARCH_AND_COMPUTE_BENCHMARK_PLAN.md
+  compute_benchmark_plan_reference: configs/protocols/p7c/p7c4a_mlp_compute_benchmark_plan.yaml
   candidate_count: 2016
   compute_backend: gpu_recommended
   feasibility_status: feasibility_completed_canonical_vm_run_003

@@ -9,6 +9,7 @@ import yaml
 from creditrep.protocols.p7c import (
     P7CInventoryError,
     load_mlp_feasibility_plan,
+    load_mlp_compute_benchmark_plan,
     load_rf_xgboost_final_manifest,
     load_protocol_inventory,
     validate_mlp_feasibility_plan,
@@ -20,6 +21,7 @@ from creditrep.protocols.p7c import (
 INVENTORY = Path("configs/protocols/p7c/p7c_protocol_inventory.yaml")
 FINAL_MANIFEST = Path("configs/protocols/p7c/p7c_rf_xgboost_final_manifest.yaml")
 MLP_FEASIBILITY_PLAN = Path("configs/protocols/p7c/p7c3_mlp_feasibility_plan.yaml")
+MLP_COMPUTE_BENCHMARK_PLAN = Path("configs/protocols/p7c/p7c4a_mlp_compute_benchmark_plan.yaml")
 
 
 def payload():
@@ -54,6 +56,16 @@ def test_mlp_feasibility_plan_happy_path():
     assert plan["expected_fits"] == {"per_model": 20, "total": 60}
     assert plan["execution_approval"]["status"] == "authorized_for_feasibility_only"
     assert plan["compute_policy"]["per_fit_timeout_seconds"] == 1800
+
+
+def test_mlp_compute_benchmark_plan_is_planning_only_and_digest_locked():
+    plan = load_mlp_compute_benchmark_plan(MLP_COMPUTE_BENCHMARK_PLAN)
+    assert plan["plan_id"] == "p7c4a-mlp-compute-benchmark-v1"
+    assert plan["execution"]["runner_implemented"] is False
+    assert plan["execution"]["execution_result_present"] is False
+    assert plan["matrix_accounting"]["cpu_parallel_2"]["total_executions"] == 24
+    assert plan["matrix_accounting"]["gpu_parallel_2"]["total_executions"] == 30
+    assert plan["decision_register"]["DR-P7C-03"]["status"] == "open_pending_human_approval"
 
 
 @pytest.mark.parametrize(

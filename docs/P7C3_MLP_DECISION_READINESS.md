@@ -34,10 +34,10 @@ Các assumption: candidate count là reference count chưa khóa final; 90 parti
 
 ## Đề xuất quyết định
 
-- **Giữ `mlp_5` trong core scope**: evidence đủ để xác nhận feasibility, nhưng pilot không có metric nên không được dùng để loại kiến trúc. Việc giữ/bỏ cuối cùng vẫn cần phê duyệt con người theo `DR-P7C-04`.
+- **Giữ `mlp_5` trong core scope**: evidence đủ để xác nhận feasibility, nhưng pilot không có metric nên không được dùng để loại kiến trúc. Việc giữ/bỏ cuối cùng vẫn cần phê duyệt con người theo `DR-P7C-04` (MLP-5 core-scope inclusion decision).
 - **Final MLP candidate search space**: chưa khóa và không giảm grid từ pilot; giữ reference space MLP-1 `144`, MLP-3 `720`, MLP-5 `2016` cho đến khi có quyết định/manifest được phê duyệt.
 - **CPU parallelism**: chọn đề xuất vận hành ban đầu tối đa 2 fit CPU, giữ 2 thread mỗi fit và theo dõi RSS/throughput; cần benchmark đồng thời có kiểm soát trước khi coi đây là budget final.
 - **CPU hay GPU cho final MLP**: GPU không cần cho correctness/feasibility, nhưng full CPU grid có range quá lớn; đề xuất GPU benchmark riêng trước khi phê duyệt final backend/budget. Chưa được tự khóa CPU hay GPU.
 - **TabNet/FT-Transformer**: chưa có evidence riêng; cần GPU feasibility/budget riêng, không suy ra từ MLP pilot. TabNet vẫn ở P7C.5; FT-Transformer vẫn là extension chờ scope approval ở P7C.6.
 
-Đủ evidence: closeout P7C.3, CPU/memory/stability feasibility và việc không dùng pilot để ranking/exclusion. Còn chờ phê duyệt: `DR-P7C-03` budget MLP-1/3, `DR-P7C-04` scope MLP-5, backend/budget final và final manifest; `DR-P7C-06/07` của TabNet/FT-Transformer không được đóng bởi P7C.3.
+Đủ evidence: closeout P7C.3, CPU/memory/stability feasibility và việc không dùng pilot để ranking/exclusion. Còn chờ phê duyệt: `DR-P7C-03` final MLP-1/3 candidate budget and search strategy, `DR-P7C-04` MLP-5 core-scope inclusion decision, backend/budget final và final manifest; `DR-P7C-06/07` của TabNet/FT-Transformer không được đóng bởi P7C.3.
