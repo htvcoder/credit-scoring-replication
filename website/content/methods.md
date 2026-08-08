@@ -1,6 +1,6 @@
 # Phương pháp dự kiến
 
-Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái nghiệm thu kỹ thuật. P7C.3: Completed — canonical feasibility pilot accepted. Canonical `vm-run-003` xác nhận CPU feasibility PASS, memory feasibility PASS và execution stability PASS cho 60/60 fit. GPU không bắt buộc cho correctness/feasibility của MLP, nhưng quyết định GPU để tối ưu thời gian vẫn cần workload projection và phê duyệt. Đây là evidence engineering non-publishable, không phải kết quả hiệu năng dự báo hoặc kết quả khoa học cuối cùng. `vm-run-001` là historical/non-canonical và `vm-run-002` là historical invalid; không dùng chúng cho projection hoặc kết luận khoa học.
+Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái nghiệm thu kỹ thuật. P7C.3: Completed — canonical feasibility pilot accepted. Canonical `vm-run-003` xác nhận CPU feasibility PASS, memory feasibility PASS và execution stability PASS cho 60/60 fit. P7C.4A: Completed — benchmark plan ready for human review; P7C.4B blocked awaiting human approval và P7C.4 overall vẫn in progress. Benchmark chưa chạy, chưa khóa final MLP manifest và chưa chọn GPU. Đây là evidence engineering non-publishable, không phải kết quả hiệu năng dự báo hoặc kết quả khoa học cuối cùng. `vm-run-001` là historical/non-canonical và `vm-run-002` là historical invalid; không dùng chúng cho projection hoặc kết luận khoa học.
 
 ## Replication core
 
@@ -27,7 +27,7 @@ Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái 
 
 ## Bước tiếp theo
 
-- P7C.1 inventory/readiness, P7C.2.1 immutable 60-fit RF/XGBoost engineering harness, P7C.2.2 research pilot và P7C.2.3 protocol decision đã completed. Pilot là engineering evidence non-publishable; không dùng predictive metric/ranking để giảm grid. P7C.3 MLP scope/budget decision đang In Progress: historical `vm-run-002` is invalid (GMC 30/30 completed; TC 30/30 failed before training from omitted canonical WOE; independent JSON tuple/list `plan_mismatch`). The immutable plan and CPU-only policy remain unchanged; runtime/RSS/projection and final scope/budget remain outstanding.
+- P7C.1 inventory/readiness, P7C.2.1 immutable 60-fit RF/XGBoost engineering harness, P7C.2.2 research pilot, P7C.2.3 protocol decision, P7C.3 closeout và P7C.4A benchmark plan đã completed. P7C.4B blocked awaiting human approval: chưa chạy benchmark, chưa phê duyệt `DR-P7C-03`/`DR-P7C-04`, chưa khóa final MLP manifest và chưa chọn backend. Pilot/benchmark chỉ là engineering evidence non-publishable; không dùng predictive metric/ranking để giảm grid.
 - Core replication chỉ được bắt đầu cho scope đã khóa sau P7C.7 readiness gate. Không có pilot metric nào được dùng để chọn CART candidate.
 
 ## Modern reassessment

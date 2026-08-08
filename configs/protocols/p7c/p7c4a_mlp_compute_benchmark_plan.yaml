@@ -1,0 +1,94 @@
+schema_version: 1
+plan_id: p7c4a-mlp-compute-benchmark-v1
+status: completed_plan_ready_for_human_review
+purpose: engineering_compute_benchmark_only
+scientific_boundary: no_predictive_metrics_no_candidate_selection_no_final_backend_decision_no_scientific_result
+source_protocols:
+  p7a_manifest: configs/protocols/p7a/p7a_candidate_manifest.yaml
+  p7c3_closeout: docs/P7C3_MLP_DECISION_READINESS.md
+  decision_study: docs/P7C4A_MLP_SEARCH_AND_COMPUTE_BENCHMARK_PLAN.md
+decision_register:
+  DR-P7C-03:
+    title: final_mlp_1_and_mlp_3_candidate_budget_and_search_strategy
+    scope: select_one_predeclared_candidate_budget_scenario_for_mlp_1_and_mlp_3_without_pilot_metric_input
+    status: open_pending_human_approval
+  DR-P7C-04:
+    title: mlp_5_core_scope_inclusion_decision
+    scope: retain_or_exclude_mlp_5_from_core_scope_using_scope_and_compute_evidence_not_predictive_performance
+    status: open_pending_human_approval
+reference_candidate_counts: {mlp_1: 144, mlp_3: 720, mlp_5: 2016}
+datasets: [TC, GMC]
+models:
+  - {model_id: mlp_1, hidden_depth: 1}
+  - {model_id: mlp_3, hidden_depth: 3}
+  - {model_id: mlp_5, hidden_depth: 5}
+representative_candidates:
+  selection: predeclared_coverage_not_metric_selected
+  ids: [low_stress, high_stress]
+  source: configs/protocols/p7c/p7c3_mlp_feasibility_plan.yaml
+repetitions: 3
+warmup: {enabled: true, recorded_separately: true, included_in_measured_runtime_or_cost_comparison: false}
+candidate_budget_scenarios:
+  selection_policy: hybrid_mandatory_plus_seeded_stratified_exploration
+  root_seed: 42
+  child_seed: sha256_of_scenario_id_model_id_and_candidate_index
+  source_rule: candidates_must_be_unique_members_of_the_p7a_declared_reference_space
+  batch_normalization_ambiguity: not_a_sampling_dimension_declared_counts_are_not_multiplied_by_batch_normalization
+  stratification_dimensions: [hidden_width_band, dropout_zero_vs_positive, l2_zero_vs_positive, learning_rate_band]
+  scenarios:
+    - {id: minimum_viable, counts: {mlp_1: 12, mlp_3: 24, mlp_5: 24}, mandatory: {mlp_1: 8, mlp_3: 12, mlp_5: 12}, seeded_exploration: {mlp_1: 4, mlp_3: 12, mlp_5: 12}, inner_fits: 27000, outer_refits: 270}
+    - {id: balanced_recommended, counts: {mlp_1: 24, mlp_3: 48, mlp_5: 48}, mandatory: {mlp_1: 12, mlp_3: 18, mlp_5: 18}, seeded_exploration: {mlp_1: 12, mlp_3: 30, mlp_5: 30}, inner_fits: 54000, outer_refits: 270}
+    - {id: high_fidelity, counts: {mlp_1: 48, mlp_3: 96, mlp_5: 96}, mandatory: {mlp_1: 16, mlp_3: 24, mlp_5: 24}, seeded_exploration: {mlp_1: 32, mlp_3: 72, mlp_5: 72}, inner_fits: 108000, outer_refits: 270}
+  mandatory_rule: each_architecture_covers_width_low_high_and_center_dropout_zero_positive_l2_zero_positive_and_learning_rate_low_high_before_seeded_sampling
+  mlp_3_mlp_5_equal_budget_rationale: equal_budget_controls_comparative_search_opportunity_across_deep_architectures_not_reference_space_ratio
+  validator_requirements: [counts_equal_mandatory_plus_exploration, unique_canonical_parameter_tuples, mandatory_and_exploration_disjoint, subset_of_reference_space, required_strata_covered, deterministic_seed_replay, no_metric_input]
+matrix:
+  - {backend: cpu, concurrency: 1, required: true}
+  - {backend: cpu, concurrency: 2, required: true, prerequisite: cpu_sequential_hard_criteria_pass}
+  - {backend: gpu, concurrency: 1, required_if_available: true}
+  - {backend: gpu, concurrency: 2, proposed_only: true, prerequisite: gpu_vram_preflight_headroom_and_gpu_sequential_hard_criteria_pass}
+matrix_accounting:
+  datasets: 2
+  architectures: 3
+  representative_candidates: 2
+  repetitions: 3
+  measured_logical_fits_per_enabled_mode: 36
+  cpu_sequential: {measured_logical_fits: 36, measured_executions: 36, workers: 1, warmup_logical_fits: 12, warmup_executions: 12, total_executions: 48}
+  cpu_parallel_2: {measured_logical_fits: 36, measured_executions: 18, workers_per_execution: 2, warmup_logical_fits: 12, warmup_executions: 6, total_executions: 24}
+  gpu_sequential: {measured_logical_fits: 36, measured_executions: 36, workers: 1, warmup_logical_fits: 12, warmup_executions: 12, total_executions: 48, enabled_if_gpu_available: true}
+  gpu_parallel_2: {measured_logical_fits: 36, measured_executions: 18, workers_per_execution: 2, warmup_logical_fits: 12, warmup_executions: 6, vram_preflight_probes: 6, total_executions: 30, enabled_only_after_vram_preflight: true}
+decision_criteria:
+  approval_status: proposed_pending_human_approval
+  hard_acceptance:
+    completion_and_stability: {threshold: all_36_measured_logical_fits_per_enabled_mode_complete_zero_nonzero_exit_zero_timeout_zero_oom, approval: pending}
+    timeout: {threshold_seconds_per_logical_fit: 1800, measured_fit_must_not_reach_timeout: true, approval: pending}
+    host_ram: {threshold_peak_process_tree_bytes: 12348030976, threshold_peak_process_tree_gib: 11.5, source: p7c3_compute_policy_rss_hard_bytes, approval: pending}
+    vram_and_oom: {threshold: zero_oom_and_peak_vram_at_most_85_percent_of_total_for_parallel_2_or_70_percent_for_single_fit, approval: pending}
+    allowable_failure_retry: {threshold: one_retry_only_for_transient_infrastructure_failure_zero_missing_or_invalid_final_identities, approval: pending}
+    determinism_and_artifact_validity: {threshold: matching_plan_digest_provenance_and_stable_identity_exact_coverage_no_duplicate_corrupt_or_unexpected_artifact, approval: pending}
+  preferred:
+    cpu_parallel_2_throughput: {threshold: at_least_1_25x_sequential_logical_fit_throughput, approval: pending}
+    gpu_runtime_benefit: {threshold: median_runtime_per_fit_at_most_0_80x_matched_cpu, approval: pending}
+    gpu_cost_to_completion: {threshold: estimated_cost_per_completed_fit_no_greater_than_matched_cpu_under_recorded_price_assumption, approval: pending}
+    deadline_feasibility: {threshold: fit_human_approved_mlp_compute_window, proposed_window: 14_calendar_days_active_compute_plus_7_calendar_days_buffer, schedule_condition: requires_human_rebaseline_if_it_extends_beyond_sprint_2_end_2026_08_15, approval: pending}
+  cost_comparison:
+    direct_infrastructure_cost: recorded_price_per_hour_times_measured_wall_clock_plus_required_storage_or_transfer_charges
+    wall_clock_completion_time: elapsed_time_from_first_measured_execution_to_last_valid_measured_completion_including_scheduler_wait
+    cpu_cost_source: must_be_recorded_separately_personal_cpu_is_not_assumed_cost_equivalent_to_cloud_cpu
+    comparison_rule: compare_matched_enabled_modes_with_same_dataset_architecture_candidate_and_repetition_set
+    approval: pending
+  informational: [cpu_utilization, gpu_utilization, runtime_variance, preprocessing_seconds, training_seconds, estimated_cost_point_value]
+telemetry_required: [wall_clock_seconds, process_cpu_seconds, cpu_utilization, host_peak_ram_bytes, gpu_utilization, peak_vram_bytes, timeout, process_exit_code, stability, estimated_cost_per_fit, environment, provenance]
+telemetry_optional: [preprocessing_seconds, training_seconds]
+artifact_contract:
+  root: artifacts/p7c4a-mlp-compute-benchmark
+  publishable: false
+  forbidden: [predictions, predictive_metrics, raw_rows, transformed_features, model_weights, checkpoints, absolute_paths]
+  completion_marker: completion.json
+  resume: require_matching_plan_digest_provenance_and_valid_completed_identity
+  failure: retain_failed_timeout_and_partial_records_retry_only_after_locked_policy
+execution: {runner_implemented: false, execution_result_present: false}
+lock:
+  algorithm: sha256-canonical-json
+  plan_sha256: a0ee49964600a3cb6b3896be4bc0241a2aa6f9b3583bde0b1a75c93e95607d7e
+  lock_scope: all_fields_except_lock

@@ -49,13 +49,10 @@ def test_homepage_status_data_contains_completed_phases_and_next_phase() -> None
 def test_homepage_and_roadmap_use_the_source_status_summary() -> None:
     status = load_status()
     summary = status["project"]["current_status_summary"]
-    assert "P7C.3 is In Progress" in summary
-    assert "vm-run-002 is invalid" in summary
-    assert "GMC completed 30/30" in summary
-    assert "TC failed 30/30 before training" in summary
-    assert "canonical Protocol A WOE" in summary
-    assert "plan_mismatch" in summary
-    assert "no readiness decision" in summary
+    assert "P7C.4A: Completed" in summary
+    assert "P7C.4B blocked awaiting human approval" in summary
+    assert "benchmark chưa chạy" in summary
+    assert "DR-P7C-03/04 chưa approved" in summary
 
     phase7 = next(phase for phase in status["phases"] if phase["numeric_id"] == 7)
     checkpoints = {item["id"]: item["status"] for item in phase7["checkpoints"]}
@@ -64,7 +61,9 @@ def test_homepage_and_roadmap_use_the_source_status_summary() -> None:
     assert checkpoints["P7C.2.1"] == "completed"
     assert checkpoints["P7C.2.2"] == "completed"
     assert checkpoints["P7C.2.3"] == "completed"
-    assert checkpoints["P7C.3"] == "in_progress"
+    assert checkpoints["P7C.3"] == "completed"
+    assert checkpoints["P7C.4A"] == "completed"
+    assert checkpoints["P7C.4B"] == "blocked"
 
     homepage = HOMEPAGE_PATH.read_text(encoding="utf-8")
     content = CONTENT_PATH.read_text(encoding="utf-8")
