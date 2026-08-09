@@ -7,6 +7,16 @@ P7C.4A đã **Completed — benchmark plan ready for human review**. Tài liệu
 duyệt hai quyết định, không khóa manifest final và không chạy benchmark hay
 thực nghiệm khoa học.
 
+### Addendum execution contract đã được human phê duyệt
+
+P7C.4A giữ nguyên trạng thái Completed; addendum này chỉ khóa input execution
+cho P7C.4B. Mọi mode dùng cố định `repeat_00/fold_00/inner_fold_00` của P7C.3:
+preprocessing fit trên `inner_train`, transform `inner_validation`, model chỉ
+fit trên transformed `inner_train`. Ba measured repetition dùng cùng partition,
+không resample: `0→1701`, `1→1702`, `2→1703`; warm-up dùng seed `1601` và không
+trùng measured seed. Candidate/matrix không đổi. Một fixed inner fold không đo
+fold-to-fold compute variance; mọi projection phải nêu uncertainty này.
+
 Mapping canonical: `DR-P7C-03` là **Final MLP-1/3 candidate budget and search
 strategy** — chọn một scenario đã định trước cho MLP-1/3, không dùng pilot
 metric. `DR-P7C-04` là **MLP-5 core-scope inclusion decision** — giữ hoặc loại

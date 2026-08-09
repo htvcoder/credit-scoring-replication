@@ -7,6 +7,13 @@ source_protocols:
   p7a_manifest: configs/protocols/p7a/p7a_candidate_manifest.yaml
   p7c3_closeout: docs/P7C3_MLP_DECISION_READINESS.md
   decision_study: docs/P7C4A_MLP_SEARCH_AND_COMPUTE_BENCHMARK_PLAN.md
+execution_contract_addendum:
+  approval_source: human_partition_contract_2026_08_08
+  partition: {outer_repeat_index: 0, outer_fold_index: 0, inner_fold_index: 0, selection: fixed_p7c3_repeat_00_fold_00_inner_fold_00}
+  measured_training_seeds: {0: 1701, 1: 1702, 2: 1703}
+  warmup_training_seed: 1601
+  repetitions_meaning: stochastic_training_runtime_resource_variance_not_resampling_or_fold_variance
+  validation_use: execution_integrity_only_no_model_candidate_scenario_or_final_configuration_selection
 decision_register:
   DR-P7C-03:
     title: final_mlp_1_and_mlp_3_candidate_budget_and_search_strategy
@@ -90,5 +97,5 @@ artifact_contract:
 execution: {runner_implemented: false, execution_result_present: false}
 lock:
   algorithm: sha256-canonical-json
-  plan_sha256: a0ee49964600a3cb6b3896be4bc0241a2aa6f9b3583bde0b1a75c93e95607d7e
+  plan_sha256: 4e455c47be4ff6bd7f6f79f829a112bebb7877aef731634d08dbe87a115397e2
   lock_scope: all_fields_except_lock
