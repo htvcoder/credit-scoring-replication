@@ -62,3 +62,4 @@ reports/draft*
 /artifacts/p7b-cart-feasibility/
 /artifacts/p7c2-rf-xgboost-feasibility/
 /artifacts/p7c3-mlp-feasibility/
+/artifacts/p7c4b-mlp-compute-benchmark/

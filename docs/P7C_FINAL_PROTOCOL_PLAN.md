@@ -30,7 +30,9 @@ P7C.1 lập inventory, readiness matrix và decision register cho P7C; không ch
 | P7C.3 | MLP-1/3/5 feasibility closeout | **Completed — canonical feasibility pilot accepted:** `vm-run-003` 60/60 completed, validator PASS, CPU/memory/stability PASS; final scope/budget/backend chưa khóa | Engineering feasibility non-publishable; không dùng predictive metric để loại MLP-5 hoặc giảm grid |
 | P7C.4 | Model decision and compute-planning track | **In progress:** P7C.4A completed, P7C.4B blocked awaiting human approval; CatBoost decision remains open | Không chạy benchmark; không có scientific result hay quyết định backend |
 | P7C.4A | MLP search strategy và compute benchmark plan | **Completed — benchmark plan ready for human review:** decision study, ba proposed budget, threshold định lượng và benchmark matrix đã được kiểm tra | DR-P7C-03/04 và final manifest vẫn mở; không chạy benchmark |
-| P7C.4B | Approval-to-execution handoff | **Blocked awaiting human approval:** chỉ bắt đầu sau DR-P7C-03/04, threshold và policy được phê duyệt | Không tạo runner hay benchmark trước approval |
+| P7C.4B | Approval-to-execution handoff | **In progress:** P7C.4B.1 harness/readiness đang triển khai theo partition contract đã được human phê duyệt; P7C.4B.2 vẫn blocked canonical execution | DR-P7C-03/04 và final manifest vẫn mở |
+| P7C.4B.1 | MLP compute benchmark harness and readiness validation | **In progress:** plan expansion/validation đã bắt đầu; chưa hoàn tất execution, resume, artifact validation và smoke acceptance | Không chạy canonical benchmark |
+| P7C.4B.2 | Canonical benchmark execution | **Blocked:** chỉ mở sau P7C.4B.1 acceptance và operator command được review | Không phải scientific result |
 | P7C.5 | TabNet feasibility/final decision | P7C.1 → GPU evidence + bounded protocol decision | Có thể, nhưng non-publishable pilot riêng |
 | P7C.6 | FT-Transformer extension decision | P7C.1 → scope/GPU/budget decision | Có thể, nhưng non-publishable pilot riêng |
 | P7C.7 | Unified final manifest and readiness gate | P7C.2–.6 decisions resolved/deferred explicitly → all references/hashes/tests pass | Không; đây là gate trước execution |

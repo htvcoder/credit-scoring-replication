@@ -50,9 +50,9 @@ def test_homepage_and_roadmap_use_the_source_status_summary() -> None:
     status = load_status()
     summary = status["project"]["current_status_summary"]
     assert "P7C.4A: Completed" in summary
-    assert "P7C.4B blocked awaiting human approval" in summary
-    assert "benchmark chưa chạy" in summary
-    assert "DR-P7C-03/04 chưa approved" in summary
+    assert "P7C.4B.1: Completed" in summary
+    assert "Benchmark chưa chạy" in summary
+    assert "DR-P7C-03/04 Open" in summary
 
     phase7 = next(phase for phase in status["phases"] if phase["numeric_id"] == 7)
     checkpoints = {item["id"]: item["status"] for item in phase7["checkpoints"]}
@@ -63,7 +63,10 @@ def test_homepage_and_roadmap_use_the_source_status_summary() -> None:
     assert checkpoints["P7C.2.3"] == "completed"
     assert checkpoints["P7C.3"] == "completed"
     assert checkpoints["P7C.4A"] == "completed"
-    assert checkpoints["P7C.4B"] == "blocked"
+    assert checkpoints["P7C.4B"] == "in_progress"
+    assert checkpoints["P7C.4B.1"] == "completed"
+    assert checkpoints["P7C.4B.1d"] == "completed"
+    assert checkpoints["P7C.4B.2"] == "next"
 
     homepage = HOMEPAGE_PATH.read_text(encoding="utf-8")
     content = CONTENT_PATH.read_text(encoding="utf-8")
