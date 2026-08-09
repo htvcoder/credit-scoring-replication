@@ -4,7 +4,7 @@ project:
   current_phase: 7
   next_phase: 7
   updated_at: "2026-08-09"
-  current_status_summary: "P7C.3: Completed — canonical feasibility pilot accepted; evidence engineering non-publishable. P7C.4A: Completed — benchmark plan ready for human review. P7C.4B.1: Completed — CPU sequential và parallel-2 harness/readiness đã qua independent operational review; Benchmark chưa chạy ở canonical scope. P7C.4B.2: Next — chỉ ready for planning/dry-run; DR-P7C-03/04 Open, final manifest và policy canonical/GPU vẫn cần human approval trước execution."
+  current_status_summary: "P7C.3: Completed — canonical feasibility pilot accepted. Canonical vm-run-003 xác nhận CPU feasibility PASS, memory feasibility PASS và execution stability PASS; đây là evidence engineering non-publishable, không phải kết quả hiệu năng dự báo hoặc kết quả khoa học cuối cùng, và scientific execution chưa bắt đầu. P7C.4A: Completed — benchmark plan ready for human review. P7C.4B.1: Completed — CPU sequential và parallel-2 harness/readiness đã qua independent operational review; Benchmark chưa chạy ở canonical scope. P7C.4B.2: Next — chỉ ready for planning/dry-run; DR-P7C-03/04 Open, final manifest và policy canonical/GPU vẫn cần human approval trước execution."
 status_enum:
   - planned
   - next
