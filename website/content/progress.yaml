@@ -4,7 +4,7 @@ project:
   current_phase: 7
   next_phase: 7
   updated_at: "2026-08-09"
-  current_status_summary: "P7C.3: Completed — canonical feasibility pilot accepted. Canonical vm-run-003 xác nhận CPU feasibility PASS, memory feasibility PASS và execution stability PASS; đây là evidence engineering non-publishable, không phải kết quả hiệu năng dự báo hoặc kết quả khoa học cuối cùng, và scientific execution chưa bắt đầu. P7C.4A: Completed — benchmark plan ready for human review. P7C.4B.1: Completed — CPU sequential và parallel-2 harness/readiness đã qua independent operational review; Benchmark chưa chạy ở canonical scope. P7C.4B.2: Next — chỉ ready for planning/dry-run; DR-P7C-03/04 Open, final manifest và policy canonical/GPU vẫn cần human approval trước execution."
+  current_status_summary: "P7C.4B.2a: Completed — DR-P7C-03 balanced 24/48/48 và DR-P7C-04 include MLP-5 đã được ghi vào proposed scientific manifest digest-locked. Đây là reduced deterministic subset, không phải exhaustive replication. Compute preflight, runtime/cost, canonical compute mode và canonical execution vẫn pending/NO-GO; P7C.4B.2b single-VM preflight là bước tiếp theo."
 status_enum:
   - planned
   - next
@@ -192,7 +192,7 @@ phases:
     numeric_id: 7
     title: "Core replication run"
     status: "in_progress"
-    summary: "P7C.3 đã completed với canonical `vm-run-003`: 60/60 fit, CPU/memory/stability PASS và chỉ là evidence engineering non-publishable. P7C.4A đã completed — benchmark plan ready for human review; P7C.4B blocked awaiting human approval; P7C.4 overall vẫn in progress. Benchmark chưa chạy, DR-P7C-03/04 chưa approved, final MLP manifest chưa locked và GPU chưa được chọn. Scientific execution chưa bắt đầu."
+    summary: "P7C.3 đã completed với canonical `vm-run-003`: 60/60 fit, CPU/memory/stability PASS và chỉ là evidence engineering non-publishable. P7C.4B.2a đã completed: scientific scope MLP balanced 24/48/48 gồm MLP-5 đã digest-lock. Compute preflight, runtime/cost, canonical mode, GPU và canonical execution vẫn pending/NO-GO. Scientific execution chưa bắt đầu."
     tasks:
       - "P7A: khóa protocol/candidate manifest và kiểm tra integrity trước pilot."
       - "P7B: chạy feasibility pilot non-publishable; không dùng predictive performance để quyết định inclusion."
@@ -233,10 +233,10 @@ phases:
         summary: "Completed — canonical feasibility pilot accepted. Canonical `vm-run-003` tại Git `84c71266d0eb375effc317601602fb9deb67d7d2` có artifact validator PASS, 60/60 fit completed, 0 failed/missing, CPU feasibility PASS, memory feasibility PASS và execution stability PASS. GPU không bắt buộc cho correctness/feasibility MLP, nhưng quyết định GPU để tối ưu thời gian còn chờ workload projection và phê duyệt. Artifact engineering này non-publishable, không phải kết quả hiệu năng dự báo hoặc kết quả khoa học cuối cùng."
       - id: "P7C.4A"
         status: "completed"
-        summary: "Completed — benchmark plan ready for human review: decision study, ba candidate-budget scenario, threshold đề xuất, benchmark matrix, telemetry/artifact contract và digest đã được kiểm tra. Không chạy benchmark; DR-P7C-03/04 chưa approved, final MLP manifest chưa locked và chưa chọn CPU/GPU backend."
+        summary: "Completed — benchmark plan ready for human review: decision study, ba candidate-budget scenario, threshold đề xuất, benchmark matrix, telemetry/artifact contract và digest đã được kiểm tra. P7C.4B.2a sau đó đã ghi nhận human decision riêng; không chạy benchmark."
       - id: "P7C.4B"
         status: "in_progress"
-        summary: "P7C.4B.1 harness/readiness completed; P7C.4B.2 chỉ Next cho planning/dry-run. DR-P7C-03/04 Open, final manifest chưa locked và canonical/GPU execution chưa authorized."
+        summary: "P7C.4B.1 harness/readiness và P7C.4B.2a scientific-scope/readiness đã completed. P7C.4B.2b preflight vẫn pending; canonical/GPU/multi-VM execution chưa authorized."
       - id: "P7C.4B.1"
         status: "completed"
         summary: "Completed — B1a CPU sequential, B1b validation/resume/corruption, B1c CPU parallel-2 và B1d independent operational readiness review passed. Engineering smoke remains non-publishable; no canonical benchmark ran."
@@ -244,8 +244,11 @@ phases:
         status: "completed"
         summary: "Completed — independent operational readiness review, artifact read-back, full B1 regression, operator checklist and go/no-go policy completed."
       - id: "P7C.4B.2"
-        status: "next"
-        summary: "Next — ready only for planning/dry-run; canonical execution remains blocked pending DR-P7C-03/04, final manifest and human approval of canonical/GPU policy."
+        status: "in_progress"
+        summary: "P7C.4B.2a completed planning/readiness. P7C.4B.2b single-VM compute preflight is pending; canonical execution remains NO-GO pending preflight, canonical mode, execution/cost approval and execution-plan digest."
+      - id: "P7C.4B.2a"
+        status: "completed"
+        summary: "Completed — balanced MLP-1/3/5 scientific scope 24/48/48 generated deterministically from seed 42, validated and digest-locked; workload 54,270 fits, execution guard and static multi-VM sharding readiness contract added. No execution occurred."
   - id: "Phase 8"
     numeric_id: 8
     title: "Modern reassessment"

@@ -12,9 +12,9 @@ P7C.1 lập inventory, readiness matrix và decision register cho P7C; không ch
 | CART | replication baseline | CART-A depth 3/5/7/9 × leaf .005/.01/.02 | Locked | 12 | CPU | P7B decision + final manifest | P7C.7 |
 | Random Forest | replication baseline | Full P7A/Table-2 reference grid | Locked | 30 | CPU | P7C.2.2 validated; DR-P7C-01 approved | P7C.7 |
 | XGBoost | replication baseline | Full P7A/Table-2 reference grid | Locked | 108 | CPU/GPU | P7C.2.2 validated; DR-P7C-02 approved | P7C.7 |
-| MLP-1 | replication baseline | Paper reference | Unlocked | 144 | CPU/GPU | P7C.3 canonical `vm-run-003` accepted; final budget/backend còn chờ phê duyệt | P7C.7 |
-| MLP-3 | replication baseline | Unlocked | 720 | CPU/GPU | P7C.3 canonical `vm-run-003` accepted; final budget/backend còn chờ phê duyệt | P7C.7 |
-| MLP-5 | replication baseline | Paper reference | Decision pending | 2,016 | CPU/GPU | P7C.3 canonical `vm-run-003` accepted; không có predictive exclusion; scope/budget còn chờ phê duyệt | P7C.7 |
+| MLP-1 | replication baseline | Balanced reduced deterministic subset | Scientific scope locked; compute pending | 24 | Pending preflight | DR-P7C-03 approved; runtime/cost/execution vẫn pending | P7C.4B.2b/P7C.7 |
+| MLP-3 | replication baseline | Balanced reduced deterministic subset | Scientific scope locked; compute pending | 48 | Pending preflight | DR-P7C-03 approved; runtime/cost/execution vẫn pending | P7C.4B.2b/P7C.7 |
+| MLP-5 | replication baseline | Balanced reduced deterministic subset | Scientific scope locked; compute pending | 48 | Pending preflight | DR-P7C-04 approved; không có predictive exclusion | P7C.4B.2b/P7C.7 |
 | CatBoost | main-results extension | Chưa có grid | Decision pending | TBD | CPU/GPU | Protocol A/B, grid, budget | P7C.4 |
 | TabNet | main-results extension | Chưa có grid | Feasibility required | TBD | GPU khuyến nghị | GPU + protocol + grid | P7C.5 |
 | FT-Transformer | optional extension | Chưa có grid | Feasibility required | TBD | GPU khuyến nghị | Scope approval + GPU + grid | P7C.6 |
@@ -41,7 +41,7 @@ P7C.2 được triển khai theo ba sub-checkpoint: P7C.2.1 hoàn tất immutabl
 
 P7C.3 đã closeout theo Branch B: `vm-run-003` là canonical accepted evidence; `vm-run-001` historical/non-canonical và `vm-run-002` historical invalid không được dùng cho projection hay kết luận khoa học. Kế hoạch feasibility bất biến không phải final search-space/budget manifest; evidence xác nhận CPU/memory/stability, không cho phép ranking, loại MLP-5 hoặc giảm grid hậu nghiệm. GPU không bắt buộc cho correctness/feasibility, nhưng backend/budget tối ưu thời gian còn chờ workload projection và phê duyệt.
 
-P7C.4 overall vẫn in progress. P7C.4A đã hoàn tất planning tại `docs/P7C4A_MLP_SEARCH_AND_COMPUTE_BENCHMARK_PLAN.md` và `configs/protocols/p7c/p7c4a_mlp_compute_benchmark_plan.yaml`; P7C.4B blocked awaiting human approval. Ba scenario candidate budget và toàn bộ threshold chỉ là đề xuất để human review; benchmark CPU/GPU bounded chưa chạy, không có runner và không khóa DR-P7C-03/04 hay final MLP manifest.
+P7C.4 overall vẫn in progress. P7C.4B.2a đã khóa proposed scientific scope tại `configs/protocols/p7c/p7c4b2a_mlp_scientific_manifest.yaml`: DR-P7C-03 chọn balanced subset 24/48/48 và DR-P7C-04 giữ MLP-5. Đây là reduced deterministic subset, không equivalent exhaustive Table-2 search. Compute feasibility, canonical mode, runtime/cost và canonical execution vẫn pending/NO-GO; P7C.4B.2b phải thu thập single-VM preflight trước mọi quyết định execution/GPU/multi-VM.
 
 P7C.7 chỉ có thể tuyên bố full protocol ready khi dataset/CV/preprocessing/seed policy, model scope, concurrency/retry/retention policy và tất cả search-space/budget decision bắt buộc đều có manifest/decision evidence. P7C.1 complete không làm full scientific execution ready.
 
@@ -51,8 +51,8 @@ P7C.7 chỉ có thể tuyên bố full protocol ready khi dataset/CV/preprocessi
 | --- | --- | --- | --- | --- | --- | --- |
 | DR-P7C-01 | RF final grid/budget | Resolved | Full P7A/Table-2 grid, validated CPU pilot, user-task approval | .2 | Không | Shared RF/XGB manifest/record |
 | DR-P7C-02 | XGBoost final grid/budget | Resolved | Full P7A/Table-2 grid, validated CPU pilot, user-task approval | .2 | Không | Shared RF/XGB manifest/record |
-| DR-P7C-03 | Final MLP-1/3 candidate budget and search strategy | Open — pending human approval | Chọn một scenario candidate budget định trước cho MLP-1/3, compute/benchmark evidence, không dùng pilot metric | .4B | Có | MLP manifest/record |
-| DR-P7C-04 | MLP-5 core-scope inclusion decision | Open — pending human approval | Giữ hoặc loại MLP-5 theo scope/compute evidence, không dùng predictive performance | .4B | Có | Decision record |
+| DR-P7C-03 | Final MLP-1/3 candidate budget and search strategy | Resolved — balanced/recommended | 24 MLP-1 + 48 MLP-3 deterministic candidates, seed 42, no metric input | .4B.2a | Compute only | Digest-locked MLP manifest/record |
+| DR-P7C-04 | MLP-5 core-scope inclusion decision | Resolved — included | 48 deterministic MLP-5 candidates, no predictive exclusion | .4B.2a | Compute only | Digest-locked MLP manifest/record |
 | DR-P7C-05 | CatBoost grid and Protocol A/B | Open | Extension scope, native-preprocessing decision | .4 | Có cho extension | Manifest/record |
 | DR-P7C-06 | TabNet grid/GPU feasibility | Open | GPU feasibility pilot and budget | .5 | Có cho extension | Manifest/record |
 | DR-P7C-07 | FT-Transformer scope | User approval required | Extension-only vs main scope, GPU budget | .6 | Không cho core | Decision record |

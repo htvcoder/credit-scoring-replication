@@ -70,57 +70,57 @@ models:
   study_role: replication_baseline
   source_protocol: paper_table_2
   tuning_required: true
-  search_space_status: reference_unlocked
+  search_space_status: scientific_scope_locked_compute_pending
   search_space_reference: configs/protocols/p7a/p7a_candidate_manifest.yaml
-  final_manifest_reference: null
-  decision_record_reference: docs/P7C3_MLP_DECISION_READINESS.md
+  final_manifest_reference: configs/protocols/p7c/p7c4b2a_mlp_scientific_manifest.yaml
+  decision_record_reference: docs/P7C4B2A_MLP_SCIENTIFIC_SCOPE_AND_READINESS.md
   feasibility_plan_reference: configs/protocols/p7c/p7c3_mlp_feasibility_plan.yaml
   decision_study_reference: docs/P7C4A_MLP_SEARCH_AND_COMPUTE_BENCHMARK_PLAN.md
   compute_benchmark_plan_reference: configs/protocols/p7c/p7c4a_mlp_compute_benchmark_plan.yaml
-  candidate_count: 144
-  compute_backend: cpu_or_gpu
+  candidate_count: 24
+  compute_backend: pending_compute_preflight
   feasibility_status: feasibility_completed_canonical_vm_run_003
   compute_budget_status: unresolved
   scientific_execution_status: not_started
-  blockers: [compute_threshold_approval, final_budget_decision]
+  blockers: [compute_preflight_pending, execution_cost_approval]
   next_checkpoint: P7C.7
 - model_id: mlp_3
   display_name: MLP-3
   study_role: replication_baseline
   source_protocol: paper_table_2
   tuning_required: true
-  search_space_status: reference_unlocked
+  search_space_status: scientific_scope_locked_compute_pending
   search_space_reference: configs/protocols/p7a/p7a_candidate_manifest.yaml
-  final_manifest_reference: null
-  decision_record_reference: docs/P7C3_MLP_DECISION_READINESS.md
+  final_manifest_reference: configs/protocols/p7c/p7c4b2a_mlp_scientific_manifest.yaml
+  decision_record_reference: docs/P7C4B2A_MLP_SCIENTIFIC_SCOPE_AND_READINESS.md
   feasibility_plan_reference: configs/protocols/p7c/p7c3_mlp_feasibility_plan.yaml
   decision_study_reference: docs/P7C4A_MLP_SEARCH_AND_COMPUTE_BENCHMARK_PLAN.md
   compute_benchmark_plan_reference: configs/protocols/p7c/p7c4a_mlp_compute_benchmark_plan.yaml
-  candidate_count: 720
-  compute_backend: cpu_or_gpu
+  candidate_count: 48
+  compute_backend: pending_compute_preflight
   feasibility_status: feasibility_completed_canonical_vm_run_003
   compute_budget_status: unresolved
   scientific_execution_status: not_started
-  blockers: [compute_threshold_approval, final_budget_decision]
+  blockers: [compute_preflight_pending, execution_cost_approval]
   next_checkpoint: P7C.7
 - model_id: mlp_5
   display_name: MLP-5
   study_role: replication_baseline
   source_protocol: paper_table_2
   tuning_required: true
-  search_space_status: decision_pending
+  search_space_status: scientific_scope_locked_compute_pending
   search_space_reference: configs/protocols/p7a/p7a_candidate_manifest.yaml
-  final_manifest_reference: null
-  decision_record_reference: docs/P7C3_MLP_DECISION_READINESS.md
+  final_manifest_reference: configs/protocols/p7c/p7c4b2a_mlp_scientific_manifest.yaml
+  decision_record_reference: docs/P7C4B2A_MLP_SCIENTIFIC_SCOPE_AND_READINESS.md
   feasibility_plan_reference: configs/protocols/p7c/p7c3_mlp_feasibility_plan.yaml
   decision_study_reference: docs/P7C4A_MLP_SEARCH_AND_COMPUTE_BENCHMARK_PLAN.md
   compute_benchmark_plan_reference: configs/protocols/p7c/p7c4a_mlp_compute_benchmark_plan.yaml
-  candidate_count: 2016
-  compute_backend: gpu_recommended
+  candidate_count: 48
+  compute_backend: pending_compute_preflight
   feasibility_status: feasibility_completed_canonical_vm_run_003
   compute_budget_status: unresolved
   scientific_execution_status: not_started
-  blockers: [compute_threshold_approval, scope_decision_pending, final_budget_decision]
+  blockers: [compute_preflight_pending, execution_cost_approval]
   next_checkpoint: P7C.7
 - model_id: catboost
   display_name: CatBoost

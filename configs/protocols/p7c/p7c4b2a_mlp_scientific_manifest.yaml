@@ -1,0 +1,40 @@
+schema_version: 1
+protocol:
+  id: p7c4b2a-mlp-balanced-reduced-deterministic-subset
+  status: locked_proposed_scientific_scope
+  scope: mlp_1_mlp_3_mlp_5_replication_baseline
+source_manifest: configs/protocols/p7a/p7a_candidate_manifest.yaml
+source_manifest_sha256: 62b5bddc29017cf152607dab029d790e7c6f822bcf840a814b81a90228025f4e
+scientific_scope: approved
+scope_statement: reduced_deterministic_subset_not_exhaustive_reference_replication
+decisions:
+  DR-P7C-03: approved_balanced_recommended
+  DR-P7C-04: approved_include_mlp_5
+candidate_generation:
+  root_seed: 42
+  policy: mandatory_plus_seeded_stratified_deterministic
+  metric_input: forbidden
+  batch_normalization: runtime_metadata_not_candidate_count_dimension
+scientific_approval:
+  approver: Hoàng Trọng Vĩnh
+  reviewer:
+    name: Trần Công Phú Khánh
+    status: pending
+  binds_to: manifest_sha256
+  manifest_sha256: 4d8636c3606e07e243efd2bc7be12806e7adf4fc1b19dbe0dc113a35adc57f75
+compute_feasibility: pending_preflight
+planned_preflight_mode: cpu_parallel_2
+maximum_cpu_workers_per_vm: 2
+canonical_compute_mode: pending_compute_preflight
+gpu: conditional_candidate_not_authorized
+multi_vm: conditional_scaling_option_not_authorized
+canonical_execution:
+  status: not_authorized
+  guard: fail_closed_pending_compute_preflight_and_execution_cost_approval
+runtime_cost:
+  status: pending_preflight
+  estimator: measured_inputs_required_no_b1_fixture_extrapolation
+execution_cost_approval: null
+lock:
+  algorithm: sha256-canonical-json-resolved-candidate-list
+  manifest_sha256: 4d8636c3606e07e243efd2bc7be12806e7adf4fc1b19dbe0dc113a35adc57f75

@@ -1,6 +1,6 @@
 # Phương pháp dự kiến
 
-Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái nghiệm thu kỹ thuật. P7C.3: Completed — canonical feasibility pilot accepted. P7C.4B.1: Completed — harness CPU sequential/parallel-2 đã qua independent operational readiness review; smoke evidence vẫn non-publishable. P7C.4B.2 chỉ Next cho planning/dry-run và canonical/GPU execution vẫn cần DR-P7C-03/04, final manifest cùng human approval riêng. Đây không phải kết quả hiệu năng dự báo hoặc kết quả khoa học cuối cùng.
+Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái nghiệm thu kỹ thuật. P7C.3: Completed — canonical feasibility pilot accepted. P7C.4B.1: Completed — harness CPU sequential/parallel-2 đã qua independent operational readiness review. P7C.4B.2a đã khóa scientific scope MLP balanced 24/48/48 và giữ MLP-5, nhưng compute preflight, runtime/cost, canonical mode và canonical/GPU execution vẫn pending/NO-GO. Đây không phải kết quả hiệu năng dự báo hoặc kết quả khoa học cuối cùng.
 
 ## Replication core
 
@@ -27,7 +27,7 @@ Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái 
 
 ## Bước tiếp theo
 
-- P7C.1 inventory/readiness, P7C.2.1 immutable 60-fit RF/XGBoost engineering harness, P7C.2.2 research pilot, P7C.2.3 protocol decision, P7C.3 closeout và P7C.4A benchmark plan đã completed. P7C.4B blocked awaiting human approval: chưa chạy benchmark, chưa phê duyệt `DR-P7C-03`/`DR-P7C-04`, chưa khóa final MLP manifest và chưa chọn backend. Pilot/benchmark chỉ là engineering evidence non-publishable; không dùng predictive metric/ranking để giảm grid.
+- P7C.4B.2a đã ghi nhận DR-P7C-03/04 approved và digest-locked proposed MLP scientific scope; đây là reduced deterministic subset, không phải exhaustive replication. P7C.4B.2b là bước preflight single-VM tiếp theo. Pilot/benchmark chỉ là engineering evidence non-publishable; không dùng predictive metric/ranking để giảm grid.
 - Core replication chỉ được bắt đầu cho scope đã khóa sau P7C.7 readiness gate. Không có pilot metric nào được dùng để chọn CART candidate.
 
 ## Modern reassessment
