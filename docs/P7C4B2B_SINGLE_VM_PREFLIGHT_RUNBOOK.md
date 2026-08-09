@@ -1,6 +1,7 @@
 # P7C.4B.2b — Single-VM CPU preflight runbook
 
-Implementation is complete; target preflight is pending. This development machine
+The planning contract is complete; executable target-harness hardening and target
+preflight are pending. This development machine
 has not been identified as `intended_single_vm_target`, so no benchmark result
 may be used for feasibility, cost, or canonical-mode decisions.
 
