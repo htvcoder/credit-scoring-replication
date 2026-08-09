@@ -431,7 +431,7 @@ Generated from website/content/progress.yaml. Do not edit manually.
 - Last completed phase: Phase 6
 - Current phase: Phase 7
 - Next phase: Phase 7 - Core replication run
-- Updated at: 2026-08-08
+- Updated at: 2026-08-09
 
 | Phase | Status | Milestone tag |
 | --- | --- | --- |
@@ -479,9 +479,10 @@ Phase 7 checkpoints:
 - P7C.2.3: Completed - Analysis và final decision completed: full P7A/Table-2 RF 30-candidate và XGBoost 108-candidate grids locked; compute worksheet chỉ dùng cho planning, không authorize execution.
 - P7C.3: Completed - Completed — canonical feasibility pilot accepted. Canonical `vm-run-003` tại Git `84c71266d0eb375effc317601602fb9deb67d7d2` có artifact validator PASS, 60/60 fit completed, 0 failed/missing, CPU feasibility PASS, memory feasibility PASS và execution stability PASS. GPU không bắt buộc cho correctness/feasibility MLP, nhưng quyết định GPU để tối ưu thời gian còn chờ workload projection và phê duyệt. Artifact engineering này non-publishable, không phải kết quả hiệu năng dự báo hoặc kết quả khoa học cuối cùng.
 - P7C.4A: Completed - Completed — benchmark plan ready for human review: decision study, ba candidate-budget scenario, threshold đề xuất, benchmark matrix, telemetry/artifact contract và digest đã được kiểm tra. Không chạy benchmark; DR-P7C-03/04 chưa approved, final MLP manifest chưa locked và chưa chọn CPU/GPU backend.
-- P7C.4B: In Progress - P7C.4B.1 harness/readiness đang triển khai theo partition contract human-approved; P7C.4B.2 canonical execution vẫn blocked. DR-P7C-03/04 Open, final manifest chưa locked.
-- P7C.4B.1: In Progress - Đang triển khai harness/readiness validation; chưa chạy canonical benchmark và chưa đạt acceptance để closeout.
-- P7C.4B.2: Blocked - Blocked pending P7C.4B.1 acceptance và review operator command canonical.
+- P7C.4B: In Progress - P7C.4B.1 harness/readiness completed; P7C.4B.2 chỉ Next cho planning/dry-run. DR-P7C-03/04 Open, final manifest chưa locked và canonical/GPU execution chưa authorized.
+- P7C.4B.1: Completed - Completed — B1a CPU sequential, B1b validation/resume/corruption, B1c CPU parallel-2 và B1d independent operational readiness review passed. Engineering smoke remains non-publishable; no canonical benchmark ran.
+- P7C.4B.1d: Completed - Completed — independent operational readiness review, artifact read-back, full B1 regression, operator checklist and go/no-go policy completed.
+- P7C.4B.2: Next - Next — ready only for planning/dry-run; canonical execution remains blocked pending DR-P7C-03/04, final manifest and human approval of canonical/GPU policy.
 
 Current scope limits:
 - Core replication has not run.
