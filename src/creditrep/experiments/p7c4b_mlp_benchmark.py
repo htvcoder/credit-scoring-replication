@@ -278,7 +278,7 @@ def validate_artifacts(run_dir: Path, *, write_report: bool = False) -> dict[str
     manifest = _read_json(run_dir / "run_manifest.json", codes, "missing_manifest")
     config = _read_json(run_dir / "resolved_config.json", codes, "missing_resolved_config")
     if not manifest or not config: return _report(run_dir, codes)
-    if manifest.get("schema_version") != 2 or manifest.get("mode") != "cpu_sequential": codes.append("unsupported_mode")
+    if manifest.get("schema_version") != 2 or manifest.get("mode") not in {"cpu_sequential", "cpu_parallel_2"}: codes.append("unsupported_mode")
     if manifest.get("run_id") != run_dir.name: codes.append("run_id_mismatch")
     if manifest.get("evidence_scope") != EVIDENCE_SCOPE or manifest.get("canonical") is not False: codes.append("incompatible_evidence_scope")
     if manifest.get("resolved_config_digest") != sha256_canonical(config): codes.append("manifest_config_mismatch")
@@ -318,6 +318,10 @@ def validate_artifacts(run_dir: Path, *, write_report: bool = False) -> dict[str
             if record.get("rss_hard_threshold_bytes") != 12348030976: codes.append("rss_threshold_mismatch")
             threads = record.get("thread_evidence")
             if not isinstance(threads, dict) or threads.get("device") != "cpu": codes.append("invalid_thread_evidence")
+            if manifest.get("mode") == "cpu_parallel_2":
+                telemetry = record.get("process_tree_telemetry")
+                if not isinstance(telemetry, dict) or not isinstance(telemetry.get("parent_pid"), int) or not isinstance(telemetry.get("worker_pid"), int) or not isinstance(telemetry.get("peak_process_tree_rss_bytes"), int) or telemetry.get("peak_process_tree_rss_bytes", -1) < 0 or telemetry.get("max_active_workers", 3) > 2:
+                    codes.append("invalid_rss")
             try:
                 if datetime.fromisoformat(str(record["completed_at"]).replace("Z", "+00:00")) < datetime.fromisoformat(str(record["started_at"]).replace("Z", "+00:00")):
                     codes.append("timestamp_order_mismatch")
@@ -394,7 +398,7 @@ def resume_cpu_sequential(plan: dict[str, Any], output_dir: Path, *, repo_root: 
     if plan.get("execution_mode") != "cpu_sequential": raise P7C4BBenchmarkError("unsupported_mode")
     root = (repo_root or find_repo_root()).resolve(); output_dir = output_dir.resolve()
     if output_dir.parent != (root / ARTIFACT_ROOT).resolve() or not output_dir.name.startswith("smoke-"): raise P7C4BBenchmarkError("invalid smoke output directory")
-    if max_fits is None or not 1 <= max_fits <= 3: raise P7C4BBenchmarkError("invalid config")
+    if max_fits is None or not 1 <= max_fits <= 4: raise P7C4BBenchmarkError("invalid config")
     expected = _fixture_selected(plan, output_dir.name, max_fits)
     if not output_dir.exists():
         output_dir.mkdir(parents=True)
@@ -437,3 +441,55 @@ def resume_cpu_sequential(plan: dict[str, Any], output_dir: Path, *, repo_root: 
         report = validate_artifacts(output_dir, write_report=True)
         _atomic_json(output_dir / "COMPLETED.json", {"validation_report_digest": sha256_canonical(report), "run_id": output_dir.name})
     return {"run_id": output_dir.name, "skipped_on_resume": skipped, "executed": executed, "validation": report}
+
+
+def resume_cpu_parallel_2(plan: dict[str, Any], output_dir: Path, *, repo_root: Path | None = None, max_fits: int | None = None, timeout_seconds: float = 1800.0, stop_after: int | None = None) -> dict[str, Any]:
+    """Bounded, spawn-safe two-process scheduler sharing the B1b artifact contract."""
+    if plan.get("execution_mode") != "cpu_parallel_2": raise P7C4BBenchmarkError("unsupported_mode")
+    root = (repo_root or find_repo_root()).resolve(); output_dir = output_dir.resolve()
+    if output_dir.parent != (root / ARTIFACT_ROOT).resolve() or not output_dir.name.startswith("smoke-"): raise P7C4BBenchmarkError("invalid smoke output directory")
+    if max_fits is None or not 0 <= max_fits <= 4: raise P7C4BBenchmarkError("invalid config")
+    expected = _fixture_selected(plan, output_dir.name, max_fits)
+    # Execution identity, unlike logical identity, is mode-specific.
+    for fit in expected: fit["execution_id"] = execution_id(fit["logical_fit_id"], "cpu_parallel_2", fit["classification"])
+    if not output_dir.exists():
+        output_dir.mkdir(parents=True); config = deepcopy(plan)
+        _atomic_json(output_dir / "run_manifest.json", {"schema_version": 2, "run_id": output_dir.name, "plan_digest": plan["source_plan_digest"], "resolved_config_digest": sha256_canonical(config), "mode": "cpu_parallel_2", "worker_count": 2, "max_workers": 2, "canonical": False, "evidence_scope": EVIDENCE_SCOPE, "provenance": _git_provenance(root), "expected_fits": expected, "execution_thread_limits": {"OMP_NUM_THREADS": 2, "MKL_NUM_THREADS": 2, "OPENBLAS_NUM_THREADS": 2}})
+        _atomic_json(output_dir / "resolved_config.json", config); _write_summary(output_dir, expected, 0)
+    else:
+        manifest = _read_json(output_dir / "run_manifest.json", [], "missing_manifest")
+        if not manifest or manifest.get("mode") != "cpu_parallel_2" or sha256_canonical(manifest.get("expected_fits")) != sha256_canonical(expected): raise P7C4BBenchmarkError("incompatible resume")
+        report = validate_artifacts(output_dir)
+        if set(report["reason_codes"]) - {"missing_logical_fit", "summary_mismatch"}: quarantine_corrupt(output_dir, report); raise P7C4BBenchmarkError("corrupt artifacts")
+    pending: list[dict[str, Any]] = []; skipped = 0
+    for fit in expected:
+        d = output_dir / "fits" / fit["logical_fit_id"]
+        result = _read_json(d / "result.json", [], "") if d.exists() else None; marker = _read_json(d / "COMPLETED.json", [], "") if d.exists() else None
+        if result and marker and result.get("status") == "completed" and marker.get("attempt_id") == result.get("attempt_id"): skipped += 1
+        elif d.exists() and any((d / "attempts").glob("*.json")): quarantine_corrupt(output_dir, {"reason_codes": ["corrupt_artifact"], "valid": False}); raise P7C4BBenchmarkError("corrupt artifacts")
+        else: pending.append(fit)
+    active: dict[str, tuple[Any, Any, dict[str, Any], float, str]] = {}; executed = 0; parent_pid = os.getpid(); peak_tree = 0; max_active = 0; context = get_context("spawn")
+    while pending or active:
+        while pending and len(active) < 2 and (stop_after is None or executed + len(active) < stop_after):
+            fit = pending.pop(0); q = context.Queue(); child = context.Process(target=_child, args=(q, fit, str(root), True)); started_at = _now(); started = time.monotonic(); child.start()
+            active[fit["logical_fit_id"]] = (child, q, fit, started, started_at); max_active = max(max_active, len(active))
+        try: peak_tree = max(peak_tree, _tree_rss(psutil.Process(parent_pid)))
+        except psutil.Error: pass
+        finished = [lid for lid, (child, *_rest) in active.items() if not child.is_alive()]
+        if not finished: time.sleep(0.01); continue
+        for lid in finished:
+            child, q, fit, started, started_at = active.pop(lid); child.join(1); msg = q.get() if not q.empty() else {"ok": False, "error_type": "WorkerExit", "message": "no evidence"}
+            reason = None if msg.get("ok") and child.exitcode == 0 else _reason(msg, False); d = output_dir / "fits" / lid
+            record = {**fit, "schema_version": 2, "attempt": 1, "attempt_id": sha256_canonical({"execution_id": fit["execution_id"], "attempt": 1}), "status": "completed" if reason is None else "failed", "reason_code": reason, "started_at": started_at, "completed_at": _now(), "wall_clock_seconds": time.monotonic()-started, "peak_rss_bytes_process_tree": int(peak_tree), "rss_hard_threshold_bytes": 12348030976, "rss_threshold_pass": peak_tree <= 12348030976, "process_exit_code": child.exitcode, "timings": msg.get("timings", {}), "thread_evidence": msg.get("threads"), "process_tree_telemetry": {"schema_version": 1, "parent_pid": parent_pid, "worker_pid": child.pid, "sampler_interval_seconds": .01, "peak_process_tree_rss_bytes": int(peak_tree), "max_active_workers": max_active}}
+            _atomic_json(d / "attempts" / "attempt-1.json", record)
+            if reason is None: _atomic_json(d / "result.json", record); _atomic_json(d / "COMPLETED.json", {"logical_fit_id": lid, "attempt_id": record["attempt_id"]})
+            else: _atomic_json(d / "failure.json", record)
+            executed += 1
+        if stop_after is not None and executed >= stop_after:
+            for child, *_ in active.values(): child.terminate(); child.join()
+            active.clear(); break
+    _write_summary(output_dir, expected, skipped); report = validate_artifacts(output_dir, write_report=True)
+    if report["valid"]:
+        summary = _read_json(output_dir / "summary.json", [], "") or {}; summary.update(validation_status="pass", reason_codes=[], max_observed_active_workers=max_active, peak_process_tree_rss_bytes=peak_tree); _atomic_json(output_dir / "summary.json", summary)
+        report = validate_artifacts(output_dir, write_report=True); _atomic_json(output_dir / "COMPLETED.json", {"validation_report_digest": sha256_canonical(report), "run_id": output_dir.name})
+    return {"run_id": output_dir.name, "skipped_on_resume": skipped, "executed": executed, "max_observed_active_workers": max_active, "peak_process_tree_rss_bytes": peak_tree, "validation": report}
