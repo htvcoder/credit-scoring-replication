@@ -23,6 +23,8 @@ def main() -> int:
     parser.add_argument("--timeout-seconds", type=float, default=1800.0)
     parser.add_argument("--stop-after", type=int, help="test-only bounded interruption after N newly executed fits")
     args = parser.parse_args(); root = find_repo_root()
+    if args.mode not in {"cpu_sequential", "cpu_parallel_2"}:
+        print(json.dumps({"error": "unsupported_mode"})); return EXIT_INVALID_CONFIG
     if args.command in {"validate-artifacts", "quarantine"}:
         if args.output_dir is None: parser.error("--output-dir is required")
         if not args.output_dir.exists(): print(json.dumps({"reason_codes": ["missing_manifest"]})); return EXIT_MISSING_RUN

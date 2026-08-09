@@ -61,6 +61,7 @@ VALIDATION_CODES = {
     "summary_mismatch", "premature_run_completion", "completion_digest_mismatch",
     "artifact_digest_mismatch", "corrupt_artifact", "run_id_mismatch",
     "plan_digest_mismatch", "invalid_git_provenance", "timestamp_order_mismatch",
+    "failed_fit_present",
 }
 
 EXIT_VALID = 0
@@ -343,6 +344,7 @@ def validate_artifacts(run_dir: Path, *, write_report: bool = False) -> dict[str
     computed = {"expected_fit_count": len(expected_ids), "completed_fit_count": valid_fits,
                 "failed_fit_count": failed_fits, "attempts": attempts_total, "retries": retries}
     if not summary or any(summary.get(k) != v for k, v in computed.items()): codes.append("summary_mismatch")
+    if failed_fits: codes.append("failed_fit_present")
     marker_path = run_dir / "COMPLETED.json"; marker = _read_json(marker_path, codes, "premature_run_completion") if marker_path.exists() else None
     preliminary = _report(run_dir, codes, valid_fits=valid_fits, expected=len(expected_ids))
     if marker and (not preliminary["valid"] or marker.get("validation_report_digest") != sha256_canonical(_read_json(run_dir / "validation_report.json", [], "") or {})):
@@ -369,7 +371,10 @@ def _fixture_selected(plan: dict[str, Any], run_id: str, max_fits: int) -> list[
     selected = deepcopy(plan["measured_fits"][:max_fits])
     for fit in selected:
         fit.update(dataset_id="ENGINEERING_FIXTURE", partition_digest=sha256_canonical({"fixture": "tiny-fixed-partition-v1"}), train_row_count=8, validation_row_count=4)
-        fit["logical_fit_id"] = logical_fit_id({"scope": EVIDENCE_SCOPE, "source_logical_fit_id": fit["logical_fit_id"], "run_id": run_id})
+        # Logical identity is workload identity, not a run-directory identity.
+        # This lets sequential and parallel executions be compared exactly while
+        # their execution/attempt evidence remains isolated by run directory.
+        fit["logical_fit_id"] = logical_fit_id({"scope": EVIDENCE_SCOPE, "source_logical_fit_id": fit["logical_fit_id"]})
         fit["execution_id"] = execution_id(fit["logical_fit_id"], "cpu_sequential", fit["classification"])
     return selected
 
@@ -377,19 +382,21 @@ def _fixture_selected(plan: dict[str, Any], run_id: str, max_fits: int) -> list[
 def _write_summary(run_dir: Path, expected: list[dict[str, Any]], skipped: int) -> dict[str, Any]:
     report = validate_artifacts(run_dir)
     # Report's pre-summary mismatch is expected while rebuilding; derive directly from evidence.
-    complete = failed = attempts = 0
+    complete = failed = attempts = 0; peak_rss = 0
     for fit in expected:
         records = []
         for p in sorted((run_dir / "fits" / fit["logical_fit_id"] / "attempts").glob("*.json")):
             try: records.append(json.loads(p.read_text(encoding="utf-8")))
             except (OSError, ValueError): pass
         attempts += len(records)
+        peak_rss = max([peak_rss, *[r.get("peak_rss_bytes_process_tree", 0) for r in records if isinstance(r.get("peak_rss_bytes_process_tree", 0), int)]])
         if records and records[-1].get("status") == "completed": complete += 1
         elif records and records[-1].get("status") == "failed": failed += 1
     summary = {"schema_version": 2, "run_id": run_dir.name, "evidence_scope": EVIDENCE_SCOPE,
                "expected_fit_count": len(expected), "completed_fit_count": complete, "failed_fit_count": failed,
                "skipped_on_resume_count": skipped, "attempts": attempts, "retries": max(0, attempts - complete - failed),
-               "runtime_distribution": {}, "peak_rss_bytes": 0, "threshold_result": "pass", "validation_status": "pending", "reason_codes": []}
+               "terminal_logical_fit_ids": [fit["logical_fit_id"] for fit in expected],
+               "runtime_distribution": {}, "peak_rss_bytes": peak_rss, "peak_process_tree_rss_bytes": peak_rss, "threshold_result": "pass", "validation_status": "pending", "reason_codes": []}
     _atomic_json(run_dir / "summary.json", summary); return summary
 
 
@@ -412,7 +419,7 @@ def resume_cpu_sequential(plan: dict[str, Any], output_dir: Path, *, repo_root: 
         # Incomplete runs have missing fits; other corruption is quarantined and cannot be overwritten.
         fatal = set(report["reason_codes"]) - {"missing_logical_fit", "summary_mismatch"}
         if fatal: quarantine_corrupt(output_dir, report); raise P7C4BBenchmarkError("corrupt artifacts")
-    skipped = executed = 0
+    run_started = time.monotonic(); skipped = executed = 0
     for fit in expected:
         d = output_dir / "fits" / fit["logical_fit_id"]
         result = _read_json(d / "result.json", [], "") if d.exists() else None
@@ -422,19 +429,27 @@ def resume_cpu_sequential(plan: dict[str, Any], output_dir: Path, *, repo_root: 
         if d.exists() and any((d / "attempts").glob("*.json")):
             quarantine_corrupt(output_dir, {"reason_codes": ["corrupt_artifact"], "valid": False})
             raise P7C4BBenchmarkError("corrupt artifacts")
-        # Use the established isolated worker and preserve B1a telemetry layout.
-        d.mkdir(parents=True, exist_ok=True); started_at, started = _now(), time.monotonic(); q = get_context("spawn").Queue(); child = get_context("spawn").Process(target=_child, args=(q, fit, str(root), True)); child.start(); child.join(timeout_seconds)
+        # Use the established isolated worker and sample the live parent/child
+        # tree at one instant per tick (not a sum of independent peaks).
+        d.mkdir(parents=True, exist_ok=True); started_at, started = _now(), time.monotonic(); q = get_context("spawn").Queue(); child = get_context("spawn").Process(target=_child, args=(q, fit, str(root), True)); child.start(); parent_pid = os.getpid(); peak_tree = 0
+        while child.is_alive() and time.monotonic() - started < timeout_seconds:
+            try: peak_tree = max(peak_tree, _tree_rss(psutil.Process(parent_pid)))
+            except psutil.Error: pass
+            time.sleep(.01)
         timed_out = child.is_alive()
-        if timed_out: child.terminate(); child.join()
+        if timed_out: child.terminate()
+        child.join()
+        try: peak_tree = max(peak_tree, _tree_rss(psutil.Process(parent_pid)))
+        except psutil.Error: pass
         msg = q.get() if not q.empty() else {"ok": False, "error_type": "WorkerExit", "message": "no evidence"}
         reason = None if msg.get("ok") and not timed_out and child.exitcode == 0 else _reason(msg, timed_out)
-        attempt = 1; record = {**fit, "schema_version": 2, "attempt": attempt, "attempt_id": sha256_canonical({"execution_id": fit["execution_id"], "attempt": attempt}), "status": "completed" if reason is None else "failed", "reason_code": reason, "started_at": started_at, "completed_at": _now(), "wall_clock_seconds": time.monotonic()-started, "peak_rss_bytes_process_tree": 0, "rss_hard_threshold_bytes": 12348030976, "rss_threshold_pass": True, "process_exit_code": child.exitcode, "timings": msg.get("timings", {}), "thread_evidence": msg.get("threads")}
+        attempt = 1; record = {**fit, "schema_version": 2, "attempt": attempt, "attempt_id": sha256_canonical({"execution_id": fit["execution_id"], "attempt": attempt}), "status": "completed" if reason is None else "failed", "reason_code": reason, "started_at": started_at, "completed_at": _now(), "wall_clock_seconds": time.monotonic()-started, "peak_rss_bytes_process_tree": int(peak_tree), "rss_hard_threshold_bytes": 12348030976, "rss_threshold_pass": peak_tree <= 12348030976, "process_exit_code": child.exitcode, "timings": msg.get("timings", {}), "thread_evidence": msg.get("threads"), "process_tree_telemetry": {"schema_version": 1, "parent_pid": parent_pid, "worker_pid": child.pid, "sampler_interval_seconds": .01, "peak_process_tree_rss_bytes": int(peak_tree), "max_active_workers": 1}}
         _atomic_json(d / "attempts" / "attempt-1.json", record)
         if reason is None: _atomic_json(d / "result.json", record); _atomic_json(d / "COMPLETED.json", {"logical_fit_id": fit["logical_fit_id"], "attempt_id": record["attempt_id"]})
         else: _atomic_json(d / "failure.json", record)
         executed += 1
         if stop_after is not None and executed >= stop_after: break
-    _write_summary(output_dir, expected, skipped)
+    summary = _write_summary(output_dir, expected, skipped); summary["run_wall_clock_seconds"] = time.monotonic() - run_started; _atomic_json(output_dir / "summary.json", summary)
     report = validate_artifacts(output_dir, write_report=True)
     if report["valid"]:
         summary = _read_json(output_dir / "summary.json", [], "") or {}; summary.update(validation_status="pass", reason_codes=[]); _atomic_json(output_dir / "summary.json", summary)
@@ -468,7 +483,7 @@ def resume_cpu_parallel_2(plan: dict[str, Any], output_dir: Path, *, repo_root: 
         if result and marker and result.get("status") == "completed" and marker.get("attempt_id") == result.get("attempt_id"): skipped += 1
         elif d.exists() and any((d / "attempts").glob("*.json")): quarantine_corrupt(output_dir, {"reason_codes": ["corrupt_artifact"], "valid": False}); raise P7C4BBenchmarkError("corrupt artifacts")
         else: pending.append(fit)
-    active: dict[str, tuple[Any, Any, dict[str, Any], float, str]] = {}; executed = 0; parent_pid = os.getpid(); peak_tree = 0; max_active = 0; context = get_context("spawn")
+    run_started = time.monotonic(); active: dict[str, tuple[Any, Any, dict[str, Any], float, str]] = {}; executed = 0; parent_pid = os.getpid(); peak_tree = 0; max_active = 0; context = get_context("spawn")
     while pending or active:
         while pending and len(active) < 2 and (stop_after is None or executed + len(active) < stop_after):
             fit = pending.pop(0); q = context.Queue(); child = context.Process(target=_child, args=(q, fit, str(root), True)); started_at = _now(); started = time.monotonic(); child.start()
@@ -488,7 +503,7 @@ def resume_cpu_parallel_2(plan: dict[str, Any], output_dir: Path, *, repo_root: 
         if stop_after is not None and executed >= stop_after:
             for child, *_ in active.values(): child.terminate(); child.join()
             active.clear(); break
-    _write_summary(output_dir, expected, skipped); report = validate_artifacts(output_dir, write_report=True)
+    summary = _write_summary(output_dir, expected, skipped); summary.update(run_wall_clock_seconds=time.monotonic() - run_started, peak_process_tree_rss_bytes=peak_tree, max_observed_active_workers=max_active); _atomic_json(output_dir / "summary.json", summary); report = validate_artifacts(output_dir, write_report=True)
     if report["valid"]:
         summary = _read_json(output_dir / "summary.json", [], "") or {}; summary.update(validation_status="pass", reason_codes=[], max_observed_active_workers=max_active, peak_process_tree_rss_bytes=peak_tree); _atomic_json(output_dir / "summary.json", summary)
         report = validate_artifacts(output_dir, write_report=True); _atomic_json(output_dir / "COMPLETED.json", {"validation_report_digest": sha256_canonical(report), "run_id": output_dir.name})
