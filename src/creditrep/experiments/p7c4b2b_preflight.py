@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from queue import Empty
 import math
 import os
 import platform
@@ -571,10 +572,13 @@ def resume(
                 if timed_out
                 else (p.join(1) is None and not p.is_alive())
             )
-            msg = (
-                q.get()
-                if not q.empty()
-                else {
+            try:
+                # Queue.empty() is explicitly unreliable across processes: a
+                # successful spawned worker can exit before its feeder thread
+                # makes telemetry visible to the parent.
+                msg = q.get(timeout=1)
+            except Empty:
+                msg = {
                     "ok": False,
                     "error_type": "WorkerCrash",
                     "message": "worker exited without telemetry",
@@ -585,7 +589,6 @@ def resume(
                     "available_end": psutil.virtual_memory().available,
                     "thread_env": {},
                 }
-            )
             transient = msg.get("error_type") in {"OSError", "ConnectionError"}
             reason = (
                 "fit_timeout"
