@@ -1,6 +1,6 @@
 # Phương pháp dự kiến
 
-Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái nghiệm thu kỹ thuật. P7C.3: Completed — canonical feasibility pilot accepted. P7C.4B.1: Completed — harness CPU sequential/parallel-2 đã qua independent operational readiness review; smoke evidence vẫn non-publishable. P7C.4B.2 chỉ Next cho planning/dry-run và canonical/GPU execution vẫn cần DR-P7C-03/04, final manifest cùng human approval riêng. Đây không phải kết quả hiệu năng dự báo hoặc kết quả khoa học cuối cùng.
+Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái nghiệm thu kỹ thuật. P7C.3: Completed — canonical feasibility pilot accepted. P7C.4B.1: Completed — harness CPU sequential/parallel-2 đã qua independent operational readiness review. P7C.4B.2a đã khóa scientific scope MLP balanced 24/48/48 và giữ MLP-5. P7C.4B.2b executable bounded-preflight harness đã sẵn sàng và chỉ được kiểm thử bằng fixture; target compute preflight, runtime/cost, canonical mode và canonical/GPU execution vẫn pending/NO-GO. Đây không phải kết quả hiệu năng dự báo hoặc kết quả khoa học cuối cùng.
 
 ## Replication core
 
@@ -27,8 +27,20 @@ Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái 
 
 ## Bước tiếp theo
 
-- P7C.1 inventory/readiness, P7C.2.1 immutable 60-fit RF/XGBoost engineering harness, P7C.2.2 research pilot, P7C.2.3 protocol decision, P7C.3 closeout và P7C.4A benchmark plan đã completed. P7C.4B blocked awaiting human approval: chưa chạy benchmark, chưa phê duyệt `DR-P7C-03`/`DR-P7C-04`, chưa khóa final MLP manifest và chưa chọn backend. Pilot/benchmark chỉ là engineering evidence non-publishable; không dùng predictive metric/ranking để giảm grid.
+- P7C.4B.2a đã ghi nhận DR-P7C-03/04 approved và digest-locked proposed MLP scientific scope; đây là reduced deterministic subset, không phải exhaustive replication. P7C.4B.2b đã cung cấp CLI/guards, process-isolated runner, atomic artifact/resume/retry validator, telemetry reconstruction và fail-closed projection/RAM/cost/execution-plan contracts. Target single-VM preflight vẫn là bước tiếp theo. Fixture validation chỉ là engineering evidence non-publishable; không dùng predictive metric/ranking để giảm grid.
 - Core replication chỉ được bắt đầu cho scope đã khóa sau P7C.7 readiness gate. Không có pilot metric nào được dùng để chọn CART candidate.
+
+## P7C.4B.2c outer-refit/overhead preflight
+
+- Implementation đã hoàn thành ở mức code/contract: population 270 outer refit được suy ra từ 90 outer partitions × ba MLP; sampling phân tầng theo dataset, model, candidate proxy và CPU mode.
+- Execution core dùng process spawn, tách warmup khỏi measured phase, instrument canonical preprocessing/refit path, ghi artifact atomic, resume sample hợp lệ và quarantine state hỏng.
+- Synthetic validation chỉ kiểm tra lifecycle bằng fixture cực nhỏ và luôn là non-scientific evidence. Target outer-refit/overhead preflight chưa chạy, runtime/cost và canonical mode vẫn unknown, execution plan vẫn fail closed.
+
+## P7C.4B.2d target authorization readiness
+
+- Stage 0 static contract đã harden: đối chiếu Git HEAD, dependency fingerprint, checksum input AC/GMC, disk/output namespace và bounded process-spawn probe; proposal bind đúng bốn canary task của từng mode và luôn non-effective.
+- Chưa có target environment, price/budget, canary approval hay effective authorization. Vì vậy target preflight chưa chạy và canonical execution vẫn NO-GO.
+- Readiness hiện tại duy nhất: `READY_FOR_OPERATOR_ENVIRONMENT_COLLECTION`; đây không phải authorization hay permission chạy canary.
 
 ## Modern reassessment
 

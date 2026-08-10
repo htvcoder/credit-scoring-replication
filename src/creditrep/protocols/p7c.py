@@ -33,10 +33,11 @@ SEARCH_STATUSES = {
     "locked",
     "no_tuning_pending_final_contract",
     "reference_unlocked",
+    "scientific_scope_locked_compute_pending",
     "decision_pending",
     "feasibility_required",
 }
-BACKENDS = {"cpu", "cpu_or_gpu", "gpu_recommended"}
+BACKENDS = {"cpu", "cpu_or_gpu", "gpu_recommended", "pending_compute_preflight"}
 FEASIBILITY = {
     "engineering_evidenced",
     "feasibility_completed_canonical_vm_run_003",
@@ -526,10 +527,10 @@ def validate_protocol_inventory(
         if len(set(plan_references)) != 1 or plan_references[0] is None:
             _error("MLP models must share one feasibility-plan reference.")
         for item in mlps:
-            if item.get("decision_record_reference") != "docs/P7C3_MLP_DECISION_READINESS.md":
-                _error("MLP feasibility plan requires the shared P7C.3 readiness record.")
+            if item.get("decision_record_reference") not in {"docs/P7C3_MLP_DECISION_READINESS.md", "docs/P7C4B2A_MLP_SCIENTIFIC_SCOPE_AND_READINESS.md"}:
+                _error("MLP feasibility plan requires a shared P7C readiness record.")
         plan = load_mlp_feasibility_plan(root / plan_references[0], repo_root=root)
-        if [item["reference_candidate_count"] for item in plan["models"]] != [
+        if [item["search_space_status"] for item in mlps] != ["scientific_scope_locked_compute_pending"] * 3 and [item["reference_candidate_count"] for item in plan["models"]] != [
             item["candidate_count"] for item in mlps
         ]:
             _error("MLP inventory counts disagree with feasibility plan.")
@@ -547,7 +548,7 @@ def validate_protocol_inventory(
         benchmark_plan = load_mlp_compute_benchmark_plan(
             root / benchmark_references[0], repo_root=root
         )
-        if benchmark_plan["reference_candidate_counts"] != dict(
+        if [item["search_space_status"] for item in mlps] != ["scientific_scope_locked_compute_pending"] * 3 and benchmark_plan["reference_candidate_counts"] != dict(
             zip(
                 ["mlp_1", "mlp_3", "mlp_5"],
                 [item["candidate_count"] for item in mlps],
@@ -555,6 +556,16 @@ def validate_protocol_inventory(
             )
         ):
             _error("MLP inventory counts disagree with P7C.4A benchmark plan.")
+        scope_status = [item["search_space_status"] for item in mlps]
+        if scope_status == ["scientific_scope_locked_compute_pending"] * 3:
+            from creditrep.protocols.p7c4b2a import load_manifest as load_b2a_manifest
+
+            manifest_refs = [item["final_manifest_reference"] for item in mlps]
+            if len(set(manifest_refs)) != 1 or manifest_refs[0] != "configs/protocols/p7c/p7c4b2a_mlp_scientific_manifest.yaml":
+                _error("MLP approved scope must share the P7C.4B.2a scientific manifest.")
+            final = load_b2a_manifest(root / manifest_refs[0], repo_root=root)
+            if [item["candidate_count"] for item in final["models"]] != [24, 48, 48]:
+                _error("MLP approved scope candidate counts disagree with final scientific manifest.")
     return deepcopy(payload)
 
 
