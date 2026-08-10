@@ -66,6 +66,44 @@ sai mode, digest, budget, output hoặc expiry. Proposal không được biến 
 .\.venv\Scripts\python.exe -m creditrep.experiments.p7c4b2d_cli validate-authorization-proposal --environment <evidence.json> --proposal <proposal.json>
 ```
 
+## Cung cấp metadata operator ngoài repository
+
+`collect-target-environment` tự đo `vcpu_count` (`os.cpu_count()`), `ram_bytes`
+(`psutil.virtual_memory().total`) và CPU model (`platform.processor()`); operator
+không được override các giá trị này, Git commit, plan digest, dependency hash,
+dataset hashes, output directory, execution mode hay process probe. Provider,
+region, instance ID, disk type, network topology, VM count và price/budget envelope
+không được suy đoán; chúng phải nằm trong file JSON **ngoài repository**.
+
+Schema `--operator-metadata` yêu cầu đúng toàn bộ 12 field: `provider`, `region`,
+`instance_id`, `disk_type`, `network_topology`, `vm_count`, `hourly_price`,
+`currency`, `price_source`, `price_observed_at`, `maximum_runtime_hours`,
+`maximum_monetary_budget`. Unknown field, thiếu field, `NaN`/`Infinity`, type/range
+sai hoặc override canonical field đều bị fail-closed. Collector merge hợp lệ rồi tạo
+lại `environment_digest`; không bao giờ sửa file evidence sau khi digest đã có.
+
+Linux:
+
+```bash
+mkdir -p /secure/operator-input
+cat > /secure/operator-input/p7c4b2d-metadata.json <<'JSON'
+{"provider":"example","region":"example-region","instance_id":"operator-id","disk_type":"ssd","network_topology":"single_vm","vm_count":1,"hourly_price":0.25,"currency":"USD","price_source":"operator-invoice","price_observed_at":"2026-08-10T00:00:00Z","maximum_runtime_hours":4.0,"maximum_monetary_budget":1.0}
+JSON
+python -m creditrep.experiments.p7c4b2d_cli collect-target-environment --mode cpu_parallel_1 --output-directory artifacts/p7c4b2d-target --operator-metadata /secure/operator-input/p7c4b2d-metadata.json > /secure/operator-input/p7c4b2d-evidence.json
+```
+
+Windows PowerShell:
+
+```powershell
+$meta = 'C:\secure\operator-input\p7c4b2d-metadata.json'
+.\.venv\Scripts\python.exe -m creditrep.experiments.p7c4b2d_cli collect-target-environment --mode cpu_parallel_1 --output-directory artifacts/p7c4b2d-target --operator-metadata $meta | Set-Content -Encoding utf8 C:\secure\operator-input\p7c4b2d-evidence.json
+```
+
+Exit code `3` from collection is expected: collection does not grant authorization.
+Only after a separately stored evidence JSON passes `inspect-target-requirements`
+and `review-plan` can it reach operator-review readiness; it remains non-effective
+and cannot unlock the runner.
+
 Exit code: `0` valid/ready-for-review; `2` invalid input/proposal; `3` review bị
 chặn; `4` internal error. JSON stdout deterministic và chỉ có stable reason codes.
 
