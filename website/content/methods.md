@@ -30,6 +30,12 @@ Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái 
 - P7C.4B.2a đã ghi nhận DR-P7C-03/04 approved và digest-locked proposed MLP scientific scope; đây là reduced deterministic subset, không phải exhaustive replication. P7C.4B.2b đã cung cấp CLI/guards, process-isolated runner, atomic artifact/resume/retry validator, telemetry reconstruction và fail-closed projection/RAM/cost/execution-plan contracts. Target single-VM preflight vẫn là bước tiếp theo. Fixture validation chỉ là engineering evidence non-publishable; không dùng predictive metric/ranking để giảm grid.
 - Core replication chỉ được bắt đầu cho scope đã khóa sau P7C.7 readiness gate. Không có pilot metric nào được dùng để chọn CART candidate.
 
+## P7C.4B.2c outer-refit/overhead preflight
+
+- Implementation đã hoàn thành ở mức code/contract: population 270 outer refit được suy ra từ 90 outer partitions × ba MLP; sampling phân tầng theo dataset, model, candidate proxy và CPU mode.
+- Execution core dùng process spawn, tách warmup khỏi measured phase, instrument canonical preprocessing/refit path, ghi artifact atomic, resume sample hợp lệ và quarantine state hỏng.
+- Synthetic validation chỉ kiểm tra lifecycle bằng fixture cực nhỏ và luôn là non-scientific evidence. Target outer-refit/overhead preflight chưa chạy, runtime/cost và canonical mode vẫn unknown, execution plan vẫn fail closed.
+
 ## Modern reassessment
 
 - CatBoost là phần Must của Phase 8 để có minimum evidence cho RQ3.

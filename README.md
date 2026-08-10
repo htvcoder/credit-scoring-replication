@@ -547,7 +547,7 @@ Generated from website/content/progress.yaml. Do not edit manually.
 - Last completed phase: Phase 6
 - Current phase: Phase 7
 - Next phase: Phase 7 - Core replication run
-- Updated at: 2026-08-09
+- Updated at: 2026-08-10
 
 | Phase | Status | Milestone tag |
 | --- | --- | --- |
@@ -601,6 +601,7 @@ Phase 7 checkpoints:
 - P7C.4B.2: In Progress - P7C.4B.2a completed planning/readiness. P7C.4B.2b executable bounded-preflight harness is ready, but target single-VM compute preflight is pending; canonical execution remains NO-GO pending preflight, canonical mode, execution/cost approval and execution-plan digest.
 - P7C.4B.2a: Completed - Completed — balanced MLP-1/3/5 scientific scope 24/48/48 generated deterministically from seed 42, validated and digest-locked; workload 54,270 fits, execution guard and static multi-VM sharding readiness contract added. No execution occurred.
 - P7C.4B.2b: Completed - Executable bounded-preflight harness ready — deterministic plan/CLI, target guard, process-isolated fixture-validated runner, atomic artifacts, resume/retry, validator, telemetry reconstruction and fail-closed projection/RAM/cost contracts pass. Target-machine preflight remains pending.
+- P7C.4B.2c: Completed - Implementation completed / target execution pending — process-isolated run/resume, canonical timing instrumentation, atomic artifact lifecycle, validator, stratified projection and fail-closed eligibility/CLI contracts pass controlled validation. Target outer-refit/overhead preflight has not run; canonical execution remains NO-GO.
 
 Current scope limits:
 - Core replication has not run.

@@ -222,9 +222,11 @@ def _fit_for_partition(
     evaluation_indices,
     protocol_config,
     model_stage,
+    timing_sink: dict[str, float] | None = None,
 ):
     """Fit classical models unchanged; neural models get a train-only stratified holdout."""
     if not _requires_validation_data(model_id):
+        preprocessing_started = time.perf_counter()
         pipeline, train, evaluation = _at_stage(
             "preprocessing",
             lambda: _fit_preprocessing(
@@ -234,6 +236,11 @@ def _fit_for_partition(
                 protocol_config=protocol_config,
             ),
         )
+        if timing_sink is not None:
+            timing_sink["preprocessing_elapsed_seconds"] = (
+                time.perf_counter() - preprocessing_started
+            )
+        fit_started = time.perf_counter()
         estimator = _at_stage(
             model_stage, lambda: create_model(model_id, parameters, random_seed=seed)
         )
@@ -241,6 +248,8 @@ def _fit_for_partition(
             model_stage,
             lambda: estimator.fit(train, dataset.target.iloc[list(train_indices)]),
         )
+        if timing_sink is not None:
+            timing_sink["model_fit_elapsed_seconds"] = time.perf_counter() - fit_started
         return estimator, pipeline, evaluation, None
     neural_context = {
         "outer_fold_id": outer_id,
@@ -258,6 +267,7 @@ def _fit_for_partition(
         inner_fold_id=inner_id,
         candidate_id=candidate_id,
     )
+    preprocessing_started = time.perf_counter()
     split = _at_stage(
         "early_stopping_split",
         lambda: create_early_stopping_split(
@@ -280,6 +290,11 @@ def _fit_for_partition(
             dataset.features.iloc[list(evaluation_indices)].copy(deep=True)
         ),
     )
+    if timing_sink is not None:
+        timing_sink["preprocessing_elapsed_seconds"] = (
+            time.perf_counter() - preprocessing_started
+        )
+    fit_started = time.perf_counter()
     estimator = _at_stage(
         "neural_model_initialization",
         lambda: create_model(model_id, parameters, random_seed=seed),
@@ -295,6 +310,8 @@ def _fit_for_partition(
         ),
         context=neural_context | {"early_stopping_split_seed": split_seed},
     )
+    if timing_sink is not None:
+        timing_sink["model_fit_elapsed_seconds"] = time.perf_counter() - fit_started
     return estimator, pipeline, evaluation, split
 
 
