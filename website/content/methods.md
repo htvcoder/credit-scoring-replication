@@ -38,8 +38,9 @@ Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái 
 
 ## P7C.4B.2d target authorization readiness
 
-- Decision-review contract đã hoàn thành: plan 324 task được kiểm tra theo strata, canary/staged stop gates, target-environment input gồm VM count do operator xác nhận, cost formula không giả định giá và authorization proposal non-effective.
+- Stage 0 static contract đã harden: đối chiếu Git HEAD, dependency fingerprint, checksum input AC/GMC, disk/output namespace và bounded process-spawn probe; proposal bind đúng bốn canary task của từng mode và luôn non-effective.
 - Chưa có target environment, price/budget, canary approval hay effective authorization. Vì vậy target preflight chưa chạy và canonical execution vẫn NO-GO.
+- Readiness hiện tại duy nhất: `READY_FOR_OPERATOR_ENVIRONMENT_COLLECTION`; đây không phải authorization hay permission chạy canary.
 
 ## Modern reassessment
 

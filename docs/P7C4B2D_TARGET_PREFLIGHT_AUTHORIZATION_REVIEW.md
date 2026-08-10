@@ -1,74 +1,84 @@
-# P7C.4B.2d — Review plan target preflight và readiness authorization
+# P7C.4B.2d — Target Preflight & Authorization Review
 
-P7C.4B.2d là decision package để operator review trước khi cấp quyền chạy target
-preflight. Nó không chạy target/canary, không tạo effective authorization, không
-nhập giá VM/GPU và không làm execution plan eligible.
+Checkpoint này chỉ cung cấp Stage 0 tĩnh và review object. Nó không chạy training,
+target canary hay full preflight; không tạo effective authorization và không làm
+`execution_plan_eligible` thành `true`.
 
-## Plan và coverage
+## Ba contract tách biệt
 
-Plan P7C.4B.2c có ba MLP, ba proxy (`low`, `typical`, `high`) và hai CPU modes.
-Vì vậy có **18 mode-qualified proxy representatives**; đây không phải 18 proxy
-độc lập vì mode đã là một trục trong số đó. Sáu dataset tạo 108 strata. Một warmup
-mỗi stratum tạo 108 task; hai measured repetitions tạo 216 task; tổng là 324,
-bằng immutable upper bound. Warmup không tham gia projection.
+1. **Target environment evidence** là bằng chứng runtime: Git HEAD, plan digest,
+   dependency fingerprint, checksum input, disk/output namespace, process-spawn
+   probe, mode/worker/VM và runtime/cost envelope. Không chứa operator approval.
+2. **Authorization proposal** là preview digest-bound cho đúng bốn task canary của
+   một mode. Nó luôn có `authorization_effective: false`.
+3. **Effective authorization** nằm ngoài scope checkpoint này. Runner P7C.4B.2c
+   vẫn yêu cầu contract/flag authorization riêng; environment hợp lệ hoặc proposal
+   hợp lệ không thể unlock runner.
 
-Ba proxy đại diện cho đầu nhẹ, trung tâm và nặng của candidate complexity theo
-hidden units/dropout/L2/learning rate. Chúng là proxy minh bạch, không phải
-candidate được canonical search chọn. Hai repetition chỉ cung cấp feasibility
-range empirical min/max; không đủ để khẳng định confidence interval, quantile
-ổn định hay bootstrap inference. Sáu dataset cần được giữ trong full preflight để
-tránh bỏ sót variation theo data size/features; canary chỉ là gate vận hành.
+## Stage 0 fail-closed
 
-Mode 1/2 dùng cùng logical task semantics; mode 2 có hai worker process. Aggregate
-work, wall-clock, startup/queue, idle và artifact overhead giữ taxonomy riêng;
-không được cộng hai lần hoặc suy rộng bounded capacity loss theo global multiplier.
+Stage 0 đối chiếu Git HEAD thực tế bằng `git rev-parse HEAD`, plan digest canonical,
+và dependency fingerprint `sha256-path-nul-bytes-v1` trên `pyproject.toml`,
+`requirements.txt` và `requirements-dev.txt`. Ba file này là toàn bộ source dependency
+canonical hiện có: `pyproject.toml` khai báo build/runtime/optional dependencies,
+`requirements.txt` pin runtime và `requirements-dev.txt` pin test; repository không có
+constraints, Pipfile, Poetry hay uv lockfile. Với canary mỗi mode, nó đọc registry/checksum source of
+truth để tính SHA-256 của đúng AC và GMC; placeholder, hash sai, thiếu hoặc dư
+dataset đều bị chặn.
 
-## Staged execution
+Disk policy `p7c4b2d-v1-5GiB-static-canary-output-and-quarantine-margin` yêu cầu
+ít nhất 5 GiB free space: đây là operational floor được version hóa cho output,
+quarantine và resume metadata, không phải scientific runtime estimate. Hằng số và
+policy string nằm trong validation contract, phải xuất hiện trong evidence (`disk_policy`)
+và proposal (`minimum_free_disk_bytes`, `disk_policy`), nên thay đổi policy không thể
+âm thầm qua digest/validator. Stage 0 trả available/required/margin. Output phải là namespace cụ thể bên dưới
+`artifacts/`, không được là repo root, artifacts root, home hay path traversal; một
+target không rỗng bị báo collision, không bị xóa hay ghi đè.
 
-Stage 0 là static validation: plan/Git/dataset hashes, preprocessing/proxy,
-output namespace, disk, process spawn và target environment contract. Fail ở đây
-không được chạy workload.
+Process-spawn được probe bằng một child Python `sys.exit(0)` có timeout 2 giây.
+Probe không import model, đọc dataset hay chạy workload. GPU-less CPU target phải
+ghi rõ `gpu_count: 0`, `gpu_vram_bytes: 0`, `gpu_model: "none"`.
 
-Stage 1 canary chọn deterministic subset immutable: AC/light và GMC/heavy, MLP-3,
-mỗi case có warmup và measured task, cho từng mode được target hỗ trợ. Canary mang
-`execution_stage: target_canary` và `scientific_projection_eligible: false`; nó
-không tự trở thành full evidence.
+`cpu_parallel_2` là hai worker trên một VM; số VM chỉ lấy từ evidence `vm_count`.
+Two-VM cost chỉ được tính khi evidence xác nhận `vm_count: 2`.
 
-Stage 2 chạy batch/stratum partial sau canary được review. Dừng khi vượt runtime,
-memory/disk, failure-rate, timing invariant, artifact validation hoặc operator
-budget. Stage 3 full preflight chỉ được xem xét sau authorization riêng, Stage 0/1
-pass và input vận hành đầy đủ.
+## Canary và proposal
 
-## Target environment và cost
+Mỗi mode chọn bất biến, đúng thứ tự: AC/light MLP-3 warmup, AC/light measured-0,
+GMC/heavy MLP-3 warmup, GMC/heavy measured-0. Bốn task/mode này là engineering
+validation, `scientific_projection_eligible: false`; canary không phải scientific
+evidence và warmup không tham gia projection.
 
-Operator phải cung cấp provider/region/VM, OS/Python/CPU/vCPU/RAM, GPU/CUDA khi áp
-dụng, disk/free disk/network, mode/workers, Git/environment-lock/dataset hashes,
-output path, **vm_count** do operator xác nhận, budgets và authorization metadata. Unknown phải là `null`/missing,
-không được thay bằng assumption.
+Proposal bind plan digest, environment digest, mode, bốn IDs, output namespace,
+runtime/budget, price/currency, timestamp/expiry. Validator chặn task thiếu/dư/trùng,
+sai mode, digest, budget, output hoặc expiry. Proposal không được biến thành approval.
 
-Cost output có lower/central/upper wall-clock, hourly price, currency/source/time
-và lower/central/upper cost. Không có price thì cost là `unknown`, không phải 0.
-`cpu_parallel_2` nghĩa là hai worker process trên **một VM**; nó không suy ra hai VM.
-Mode/VM count được tách riêng; two-VM billing chỉ áp dụng khi environment xác nhận
-`vm_count: 2`, theo `VM count × wall-clock × price`,
-không dùng aggregate work làm billed time.
-
-## Proposal và commands
-
-Authorization proposal là preview object có `artifact_type:
-authorization_proposal` và `authorization_effective: false`. Nó bind plan/environment
-digest nhưng không thể unlock runner. P7C.4B.2d không ghi proposal file; CLI chỉ
-render stdout để operator review.
+## CLI an toàn và exit code
 
 ```powershell
-.\.venv\Scripts\python.exe -m creditrep.experiments.p7c4b2d_cli review-plan
-.\.venv\Scripts\python.exe -m creditrep.experiments.p7c4b2d_cli inspect-target-requirements --environment <operator-env.json>
-.\.venv\Scripts\python.exe -m creditrep.experiments.p7c4b2d_cli render-authorization-proposal --environment <operator-env.json>
+# Thu thập evidence local; unknown operator input vẫn null và bị fail-closed.
+.\.venv\Scripts\python.exe -m creditrep.experiments.p7c4b2d_cli collect-target-environment --mode cpu_parallel_1 --output-directory artifacts/p7c4b2d-target
+
+# Validate/review static, không chạy workload.
+.\.venv\Scripts\python.exe -m creditrep.experiments.p7c4b2d_cli inspect-target-requirements --environment <evidence.json>
+.\.venv\Scripts\python.exe -m creditrep.experiments.p7c4b2d_cli review-plan --environment <evidence.json>
+.\.venv\Scripts\python.exe -m creditrep.experiments.p7c4b2d_cli render-authorization-proposal --environment <evidence.json>
+.\.venv\Scripts\python.exe -m creditrep.experiments.p7c4b2d_cli validate-authorization-proposal --environment <evidence.json> --proposal <proposal.json>
 ```
 
-Readiness hiện tại là `NOT_READY_FOR_AUTHORIZATION`: chưa có target environment,
-budget/price input, canary approval hay effective authorization. Controlled fixture
-có thể đạt `READY_FOR_CANARY_AUTHORIZATION_REVIEW`; full target preflight vẫn cần
-gate chặt hơn. Sau authorization ở một lượt sau, operator vẫn phải dùng runner
-P7C.4B.2c để resume/quarantine/validate và chỉ dùng projection từ target artifacts
-đã validator PASS.
+Exit code: `0` valid/ready-for-review; `2` invalid input/proposal; `3` review bị
+chặn; `4` internal error. JSON stdout deterministic và chỉ có stable reason codes.
+
+Cấm ở checkpoint này: `p7c4b2c_cli run`, `resume`, `--target-preflight-authorized`,
+target canary, model training, hoặc coi proposal là authorization. Không ghi runtime
+artifact, credential hay environment evidence thật vào Git.
+
+Reason code tiêu biểu: `git_provenance_unknown`, `git_provenance_mismatch`,
+`environment_lock_mismatch`, `dataset_input_missing`, `dataset_input_hash_mismatch`,
+`insufficient_free_disk`, `unsafe_output_namespace`, `output_collision`,
+`process_spawn_probe_timeout`, `worker_count_mismatch` và
+`execution_mode_unsupported`.
+
+Readiness hiện tại là **`READY_FOR_OPERATOR_ENVIRONMENT_COLLECTION`**. Nó không
+phải `READY_FOR_CANARY_EXECUTION`, không phải effective authorization và không
+cho phép chạy target canary.

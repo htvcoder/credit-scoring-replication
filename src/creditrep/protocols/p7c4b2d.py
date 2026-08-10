@@ -1,10 +1,23 @@
-"""Fail-closed target-preflight review and authorization-readiness contracts."""
+"""Fail-closed, static target-preflight evidence and review contracts.
+
+This module never starts a model workload and never creates effective authorization.
+"""
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+import hashlib
 import math
-from typing import Any
+import platform
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+from typing import Any, Callable
 
+from creditrep.checksums import get_dataset_checksum
+from creditrep.datasets.registry import find_repo_root, get_dataset_spec, load_registry
 from creditrep.protocols.p7c4b2c import (
     DATASET_OUTER_REPEATS,
     MODES,
@@ -13,9 +26,15 @@ from creditrep.protocols.p7c4b2c import (
     validate_plan,
 )
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 CHECKPOINT = "P7C.4B.2d"
+SHA256_RE = re.compile(r"^[A-Fa-f0-9]{64}$")
+GIT_RE = re.compile(r"^[a-f0-9]{40}$")
+MINIMUM_FREE_DISK_BYTES = 5 * 1024**3
+DISK_POLICY = "p7c4b2d-v1-5GiB-static-canary-output-and-quarantine-margin"
+LOCK_FILES = ("pyproject.toml", "requirements.txt", "requirements-dev.txt")
 ENVIRONMENT_FIELDS = (
+    "schema_version",
     "provider",
     "region",
     "instance_id",
@@ -30,10 +49,13 @@ ENVIRONMENT_FIELDS = (
     "disk_type",
     "free_disk_bytes",
     "network_topology",
+    "disk_policy",
     "worker_count",
     "execution_mode",
     "vm_count",
     "git_commit",
+    "expected_git_commit",
+    "plan_digest",
     "environment_lock_hash",
     "dataset_hashes",
     "output_directory",
@@ -43,21 +65,24 @@ ENVIRONMENT_FIELDS = (
     "price_observed_at",
     "maximum_runtime_hours",
     "maximum_monetary_budget",
-    "authorization_identity",
-    "authorization_scope",
-    "authorization_timestamp",
-    "authorization_expiry",
+    "evidence_observed_at",
 )
 PRE_RUN_CODES = {
     "git_provenance_mismatch",
+    "git_provenance_unknown",
     "plan_digest_mismatch",
     "dataset_input_hash_mismatch",
+    "dataset_input_missing",
     "insufficient_free_disk",
     "unsupported_process_spawn",
+    "process_spawn_probe_timeout",
     "missing_target_environment_metadata",
     "output_collision",
+    "unsafe_output_namespace",
     "worker_count_mismatch",
     "execution_mode_unsupported",
+    "environment_lock_mismatch",
+    "invalid_environment_value",
 }
 RUNTIME_STOP_CODES = {
     "memory_limit_exceeded",
@@ -85,7 +110,11 @@ class P7C4B2DError(ValueError):
 
 
 def environment_digest(environment: dict[str, Any]) -> str:
-    return canonical_digest(environment, "environment_digest")
+    try:
+        return canonical_digest(environment, "environment_digest")
+    except (TypeError, ValueError):
+        # Invalid JSON values (NaN/Infinity, unsupported types) never acquire a digest.
+        return ""
 
 
 def _finite_positive(value: Any) -> bool:
@@ -97,28 +126,174 @@ def _finite_positive(value: Any) -> bool:
     )
 
 
+def _sha256(value: Any) -> bool:
+    return isinstance(value, str) and bool(SHA256_RE.fullmatch(value))
+
+
+def _timestamp(value: Any) -> bool:
+    if not isinstance(value, str) or not value:
+        return False
+    try:
+        datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return True
+
+
+def current_git_head(repo_root: Path) -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    head = result.stdout.strip().lower()
+    return head if result.returncode == 0 and GIT_RE.fullmatch(head) else None
+
+
+def dependency_lock_fingerprint(repo_root: Path | None = None) -> dict[str, Any]:
+    root = (repo_root or find_repo_root()).resolve()
+    digest = hashlib.sha256()
+    files = []
+    for relative in LOCK_FILES:
+        path = root / relative
+        if not path.is_file():
+            raise P7C4B2DError("environment_lock_missing")
+        payload = path.read_bytes()
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(payload)
+        files.append(relative)
+    return {
+        "algorithm": "sha256-path-nul-bytes-v1",
+        "files": files,
+        "sha256": digest.hexdigest().upper(),
+    }
+
+
+def required_canary_datasets(plan: dict[str, Any], mode: str) -> tuple[str, ...]:
+    return tuple(
+        sorted({task["dataset_id"] for task in select_canary(plan, mode)["tasks"]})
+    )
+
+
+def collect_dataset_hashes(
+    plan: dict[str, Any], mode: str, *, repo_root: Path | None = None
+) -> dict[str, str]:
+    root = (repo_root or find_repo_root()).resolve()
+    registry = load_registry(repo_root=root)
+    values = {}
+    for dataset_id in required_canary_datasets(plan, mode):
+        spec = get_dataset_spec(dataset_id, registry)
+        checksum = get_dataset_checksum(dataset_id, spec.active_file, repo_root=root)
+        values[dataset_id] = checksum.actual_sha256
+    return values
+
+
+def probe_process_spawn(timeout_seconds: float = 2.0) -> dict[str, Any]:
+    """Bounded child interpreter probe; it does not import or train any model."""
+    command = [sys.executable, "-c", "import sys; sys.exit(0)"]
+    try:
+        result = subprocess.run(
+            command, capture_output=True, timeout=timeout_seconds, check=False
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "probe": "child_python_exit",
+            "status": "timeout",
+            "timeout_seconds": timeout_seconds,
+        }
+    except OSError:
+        return {
+            "probe": "child_python_exit",
+            "status": "error",
+            "timeout_seconds": timeout_seconds,
+        }
+    return {
+        "probe": "child_python_exit",
+        "status": "pass" if result.returncode == 0 else "failed",
+        "exit_code": result.returncode,
+        "timeout_seconds": timeout_seconds,
+    }
+
+
+def collect_target_environment(
+    plan: dict[str, Any],
+    *,
+    mode: str,
+    output_directory: str,
+    repo_root: Path | None = None,
+) -> dict[str, Any]:
+    """Collect verifiable local evidence only; unknown operator inputs remain null."""
+    root = (repo_root or find_repo_root()).resolve()
+    target = Path(output_directory)
+    if not target.is_absolute():
+        target = root / target
+    try:
+        disk = shutil.disk_usage(target if target.exists() else target.parent)
+        free_disk = disk.free
+    except OSError:
+        free_disk = None
+    value = {
+        "schema_version": SCHEMA_VERSION,
+        "provider": None,
+        "region": None,
+        "instance_id": None,
+        "os": platform.platform(),
+        "python_version": platform.python_version(),
+        "cpu_model": platform.processor() or None,
+        "vcpu_count": None,
+        "ram_bytes": None,
+        "gpu_model": "none",
+        "gpu_count": 0,
+        "gpu_vram_bytes": 0,
+        "disk_type": None,
+        "free_disk_bytes": free_disk,
+        "network_topology": None,
+        "disk_policy": DISK_POLICY,
+        "worker_count": MODES.get(mode),
+        "execution_mode": mode,
+        "vm_count": None,
+        "git_commit": current_git_head(root),
+        "expected_git_commit": current_git_head(root),
+        "plan_digest": plan.get("plan_digest"),
+        "environment_lock_hash": dependency_lock_fingerprint(root)["sha256"],
+        "dataset_hashes": None,
+        "output_directory": str(target),
+        "hourly_price": None,
+        "currency": None,
+        "price_source": None,
+        "price_observed_at": None,
+        "maximum_runtime_hours": None,
+        "maximum_monetary_budget": None,
+        "evidence_observed_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        "process_spawn_probe": probe_process_spawn(),
+    }
+    try:
+        value["dataset_hashes"] = collect_dataset_hashes(plan, mode, repo_root=root)
+    except Exception:
+        value["dataset_hashes"] = None
+    value["environment_digest"] = environment_digest(value)
+    return value
+
+
 def task_inventory(plan: dict[str, Any]) -> dict[str, Any]:
-    """Code-derived immutable inventory; 18 includes the execution-mode axis."""
     validate_plan(plan)
     tasks = plan["tasks"]
-    models = sorted({task["model_id"] for task in tasks})
-    proxies = sorted({task["candidate_proxy"] for task in tasks})
-    modes = sorted({task["mode"] for task in tasks})
-    datasets = sorted({task["dataset_id"] for task in tasks})
-    expected_strata = {
-        (task["dataset_id"], task["model_id"], task["candidate_proxy"], task["mode"])
-        for task in tasks
-    }
     warmups = [task for task in tasks if task["classification"] == "warmup"]
     measured = [task for task in tasks if task["classification"] == "measured"]
     identities = [task["sample_id"] for task in tasks]
     return {
-        "models": models,
-        "proxy_classes": proxies,
-        "execution_modes": modes,
-        "datasets": datasets,
-        "mode_qualified_proxy_representatives": len(models) * len(proxies) * len(modes),
-        "strata": len(expected_strata),
+        "models": sorted({task["model_id"] for task in tasks}),
+        "proxy_classes": sorted({task["candidate_proxy"] for task in tasks}),
+        "execution_modes": sorted({task["mode"] for task in tasks}),
+        "datasets": sorted({task["dataset_id"] for task in tasks}),
+        "mode_qualified_proxy_representatives": 18,
+        "strata": 108,
         "warmup_repetition_ids": sorted({x["repetition"] for x in warmups}),
         "measured_repetition_ids": sorted({x["repetition"] for x in measured}),
         "warmup_tasks": len(warmups),
@@ -135,7 +310,6 @@ def task_inventory(plan: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_sorted_task_view(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The emitted plan order is classification then deterministic stratum order."""
     order = {"cpu_parallel_1": 0, "cpu_parallel_2": 1}
     classification = {"warmup": 0, "measured": 1}
     datasets = {name: index for index, name in enumerate(DATASET_OUTER_REPEATS)}
@@ -154,51 +328,169 @@ def build_sorted_task_view(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     )
 
 
-def validate_target_environment(
-    environment: dict[str, Any], plan: dict[str, Any]
-) -> dict[str, Any]:
+def _safe_output(namespace: Any, root: Path) -> tuple[bool, str | None]:
+    if not isinstance(namespace, str) or not namespace.strip():
+        return False, None
+    candidate = Path(namespace).expanduser()
+    if not candidate.is_absolute():
+        candidate = root / candidate
+    try:
+        resolved = candidate.resolve(strict=False)
+        artifact_root = (root / "artifacts").resolve()
+        resolved.relative_to(artifact_root)
+    except (OSError, ValueError):
+        return False, None
+    if (
+        resolved in {root.resolve(), artifact_root, Path.home().resolve()}
+        or resolved == resolved.anchor
+    ):
+        return False, None
+    return True, str(resolved)
+
+
+def _validate_values(environment: dict[str, Any]) -> list[str]:
     codes = []
+    for field in (
+        "vcpu_count",
+        "ram_bytes",
+        "free_disk_bytes",
+        "worker_count",
+        "vm_count",
+        "maximum_runtime_hours",
+        "maximum_monetary_budget",
+        "hourly_price",
+    ):
+        if not _finite_positive(environment.get(field)):
+            codes.append("invalid_environment_value")
+    gpu_count = environment.get("gpu_count")
+    gpu_vram = environment.get("gpu_vram_bytes")
+    if (
+        not isinstance(gpu_count, int)
+        or isinstance(gpu_count, bool)
+        or gpu_count < 0
+        or not isinstance(gpu_vram, int)
+        or isinstance(gpu_vram, bool)
+        or gpu_vram < 0
+        or (
+            gpu_count == 0
+            and (
+                environment.get("gpu_model") not in {None, "none", ""} or gpu_vram != 0
+            )
+        )
+    ):
+        codes.append("invalid_environment_value")
+    if (
+        not isinstance(environment.get("currency"), str)
+        or len(environment["currency"].strip()) != 3
+    ):
+        codes.append("invalid_environment_value")
+    if not all(
+        _timestamp(environment.get(field))
+        for field in ("price_observed_at", "evidence_observed_at")
+    ):
+        codes.append("invalid_environment_value")
+    return codes
+
+
+def validate_target_environment(
+    environment: dict[str, Any],
+    plan: dict[str, Any],
+    *,
+    repo_root: Path | None = None,
+    spawn_probe: Callable[[], dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Read-only Stage 0 validator against local canonical sources, not declarations."""
+    root = (repo_root or find_repo_root()).resolve()
+    codes: list[str] = []
+    if not isinstance(environment, dict):
+        environment = {}
     missing = [field for field in ENVIRONMENT_FIELDS if environment.get(field) is None]
     if missing:
         codes.append("missing_target_environment_metadata")
-    if environment.get("environment_digest") != environment_digest(environment):
-        codes.append("environment_digest_mismatch")
-    if (
-        not environment.get("git_commit")
-        or not environment.get("expected_git_commit")
-        or environment.get("git_commit") != environment.get("expected_git_commit")
+    if environment.get("schema_version") != SCHEMA_VERSION or environment.get(
+        "environment_digest"
+    ) != environment_digest(environment):
+        codes.append("invalid_environment_value")
+    actual_head = current_git_head(root)
+    if actual_head is None:
+        codes.append("git_provenance_unknown")
+    elif (
+        environment.get("git_commit") != actual_head
+        or environment.get("expected_git_commit") != actual_head
     ):
         codes.append("git_provenance_mismatch")
-    if environment.get("plan_digest") != plan["plan_digest"]:
-        codes.append("plan_digest_mismatch")
-    if environment.get("execution_mode") not in MODES:
-        codes.append("execution_mode_unsupported")
-    elif environment.get("worker_count") != MODES[environment["execution_mode"]]:
-        codes.append("worker_count_mismatch")
-    if not _finite_positive(environment.get("free_disk_bytes")):
-        codes.append("insufficient_free_disk")
-    if not _finite_positive(environment.get("vm_count")):
-        codes.append("missing_target_environment_metadata")
-    if environment.get("process_spawn_supported") is not True:
-        codes.append("unsupported_process_spawn")
-    if not isinstance(environment.get("dataset_hashes"), dict) or not environment.get(
-        "dataset_hashes"
+    if environment.get("plan_digest") != plan.get("plan_digest") or not _sha256(
+        environment.get("plan_digest")
     ):
-        codes.append("dataset_input_hash_mismatch")
+        codes.append("plan_digest_mismatch")
+    try:
+        expected_lock = dependency_lock_fingerprint(root)["sha256"]
+        if environment.get("environment_lock_hash") != expected_lock:
+            codes.append("environment_lock_mismatch")
+    except P7C4B2DError:
+        codes.append("environment_lock_mismatch")
+    mode = environment.get("execution_mode")
+    if mode not in MODES:
+        codes.append("execution_mode_unsupported")
+    elif environment.get("worker_count") != MODES[mode]:
+        codes.append("worker_count_mismatch")
+    codes.extend(_validate_values(environment))
+    available = environment.get("free_disk_bytes")
+    if (
+        environment.get("disk_policy") != DISK_POLICY
+        or not _finite_positive(available)
+        or available < MINIMUM_FREE_DISK_BYTES
+    ):
+        codes.append("insufficient_free_disk")
+    safe, normalized_output = _safe_output(environment.get("output_directory"), root)
+    if not safe:
+        codes.append("unsafe_output_namespace")
+    elif Path(normalized_output).exists() and any(Path(normalized_output).iterdir()):
+        codes.append("output_collision")
+    if mode in MODES:
+        expected_datasets = set(required_canary_datasets(plan, mode))
+        supplied = environment.get("dataset_hashes")
+        if (
+            not isinstance(supplied, dict)
+            or set(supplied) != expected_datasets
+            or not all(_sha256(value) for value in supplied.values())
+        ):
+            codes.append("dataset_input_hash_mismatch")
+        else:
+            try:
+                actual_hashes = collect_dataset_hashes(plan, mode, repo_root=root)
+                if {
+                    key: value.upper() for key, value in supplied.items()
+                } != actual_hashes:
+                    codes.append("dataset_input_hash_mismatch")
+            except Exception:
+                codes.append("dataset_input_missing")
+    probe = (spawn_probe or probe_process_spawn)()
+    if probe.get("status") == "timeout":
+        codes.append("process_spawn_probe_timeout")
+    elif probe.get("status") != "pass":
+        codes.append("unsupported_process_spawn")
     return {
         "valid": not codes,
         "reason_codes": sorted(set(codes)),
         "missing_fields": missing,
+        "git_head": actual_head,
+        "required_free_disk_bytes": MINIMUM_FREE_DISK_BYTES,
+        "available_free_disk_bytes": available,
+        "free_disk_margin_bytes": available - MINIMUM_FREE_DISK_BYTES
+        if _finite_positive(available)
+        else None,
+        "disk_policy": DISK_POLICY,
+        "normalized_output_directory": normalized_output,
+        "process_spawn_probe": probe,
     }
 
 
 def select_canary(plan: dict[str, Any], mode: str) -> dict[str, Any]:
-    """Immutable-plan subset: AC/light and GMC/heavy, each warmup+measured."""
     if mode not in MODES:
         raise P7C4B2DError("execution_mode_unsupported")
-    required = (("AC", "low_cost_proxy"), ("GMC", "high_cost_proxy"))
     selected = []
-    for dataset, proxy in required:
+    for dataset, proxy in (("AC", "low_cost_proxy"), ("GMC", "high_cost_proxy")):
         rows = [
             x
             for x in plan["tasks"]
@@ -215,13 +507,13 @@ def select_canary(plan: dict[str, Any], mode: str) -> dict[str, Any]:
                 if x["classification"] == "measured" and x["repetition"] == 0
             )
         )
-    ids = [x["sample_id"] for x in selected]
     return {
         "execution_stage": "target_canary",
         "scientific_projection_eligible": False,
         "mode": mode,
-        "task_ids": ids,
-        "task_count": len(ids),
+        "task_ids": [x["sample_id"] for x in selected],
+        "task_count": len(selected),
+        "tasks": selected,
         "selection": "small_large_light_heavy_mlp_3_warmup_and_measured",
         "plan_digest": plan["plan_digest"],
     }
@@ -237,7 +529,12 @@ def estimate_cost(
     price_observed_at: str | None = None,
     vm_count: int = 1,
 ) -> dict[str, Any]:
-    if mode not in MODES or vm_count < 1:
+    if (
+        mode not in MODES
+        or not isinstance(vm_count, int)
+        or isinstance(vm_count, bool)
+        or vm_count < 1
+    ):
         raise P7C4B2DError("execution_mode_unsupported")
     value = {
         "mode": mode,
@@ -270,7 +567,7 @@ def estimate_cost(
         not _finite_positive(hourly_price)
         or not currency
         or not price_source
-        or not price_observed_at
+        or not _timestamp(price_observed_at)
     ):
         raise P7C4B2DError("invalid_price_input")
     return {
@@ -287,16 +584,14 @@ def render_authorization_proposal(
     environment: dict[str, Any],
     *,
     execution_stage: str,
-    task_ids: list[str],
     expiry: str | None,
 ) -> dict[str, Any]:
-    """A review object, explicitly unusable as an effective authorization."""
-    if execution_stage not in {
-        "target_canary",
-        "partial_target_preflight",
-        "full_target_preflight",
-    }:
+    if (
+        execution_stage != "target_canary"
+        or environment.get("execution_mode") not in MODES
+    ):
         raise P7C4B2DError("invalid_execution_stage")
+    canary = select_canary(plan, environment["execution_mode"])
     value = {
         "schema_version": SCHEMA_VERSION,
         "artifact_type": "authorization_proposal",
@@ -306,17 +601,22 @@ def render_authorization_proposal(
         "git_commit": environment.get("expected_git_commit"),
         "target_environment_digest": environment.get("environment_digest"),
         "execution_stage": execution_stage,
-        "execution_mode": environment.get("execution_mode"),
+        "execution_mode": environment["execution_mode"],
         "vm_count": environment.get("vm_count"),
-        "task_ids": task_ids,
-        "maximum_task_count": len(task_ids),
+        "task_ids": canary["task_ids"],
+        "maximum_task_count": 4,
+        "minimum_free_disk_bytes": MINIMUM_FREE_DISK_BYTES,
+        "disk_policy": DISK_POLICY,
         "maximum_runtime_hours": environment.get("maximum_runtime_hours"),
         "maximum_monetary_budget": environment.get("maximum_monetary_budget"),
+        "hourly_price": environment.get("hourly_price"),
+        "currency": environment.get("currency"),
         "output_directory": environment.get("output_directory"),
+        "proposal_timestamp": environment.get("evidence_observed_at"),
+        "expiry": expiry,
         "stop_conditions": sorted(
             PRE_RUN_CODES | RUNTIME_STOP_CODES | AUTHORIZATION_CODES
         ),
-        "expiry": expiry,
         "cost_acknowledgement": "target_execution_may_incur_cost",
     }
     value["proposal_digest"] = canonical_digest(value, "proposal_digest")
@@ -338,9 +638,37 @@ def validate_authorization_proposal(
         "target_environment_digest"
     ) != environment.get("environment_digest"):
         codes.append("authorization_mismatch")
+    mode = proposal.get("execution_mode")
+    if mode not in MODES:
+        codes.append("execution_mode_unsupported")
+    else:
+        expected = select_canary(plan, mode)["task_ids"]
+        if (
+            proposal.get("task_ids") != expected
+            or len(set(proposal.get("task_ids", []))) != 4
+        ):
+            codes.append("authorization_proposal_task_scope_mismatch")
+    for key in (
+        "maximum_runtime_hours",
+        "maximum_monetary_budget",
+        "hourly_price",
+        "currency",
+        "output_directory",
+        "disk_policy",
+    ):
+        if proposal.get(key) != environment.get(key):
+            codes.append("authorization_mismatch")
+    if proposal.get("minimum_free_disk_bytes") != MINIMUM_FREE_DISK_BYTES:
+        codes.append("authorization_mismatch")
+    expiry = proposal.get("expiry")
+    if expiry is not None and (
+        not _timestamp(expiry)
+        or datetime.fromisoformat(expiry.replace("Z", "+00:00")) <= datetime.now(UTC)
+    ):
+        codes.append("authorization_expired")
     return {
         "valid": not codes,
-        "reason_codes": sorted(codes),
+        "reason_codes": sorted(set(codes)),
         "authorization_effective": False,
     }
 
@@ -349,6 +677,7 @@ def decision_package(
     plan: dict[str, Any],
     environment: dict[str, Any] | None = None,
     *,
+    repo_root: Path | None = None,
     canary_complete: bool = False,
     canary_approved: bool = False,
     price_required: bool = True,
@@ -359,7 +688,9 @@ def decision_package(
     if environment is None:
         codes.append("missing_target_environment_metadata")
     else:
-        environment_report = validate_target_environment(environment, plan)
+        environment_report = validate_target_environment(
+            environment, plan, repo_root=repo_root
+        )
         codes.extend(environment_report["reason_codes"])
         if price_required and environment.get("hourly_price") is None:
             codes.append("price_input_missing")
@@ -384,8 +715,12 @@ def decision_package(
         "task_inventory": inventory,
         "target_environment": environment_report,
         "canary": {
-            "cpu_parallel_1": select_canary(plan, "cpu_parallel_1"),
-            "cpu_parallel_2": select_canary(plan, "cpu_parallel_2"),
+            mode: {
+                key: value
+                for key, value in select_canary(plan, mode).items()
+                if key != "tasks"
+            }
+            for mode in MODES
         },
         "stop_conditions": {
             "pre_run": sorted(PRE_RUN_CODES),
