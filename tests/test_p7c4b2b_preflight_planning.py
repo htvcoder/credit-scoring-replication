@@ -142,7 +142,8 @@ def test_summary_projection_ram_cost_and_execution_plan_fail_closed():
     summary = summarize(records)
     assert (
         summary["mean_seconds"] == 3
-        and summary["warmups_excluded"] == 1
+        and summary["warmup"]["count"] == 1
+        and summary["warmup"]["excluded_from_projection"] is True
         and summary["p95_seconds"] == "insufficient_sample"
     )
     pending = project(records, evidence_scope=runner.EVIDENCE_FIXTURE)
@@ -158,12 +159,22 @@ def test_summary_projection_ram_cost_and_execution_plan_fail_closed():
         == "memory_feasibility_uncertain"
     )
     assert cost_estimate(None, None)["status"] == "pending_operator_price_input"
+    with pytest.raises(PreflightError, match="projection_not_execution_plan_eligible"):
+        proposed_execution_plan(
+            git_commit="b" * 40,
+            preflight_plan_digest=plan()["plan_digest"],
+            evidence_digest="e" * 64,
+            mode="cpu_parallel_2",
+            runtime_range={"status": "incomplete_total_elapsed"},
+            ram="pending",
+            cost="pending",
+        )
     proposed = proposed_execution_plan(
         git_commit="b" * 40,
         preflight_plan_digest=plan()["plan_digest"],
         evidence_digest="e" * 64,
         mode="cpu_parallel_2",
-        runtime_range="pending",
+        runtime_range={"status": "complete_total_elapsed_supported"},
         ram="pending",
         cost="pending",
     )
@@ -373,6 +384,7 @@ def test_validator_detects_identity_telemetry_summary_completion_and_partial_mut
         max_tasks=3,
         timeout_seconds=10,
     )
+
     def case(name, mutate, code):
         target = repo / runner.ARTIFACT_ROOT / name
         shutil.copytree(baseline, target)
@@ -469,10 +481,18 @@ def test_stratified_projection_requires_complete_target_evidence_and_nonperfect_
     derived = project(
         records, evidence_scope="target_single_vm_measured", two_vm_efficiency=0.8
     )
+    assert derived["execution_plan_eligible"] is False
     assert (
-        derived["status"].startswith("derived")
-        and derived["single_vm_parallel_2"]["derived_value"]["projected_elapsed_hours"]
+        derived["single_vm_parallel_2"]["inner_fit_projection"][
+            "conditional_work_conserving_elapsed_hours"
+        ]["point"]
         > 0
+    )
+    assert (
+        derived["single_vm_parallel_2"]["total_canonical_elapsed"][
+            "projected_elapsed_hours"
+        ]
+        is None
     )
     assert (
         derived["two_vm_cpu"]["efficiency"] == 0.8

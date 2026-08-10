@@ -21,7 +21,6 @@ from creditrep.experiments.p7c4b2b_preflight import (
 )
 from creditrep.protocols.p7c4b2b import (
     PreflightError,
-    cost_estimate,
     project,
     proposed_execution_plan,
     ram_feasibility,
@@ -146,16 +145,25 @@ def main(argv: list[str] | None = None) -> int:
                 price=price,
                 two_vm_efficiency=args.two_vm_efficiency,
             )
-            if projection.get("status", "").startswith("derived") and price:
-                hours = projection["single_vm_parallel_2"]["derived_value"][
-                    "conservative_compute_hours"
-                ]
-                projection["cost"] = cost_estimate(tuple(hours), price)
             if args.command == "project":
+                if args.output_dir:
+                    if args.output_dir.exists():
+                        raise PreflightError("analysis_output_already_exists")
+                    args.output_dir.mkdir(parents=True)
+                    (args.output_dir / "projection.json").write_text(
+                        json.dumps(
+                            projection,
+                            ensure_ascii=False,
+                            sort_keys=True,
+                            allow_nan=False,
+                        )
+                        + "\n",
+                        encoding="utf-8",
+                    )
                 _print(projection)
                 return EXIT_OK
-            if not projection.get("status", "").startswith("derived"):
-                raise PreflightError("target_preflight_evidence_missing")
+            if projection.get("execution_plan_eligible") is not True:
+                raise PreflightError("projection_not_execution_plan_eligible")
             evidence_digest = sha256_canonical(
                 {"run_manifests": manifests, "records": records}
             )

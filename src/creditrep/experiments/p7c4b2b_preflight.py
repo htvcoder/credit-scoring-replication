@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import platform
 import shutil
@@ -30,6 +31,7 @@ from creditrep.protocols.p7c4b2b import (
     project,
     ram_feasibility,
     summarize,
+    summarize_legacy_v1,
     validate_machine,
     validate_plan,
 )
@@ -88,6 +90,23 @@ def _read(path: Path, codes: list[str]) -> dict[str, Any] | None:
     except (OSError, ValueError, json.JSONDecodeError):
         codes.append("corrupt_json")
         return None
+
+
+def _equivalent_json(left: Any, right: Any) -> bool:
+    """Compare reconstructed JSON while tolerating harmless float sum ordering."""
+    if isinstance(left, bool) or isinstance(right, bool):
+        return left == right
+    if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+        return math.isclose(float(left), float(right), rel_tol=1e-12, abs_tol=1e-9)
+    if isinstance(left, dict) and isinstance(right, dict):
+        return left.keys() == right.keys() and all(
+            _equivalent_json(left[key], right[key]) for key in left
+        )
+    if isinstance(left, list) and isinstance(right, list):
+        return len(left) == len(right) and all(
+            _equivalent_json(a, b) for a, b in zip(left, right)
+        )
+    return left == right
 
 
 def capture_machine_profile(
@@ -819,15 +838,32 @@ def validate_artifacts(
     stored = _read(run_dir / "summary.json", codes)
     if stored and any(x.get("classification") == "measured" for x in records):
         try:
-            rebuilt = summarize(records, mode=manifest["mode"])
+            rebuilt = (
+                summarize_legacy_v1(records, mode=manifest["mode"])
+                if stored.get("schema_version") == 1
+                else summarize(records, mode=manifest["mode"])
+            )
         except PreflightError:
             rebuilt = None
-        if rebuilt is None or stored != rebuilt:
+        if rebuilt is None or not _equivalent_json(stored, rebuilt):
             codes.append("summary_mismatch")
-        if stored.get("warmups_excluded", 0) and stored.get(
-            "measured_count", 0
-        ) + stored["warmups_excluded"] != len(records):
+        warmup_count = stored.get(
+            "warmups_excluded", stored.get("warmup", {}).get("count", 0)
+        )
+        if warmup_count and stored.get("measured_count", 0) + warmup_count != len(
+            records
+        ):
             codes.append("warmup_mixed_into_measured")
+    elif stored:
+        expected_summary = {
+            "mode": manifest["mode"],
+            "measured_count": 0,
+            "warmups_excluded": sum(
+                x.get("classification") == "warmup" for x in records
+            ),
+        }
+        if stored != expected_summary:
+            codes.append("summary_mismatch")
     projection = _read(run_dir / "projection.json", codes)
     if projection:
         if (

@@ -11,7 +11,7 @@ from creditrep.config.loader import sha256_canonical
 SCIENTIFIC_DIGEST = "4d8636c3606e07e243efd2bc7be12806e7adf4fc1b19dbe0dc113a35adc57f75"
 MODES = {"cpu_parallel_1": 1, "cpu_parallel_2": 2}
 CANONICAL_TOTAL_FITS = 54_270
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 DATASET_FINGERPRINTS = {
     "TC": "30C6BE3ABD8DCFD3E6096C828BAD8C2F011238620F5369220BD60CFC82700933",
     "GMC": "1BD46DA486A5708C58C7B01A034FAE2A13B327F6F7B62EA7BA4FE3B5824B24AC",
@@ -89,8 +89,11 @@ def build_plan(manifest: dict[str, Any]) -> dict[str, Any]:
                 )
     tasks: list[dict[str, Any]] = []
     for mode in MODES:
-        for unit in units:
-            for classification, repetitions in (("warmup", 1), ("measured", 2)):
+        # A separated measured phase makes its wall-clock interval identifiable.
+        # Legacy schema-v2 plans interleaved these classifications and remain
+        # readable, but cannot support an orchestration-overhead estimate.
+        for classification, repetitions in (("warmup", 1), ("measured", 2)):
+            for unit in units:
                 for repetition in range(repetitions):
                     identity = {
                         "logical_unit_id": unit["logical_unit_id"],
@@ -112,6 +115,11 @@ def build_plan(manifest: dict[str, Any]) -> dict[str, Any]:
         "machine_role_required": "intended_single_vm_target",
         "modes": MODES,
         "selection": "deterministic_workload_driver_no_predictive_metric",
+        "timing_scope_policy": {
+            "execution_order": "all_warmups_before_measured",
+            "projection_input": "successful_measured_fit_intervals_only",
+            "warmups": "reported_separately_never_projected",
+        },
         "thread_policy": {
             "max_workers": 2,
             "threads_per_worker": 2,
@@ -171,6 +179,12 @@ def validate_plan(plan: dict[str, Any]) -> dict[str, Any]:
         "nested_parallelism": "forbidden",
     }:
         codes.append("worker_limit_mismatch")
+    if plan.get("timing_scope_policy") != {
+        "execution_order": "all_warmups_before_measured",
+        "projection_input": "successful_measured_fit_intervals_only",
+        "warmups": "reported_separately_never_projected",
+    }:
+        codes.append("timing_scope_policy_mismatch")
     units, tasks = plan.get("units", []), plan.get("tasks", [])
     if len(units) != 18 or len({x.get("logical_unit_id") for x in units}) != 18:
         codes.append("preflight_unit_coverage_mismatch")
@@ -275,9 +289,54 @@ def percentile(values: list[float], fraction: float) -> float:
     return ordered[lower] * (1 - weight) + ordered[upper] * weight
 
 
-def summarize(
+def _normalized_records(
+    records: list[dict[str, Any]], mode: str
+) -> list[dict[str, Any]]:
+    return [
+        {
+            **record,
+            "mode": record.get("mode", mode),
+            "status": record.get("status", "completed"),
+            "aggregate_process_tree_peak_rss_bytes": record.get(
+                "aggregate_process_tree_peak_rss_bytes", 0
+            ),
+            "system_available_ram_min_bytes": record.get(
+                "system_available_ram_min_bytes", 0
+            ),
+        }
+        for record in records
+    ]
+
+
+def _interval(record: dict[str, Any]) -> tuple[float, float] | None:
+    start = record.get("started_monotonic")
+    end = record.get("completed_monotonic")
+    if not isinstance(start, (int, float)) or not isinstance(end, (int, float)):
+        return None
+    if end < start:
+        raise PreflightError("invalid_or_missing_measured_telemetry")
+    return float(start), float(end)
+
+
+def _interval_union_seconds(intervals: list[tuple[float, float]]) -> float:
+    if not intervals:
+        return 0.0
+    ordered = sorted(intervals)
+    total = 0.0
+    start, end = ordered[0]
+    for next_start, next_end in ordered[1:]:
+        if next_start <= end:
+            end = max(end, next_end)
+        else:
+            total += end - start
+            start, end = next_start, next_end
+    return total + end - start
+
+
+def summarize_legacy_v1(
     records: list[dict[str, Any]], *, mode: str = "cpu_parallel_1"
 ) -> dict[str, Any]:
+    """Rebuild schema-v1 summaries so immutable legacy artifacts stay readable."""
     records = [
         (
             {
@@ -361,6 +420,151 @@ def summarize(
     }
 
 
+def summarize(
+    records: list[dict[str, Any]], *, mode: str = "cpu_parallel_1"
+) -> dict[str, Any]:
+    """Summarize warmup and measured scopes without treating warmup as overhead."""
+    records = _normalized_records(records, mode)
+    measured = [
+        record
+        for record in records
+        if record.get("classification") == "measured" and record.get("mode") == mode
+    ]
+    successful = [record for record in measured if record.get("status") == "completed"]
+    times = [float(record["wall_clock_seconds"]) for record in successful]
+    if (
+        not measured
+        or len(times) != len(successful)
+        or any(value < 0 for value in times)
+    ):
+        raise PreflightError("invalid_or_missing_measured_telemetry")
+
+    warmups = [
+        record
+        for record in records
+        if record.get("classification") == "warmup" and record.get("mode") == mode
+    ]
+    measured_intervals = [_interval(record) for record in successful]
+    warmup_intervals = [_interval(record) for record in warmups]
+    timestamps_available = bool(successful) and all(
+        interval is not None for interval in measured_intervals
+    )
+    measured_phase_elapsed = None
+    measured_active_union = None
+    measured_idle_gap = None
+    occupancy = None
+    capacity_loss = None
+    backcheck = {"status": "unavailable_missing_timestamps"}
+    phase_status = "timestamps_unavailable"
+    if timestamps_available:
+        concrete_measured = [interval for interval in measured_intervals if interval]
+        first_measured = min(start for start, _ in concrete_measured)
+        last_measured = max(end for _, end in concrete_measured)
+        measured_phase_elapsed = last_measured - first_measured
+        measured_active_union = _interval_union_seconds(concrete_measured)
+        measured_idle_gap = measured_phase_elapsed - measured_active_union
+        if warmups and all(interval is not None for interval in warmup_intervals):
+            last_warmup = max(
+                end
+                for interval in warmup_intervals
+                if interval
+                for _, end in [interval]
+            )
+            phase_status = (
+                "separated_before_measured"
+                if last_warmup <= first_measured
+                else "interleaved_with_measured"
+            )
+        elif not warmups:
+            phase_status = "no_warmups_present"
+        workers = MODES.get(mode, 1)
+        aggregate = sum(times)
+        if measured_phase_elapsed > 0:
+            occupancy = min(1.0, aggregate / (workers * measured_phase_elapsed))
+            capacity_loss = max(0.0, measured_phase_elapsed - aggregate / workers)
+            backcheck = {
+                "status": (
+                    "reproduced_separated_measured_scope"
+                    if phase_status
+                    in {"separated_before_measured", "no_warmups_present"}
+                    else "descriptive_only_interleaved_warmup_scope"
+                ),
+                "work_conserving_seconds": aggregate / workers,
+                "observed_elapsed_over_ideal_capacity_seconds": capacity_loss,
+                "reconstructed_elapsed_seconds": aggregate / workers + capacity_loss,
+                "observed_measured_phase_elapsed_seconds": measured_phase_elapsed,
+            }
+
+    sufficient = len(times) >= 20
+    cpu_seconds = sum(float(record.get("cpu_time_seconds", 0)) for record in successful)
+    warmup_times = [
+        float(record["wall_clock_seconds"])
+        for record in warmups
+        if record.get("status") == "completed"
+    ]
+    overhead_status = (
+        "bounded_measured_scope_observed_not_extrapolated"
+        if phase_status in {"separated_before_measured", "no_warmups_present"}
+        else "unknown_interleaved_warmup_measurement_scope"
+        if phase_status == "interleaved_with_measured"
+        else "unknown_missing_timestamps"
+    )
+    return {
+        "schema_version": 2,
+        "mode": mode,
+        "timing_scope": "successful_measured_fits_only_warmups_reported_separately",
+        "measurement_phase_status": phase_status,
+        "measured_count": len(measured),
+        "successful": len(times),
+        "failed": sum(record.get("status") == "failed" for record in measured),
+        "timed_out": sum(
+            record.get("reason_code") == "fit_timeout" for record in measured
+        ),
+        "mean_seconds": mean(times) if times else None,
+        "median_seconds": median(times) if times else None,
+        "stddev_seconds": pstdev(times) if len(times) > 1 else None,
+        "min_seconds": min(times) if times else None,
+        "max_seconds": max(times) if times else None,
+        "p50_seconds": percentile(times, 0.5) if sufficient else "insufficient_sample",
+        "p90_seconds": percentile(times, 0.9) if sufficient else "insufficient_sample",
+        "p95_seconds": percentile(times, 0.95) if sufficient else "insufficient_sample",
+        "aggregate_measured_fit_runtime_seconds": sum(times),
+        "measured_phase_elapsed_seconds": measured_phase_elapsed,
+        "measured_active_union_seconds": measured_active_union,
+        "measured_idle_gap_seconds": measured_idle_gap,
+        "observed_worker_occupancy": occupancy,
+        "observed_elapsed_over_ideal_capacity_seconds": capacity_loss,
+        "orchestration_overhead_status": overhead_status,
+        "bounded_workload_backcheck": backcheck,
+        "throughput_per_hour": (
+            len(times) * 3600 / measured_phase_elapsed
+            if measured_phase_elapsed and phase_status != "interleaved_with_measured"
+            else None
+        ),
+        "total_cpu_seconds": cpu_seconds,
+        "mean_cpu_utilization_percent": (cpu_seconds / sum(times) * 100)
+        if sum(times) > 0
+        else None,
+        "peak_aggregate_rss_bytes": max(
+            (
+                record.get("aggregate_process_tree_peak_rss_bytes", 0)
+                for record in measured
+            ),
+            default=0,
+        ),
+        "minimum_system_available_ram_bytes": min(
+            (record.get("system_available_ram_min_bytes", 0) for record in measured),
+            default=0,
+        ),
+        "warmup": {
+            "count": len(warmups),
+            "successful": len(warmup_times),
+            "aggregate_fit_runtime_seconds": sum(warmup_times),
+            "excluded_from_projection": True,
+        },
+    }
+
+
 def project(
     records: list[dict[str, Any]] | dict[str, Any],
     *,
@@ -399,6 +603,25 @@ def project(
             "gpu": {"status": "pending_gpu_preflight"},
             "cost": {"status": "pending_operator_price_input"},
         }
+    repetitions = {
+        key: sum(
+            x.get("classification") == "measured"
+            and x.get("status") == "completed"
+            and (x["dataset_id"], x["model_id"], x["coverage_role"], x["mode"]) == key
+            for x in records
+        )
+        for key in required
+    }
+    if any(count < 2 for count in repetitions.values()):
+        return {
+            "status": "insufficient_stratified_repetitions",
+            "strata_below_two_repetitions": sum(
+                count < 2 for count in repetitions.values()
+            ),
+            "execution_plan_eligible": False,
+            "gpu": {"status": "pending_gpu_preflight"},
+            "cost": {"status": "pending_operator_price_input"},
+        }
     model_inner = {"mlp_1": 10800, "mlp_3": 21600, "mlp_5": 21600}
     estimates = {}
     for mode, workers in MODES.items():
@@ -422,39 +645,67 @@ def project(
         low = sum(model_inner[m] * cells[("TC", m)] for m in model_inner)
         high = sum(model_inner[m] * cells[("GMC", m)] for m in model_inner)
         point = (low + high) / 2
-        mode_records = [
-            x
-            for x in records
-            if x.get("mode") == mode and x.get("classification") == "measured"
-        ]
+        mode_records = [x for x in records if x.get("mode") == mode]
         summary = summarize(mode_records, mode=mode)
-        efficiency = (
-            1.0
-            if workers == 1
-            else min(
-                1.0,
-                summary["total_compute_seconds"]
-                / (workers * summary["elapsed_wall_clock_seconds"]),
-            )
-            if summary["elapsed_wall_clock_seconds"]
-            else None
-        )
         estimates[mode] = {
-            "status": "derived_stratified",
-            "measured_input": {"strata": 18, "repetitions_per_stratum": 2},
-            "derived_value": {
-                "point_compute_hours": point / 3600,
-                "conservative_compute_hours": [low / 3600, high / 3600],
-                "projected_elapsed_hours": point / (3600 * workers * efficiency)
-                if efficiency
-                else None,
-                "observed_parallel_efficiency": efficiency,
+            "status": "derived_inner_fit_only_incomplete_total_elapsed",
+            "measured_input": {
+                "strata": 18,
+                "repetitions_per_stratum": 2,
+                "workers": workers,
+                "aggregate_measured_fit_runtime_seconds": summary[
+                    "aggregate_measured_fit_runtime_seconds"
+                ],
+                "measured_phase_elapsed_seconds": summary[
+                    "measured_phase_elapsed_seconds"
+                ],
+                "measurement_phase_status": summary["measurement_phase_status"],
+                "observed_worker_occupancy": summary["observed_worker_occupancy"],
+            },
+            "inner_fit_projection": {
+                "aggregate_fit_runtime_hours": {
+                    "point": point / 3600,
+                    "tc_gmc_range": [low / 3600, high / 3600],
+                },
+                "conditional_work_conserving_elapsed_hours": {
+                    "point": point / (3600 * workers),
+                    "tc_gmc_range": [
+                        low / (3600 * workers),
+                        high / (3600 * workers),
+                    ],
+                    "formula": "aggregate_fit_runtime_hours / workers",
+                    "contention_handling": (
+                        "already_observed_in_mode_specific_per_fit_duration_"
+                        "no_second_efficiency_penalty"
+                    ),
+                },
+            },
+            "bounded_workload_backcheck": summary["bounded_workload_backcheck"],
+            "orchestration_overhead": {
+                "status": summary["orchestration_overhead_status"],
+                "bounded_observed_elapsed_over_ideal_capacity_seconds": summary[
+                    "observed_elapsed_over_ideal_capacity_seconds"
+                ],
+                "canonical_extrapolation": "unknown_not_extrapolated",
+            },
+            "outer_refits": {
+                "count": 270,
+                "status": "unknown_unmeasured",
+                "elapsed_hours": None,
+            },
+            "total_canonical_elapsed": {
+                "status": "unknown_incomplete_outer_refits_and_overhead",
+                "projected_elapsed_hours": None,
             },
             "assumption": [
                 "TC/GMC bound four unmeasured datasets",
                 "candidate complexity terciles equally represent each model grid",
+                "canonical inner-fit scheduler is work-conserving",
             ],
-            "unknown": ["270 outer refit runtime", "scheduler and I/O overhead"],
+            "unknown": [
+                "270 outer refit runtime",
+                "canonical orchestration, process-launch, and I/O overhead",
+            ],
             "extrapolation_ratio": sum(model_inner.values()) / 36,
             "warning": "high_extrapolation_ratio_non_guaranteed",
         }
@@ -462,15 +713,22 @@ def project(
     if two_vm_efficiency is not None:
         if not 0 < two_vm_efficiency < 1:
             raise PreflightError("two_vm_efficiency_must_be_measured_and_below_one")
-        base = estimates["cpu_parallel_2"]["derived_value"]["projected_elapsed_hours"]
         two_vm = {
-            "status": "planning_only_not_authorized",
+            "status": "pending_multi_vm_overhead_evidence_not_authorized",
             "efficiency": two_vm_efficiency,
             "assumption": {"measured_or_operator_efficiency": two_vm_efficiency},
-            "projected_elapsed_hours": base / (2 * two_vm_efficiency) if base else None,
+            "projected_elapsed_hours": None,
+            "reason": "single_vm_total_elapsed_and_distributed_overhead_incomplete",
         }
     result = {
-        "status": "derived_with_high_extrapolation_uncertainty",
+        "schema_version": 2,
+        "status": "incomplete_total_elapsed_outer_refits_and_overhead_unknown",
+        "execution_plan_eligible": False,
+        "execution_plan_blockers": [
+            "outer_refit_runtime_unmeasured",
+            "canonical_orchestration_overhead_not_supported",
+            "high_extrapolation_ratio_non_guaranteed",
+        ],
         "coverage": {
             "observed_strata": len(required),
             "canonical_inner_fits": 54000,
@@ -483,7 +741,7 @@ def project(
         "cost": {
             "status": "pending_operator_price_input"
             if price is None and price_per_hour is None
-            else "requires_explicit_cost_estimator"
+            else "pending_complete_billable_elapsed_projection"
         },
     }
     return result
@@ -561,6 +819,11 @@ def proposed_execution_plan(
     ram: Any,
     cost: Any,
 ) -> dict[str, Any]:
+    if (
+        not isinstance(runtime_range, dict)
+        or runtime_range.get("status") != "complete_total_elapsed_supported"
+    ):
+        raise PreflightError("projection_not_execution_plan_eligible")
     value = {
         "schema_version": 1,
         "git_commit": git_commit,
