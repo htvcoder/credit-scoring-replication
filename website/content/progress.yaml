@@ -4,7 +4,7 @@ project:
   current_phase: 7
   next_phase: 7
   updated_at: "2026-08-10"
-  current_status_summary: "P7C.3: Completed — canonical feasibility pilot accepted. Canonical vm-run-003 xác nhận CPU feasibility PASS, memory feasibility PASS và execution stability PASS; đây là evidence engineering non-publishable, không phải kết quả hiệu năng dự báo hoặc kết quả khoa học cuối cùng, và scientific execution chưa bắt đầu. P7C.4B.2a: Completed — DR-P7C-03 balanced 24/48/48 và DR-P7C-04 include MLP-5 đã được ghi vào proposed scientific manifest digest-locked. P7C.4B.2b bounded-preflight harness và P7C.4B.2c outer-refit/overhead implementation đã fixture-validate. Target compute/outer-refit preflight, runtime/cost, canonical compute mode và canonical execution vẫn pending/NO-GO."
+  current_status_summary: "P7C.3: Completed — canonical feasibility pilot accepted. Canonical vm-run-003 xác nhận CPU feasibility PASS, memory feasibility PASS và execution stability PASS; đây là evidence engineering non-publishable, không phải kết quả hiệu năng dự báo hoặc kết quả khoa học cuối cùng, và scientific execution chưa bắt đầu. P7C.4B.2a: Completed — DR-P7C-03 balanced 24/48/48 và DR-P7C-04 include MLP-5 đã được ghi vào proposed scientific manifest digest-locked. P7C.4B.2b harness, P7C.4B.2c outer-refit/overhead implementation và P7C.4B.2d authorization-readiness review đã fixture-validate. Target compute/outer-refit preflight, runtime/cost, canonical compute mode và canonical execution vẫn pending/NO-GO."
 status_enum:
   - planned
   - next
@@ -192,7 +192,7 @@ phases:
     numeric_id: 7
     title: "Core replication run"
     status: "in_progress"
-    summary: "P7C.3 đã completed với canonical `vm-run-003`: 60/60 fit, CPU/memory/stability PASS và chỉ là evidence engineering non-publishable. P7C.4B.2a đã completed: scientific scope MLP balanced 24/48/48 gồm MLP-5 đã digest-lock. P7C.4B.2b harness và P7C.4B.2c outer-refit/overhead implementation đã fixture-validate; target preflight chưa chạy. Target compute/outer-refit preflight, runtime/cost, canonical mode, GPU và canonical execution vẫn pending/NO-GO. Scientific execution chưa bắt đầu."
+    summary: "P7C.3 đã completed với canonical `vm-run-003`: 60/60 fit, CPU/memory/stability PASS và chỉ là evidence engineering non-publishable. P7C.4B.2a đã completed: scientific scope MLP balanced 24/48/48 gồm MLP-5 đã digest-lock. P7C.4B.2b harness, P7C.4B.2c implementation và P7C.4B.2d authorization-readiness review đã fixture-validate; target preflight chưa chạy. Target compute/outer-refit preflight, runtime/cost, canonical mode, GPU và canonical execution vẫn pending/NO-GO. Scientific execution chưa bắt đầu."
     tasks:
       - "P7A: khóa protocol/candidate manifest và kiểm tra integrity trước pilot."
       - "P7B: chạy feasibility pilot non-publishable; không dùng predictive performance để quyết định inclusion."
@@ -255,6 +255,9 @@ phases:
       - id: "P7C.4B.2c"
         status: "completed"
         summary: "Implementation completed / target execution pending — process-isolated run/resume, canonical timing instrumentation, atomic artifact lifecycle, validator, stratified projection and fail-closed eligibility/CLI contracts pass controlled validation. Target outer-refit/overhead preflight has not run; canonical execution remains NO-GO."
+      - id: "P7C.4B.2d"
+        status: "completed"
+        summary: "Implementation completed / target authorization pending — deterministic target-plan review, canary/staged-execution gates, typed environment and cost contracts, non-effective authorization proposal and fail-closed decision package pass controlled validation. Target environment input, authorization and preflight remain pending; canonical execution is NO-GO."
   - id: "Phase 8"
     numeric_id: 8
     title: "Modern reassessment"
