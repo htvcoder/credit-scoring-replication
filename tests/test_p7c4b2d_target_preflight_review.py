@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -14,9 +15,12 @@ from creditrep.protocols.p7c4b2c import canonical_digest
 from creditrep.protocols.p7c4b2d import (
     DISK_POLICY,
     MINIMUM_FREE_DISK_BYTES,
+    P7C4B2DError,
+    collect_target_environment,
     dependency_lock_fingerprint,
     decision_package,
     environment_digest,
+    merge_operator_metadata,
     render_authorization_proposal,
     select_canary,
     validate_authorization_proposal,
@@ -120,6 +124,23 @@ def _environment(plan, root: Path, monkeypatch, *, mode="cpu_parallel_1"):
 
 def _pass_probe():
     return {"probe": "fixture", "status": "pass", "timeout_seconds": 1}
+
+
+def _operator_metadata():
+    return {
+        "provider": "fixture-cloud",
+        "region": "fixture-region",
+        "instance_id": "fixture-instance",
+        "disk_type": "ssd",
+        "network_topology": "single_vm",
+        "vm_count": 1,
+        "hourly_price": 2.5,
+        "currency": "USD",
+        "price_source": "fixture-invoice",
+        "price_observed_at": "2026-08-10T00:00:00Z",
+        "maximum_runtime_hours": 10.0,
+        "maximum_monetary_budget": 25.0,
+    }
 
 
 def test_stage_zero_verifies_canonical_sources_and_rejects_placeholders(
@@ -383,3 +404,147 @@ def test_cli_review_uses_valid_environment_and_remains_non_executing(
     payload = json.loads(capsys.readouterr().out)
     assert payload["readiness"] == "READY_FOR_CANARY_AUTHORIZATION_REVIEW"
     assert payload["execution_plan_eligible"] is False
+
+
+def test_operator_metadata_merges_valid_schema_and_recomputes_digest(
+    tmp_path, monkeypatch
+):
+    plan, root = _plan(), _repo(tmp_path)
+    collected = _environment(plan, root, monkeypatch)
+    for field in _operator_metadata():
+        collected[field] = None
+    collected["environment_digest"] = environment_digest(collected)
+    merged = merge_operator_metadata(collected, _operator_metadata())
+    assert merged["environment_digest"] == environment_digest(merged)
+    assert validate_target_environment(
+        merged, plan, repo_root=root, spawn_probe=_pass_probe
+    )["valid"]
+
+
+@pytest.mark.parametrize(
+    "mutation,code",
+    [
+        (lambda value: value.pop("provider"), "operator_metadata_missing_field"),
+        (
+            lambda value: value.__setitem__("unknown", "x"),
+            "operator_metadata_unknown_field",
+        ),
+        (
+            lambda value: value.__setitem__("vm_count", True),
+            "operator_metadata_invalid",
+        ),
+        (
+            lambda value: value.__setitem__("hourly_price", float("nan")),
+            "operator_metadata_invalid",
+        ),
+        (
+            lambda value: value.__setitem__("git_commit", "b" * 40),
+            "operator_metadata_canonical_override",
+        ),
+    ],
+)
+def test_operator_metadata_is_strict_and_cannot_override_canonical(
+    tmp_path, monkeypatch, mutation, code
+):
+    plan, root = _plan(), _repo(tmp_path)
+    collected = _environment(plan, root, monkeypatch)
+    metadata = _operator_metadata()
+    mutation(metadata)
+    with pytest.raises(P7C4B2DError, match=code):
+        merge_operator_metadata(collected, metadata)
+
+
+def test_operator_metadata_digest_is_stable_and_tampering_is_rejected(
+    tmp_path, monkeypatch
+):
+    plan, root = _plan(), _repo(tmp_path)
+    collected = _environment(plan, root, monkeypatch)
+    first = merge_operator_metadata(collected, _operator_metadata())
+    second = merge_operator_metadata(
+        dict(reversed(list(collected.items()))), _operator_metadata()
+    )
+    assert first["environment_digest"] == second["environment_digest"]
+    first["maximum_monetary_budget"] = 99.0
+    assert (
+        "invalid_environment_value"
+        in validate_target_environment(
+            first, plan, repo_root=root, spawn_probe=_pass_probe
+        )["reason_codes"]
+    )
+
+
+def test_collector_measures_cpu_ram_and_merges_only_operator_fields(
+    tmp_path, monkeypatch
+):
+    plan, root = _plan(), _repo(tmp_path)
+    monkeypatch.setattr(
+        "creditrep.protocols.p7c4b2d.current_git_head", lambda _: "a" * 40
+    )
+    monkeypatch.setattr(
+        "creditrep.protocols.p7c4b2d.collect_dataset_hashes",
+        lambda *_args, **_kwargs: {"AC": "A" * 64, "GMC": "B" * 64},
+    )
+    monkeypatch.setattr("creditrep.protocols.p7c4b2d.probe_process_spawn", _pass_probe)
+    monkeypatch.setattr("creditrep.protocols.p7c4b2d.os.cpu_count", lambda: 12)
+    monkeypatch.setattr(
+        "creditrep.protocols.p7c4b2d.psutil.virtual_memory",
+        lambda: SimpleNamespace(total=987654321),
+    )
+    monkeypatch.setattr(
+        "creditrep.protocols.p7c4b2d.platform.processor", lambda: "fixture-cpu"
+    )
+    value = collect_target_environment(
+        plan,
+        mode="cpu_parallel_1",
+        output_directory="artifacts/p7c4b2d-fixture",
+        operator_metadata=_operator_metadata(),
+        repo_root=root,
+    )
+    assert (value["vcpu_count"], value["ram_bytes"], value["cpu_model"]) == (
+        12,
+        987654321,
+        "fixture-cpu",
+    )
+    assert value["provider"] == "fixture-cloud"
+    assert value["environment_digest"] == environment_digest(value)
+
+
+def test_cli_collect_metadata_and_complete_evidence_review_remain_non_effective(
+    tmp_path, monkeypatch, capsys
+):
+    plan, root = _plan(), _repo(tmp_path)
+    metadata_path = tmp_path / "operator-metadata.json"
+    metadata_path.write_text(json.dumps(_operator_metadata()), encoding="utf-8")
+    merged = _environment(plan, root, monkeypatch)
+    monkeypatch.setattr(cli, "find_repo_root", lambda: root)
+    monkeypatch.setattr(cli, "_plan", lambda _: plan)
+    monkeypatch.setattr(
+        cli,
+        "collect_target_environment",
+        lambda *_args, **kwargs: merge_operator_metadata(
+            merged, kwargs["operator_metadata"]
+        ),
+    )
+    assert (
+        cli.main(
+            [
+                "collect-target-environment",
+                "--output-directory",
+                "artifacts/p7c4b2d-fixture",
+                "--operator-metadata",
+                str(metadata_path),
+            ]
+        )
+        == EXIT_REVIEW_BLOCKED
+    )
+    collected = json.loads(capsys.readouterr().out)
+    evidence_path = tmp_path / "evidence.json"
+    evidence_path.write_text(json.dumps(collected), encoding="utf-8")
+    assert (
+        cli.main(["inspect-target-requirements", "--environment", str(evidence_path)])
+        == 0
+    )
+    capsys.readouterr()
+    assert cli.main(["review-plan", "--environment", str(evidence_path)]) == 0
+    review = json.loads(capsys.readouterr().out)
+    assert review["execution_plan_eligible"] is False

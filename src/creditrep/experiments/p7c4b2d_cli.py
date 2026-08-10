@@ -38,7 +38,10 @@ def _plan(root: Path) -> dict:
 
 
 def _read(path: Path) -> dict:
-    value = json.loads(path.read_text(encoding="utf-8"))
+    def reject_constant(_: str) -> None:
+        raise P7C4B2DError("invalid_json_number")
+
+    value = json.loads(path.read_text(encoding="utf-8"), parse_constant=reject_constant)
     if not isinstance(value, dict):
         raise P7C4B2DError("invalid_json_object")
     return value
@@ -58,6 +61,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--environment", type=Path)
     parser.add_argument("--proposal", type=Path)
+    parser.add_argument("--operator-metadata", type=Path)
     parser.add_argument(
         "--mode", choices=("cpu_parallel_1", "cpu_parallel_2"), default="cpu_parallel_1"
     )
@@ -70,15 +74,19 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "collect-target-environment":
             if not args.output_directory:
                 raise P7C4B2DError("missing_output_directory")
+            metadata = _read(args.operator_metadata) if args.operator_metadata else None
             _print(
                 collect_target_environment(
                     plan,
                     mode=args.mode,
                     output_directory=args.output_directory,
+                    operator_metadata=metadata,
                     repo_root=root,
                 )
             )
             return EXIT_REVIEW_BLOCKED
+        if args.operator_metadata is not None:
+            raise P7C4B2DError("operator_metadata_command_unsupported")
         environment = _read(args.environment) if args.environment else None
         if args.command == "review-plan":
             value = decision_package(

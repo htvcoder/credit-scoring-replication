@@ -8,6 +8,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 import hashlib
 import math
+import os
 import platform
 from pathlib import Path
 import re
@@ -16,6 +17,7 @@ import subprocess
 import sys
 from typing import Any, Callable
 
+import psutil
 from creditrep.checksums import get_dataset_checksum
 from creditrep.datasets.registry import find_repo_root, get_dataset_spec, load_registry
 from creditrep.protocols.p7c4b2c import (
@@ -66,6 +68,23 @@ ENVIRONMENT_FIELDS = (
     "maximum_runtime_hours",
     "maximum_monetary_budget",
     "evidence_observed_at",
+)
+OPERATOR_METADATA_FIELDS = (
+    "provider",
+    "region",
+    "instance_id",
+    "disk_type",
+    "network_topology",
+    "vm_count",
+    "hourly_price",
+    "currency",
+    "price_source",
+    "price_observed_at",
+    "maximum_runtime_hours",
+    "maximum_monetary_budget",
+)
+OPERATOR_METADATA_PROTECTED_FIELDS = frozenset(ENVIRONMENT_FIELDS) - frozenset(
+    OPERATOR_METADATA_FIELDS
 )
 PRE_RUN_CODES = {
     "git_provenance_mismatch",
@@ -221,11 +240,59 @@ def probe_process_spawn(timeout_seconds: float = 2.0) -> dict[str, Any]:
     }
 
 
+def _nonempty_text(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def merge_operator_metadata(
+    collected: dict[str, Any], operator_metadata: dict[str, Any]
+) -> dict[str, Any]:
+    """Merge the narrow operator-owned envelope and recompute its evidence digest."""
+    if not isinstance(operator_metadata, dict):
+        raise P7C4B2DError("operator_metadata_invalid")
+    keys = set(operator_metadata)
+    protected = sorted(keys & OPERATOR_METADATA_PROTECTED_FIELDS)
+    unknown = sorted(keys - set(OPERATOR_METADATA_FIELDS))
+    if protected:
+        raise P7C4B2DError("operator_metadata_canonical_override")
+    if unknown:
+        raise P7C4B2DError("operator_metadata_unknown_field")
+    if keys != set(OPERATOR_METADATA_FIELDS):
+        raise P7C4B2DError("operator_metadata_missing_field")
+    for field in (
+        "provider",
+        "region",
+        "instance_id",
+        "disk_type",
+        "network_topology",
+        "currency",
+        "price_source",
+    ):
+        if not _nonempty_text(operator_metadata.get(field)):
+            raise P7C4B2DError("operator_metadata_invalid")
+    if len(operator_metadata["currency"].strip()) != 3 or not _timestamp(
+        operator_metadata.get("price_observed_at")
+    ):
+        raise P7C4B2DError("operator_metadata_invalid")
+    for field in (
+        "vm_count",
+        "hourly_price",
+        "maximum_runtime_hours",
+        "maximum_monetary_budget",
+    ):
+        if not _finite_positive(operator_metadata.get(field)):
+            raise P7C4B2DError("operator_metadata_invalid")
+    merged = {**collected, **operator_metadata}
+    merged["environment_digest"] = environment_digest(merged)
+    return merged
+
+
 def collect_target_environment(
     plan: dict[str, Any],
     *,
     mode: str,
     output_directory: str,
+    operator_metadata: dict[str, Any] | None = None,
     repo_root: Path | None = None,
 ) -> dict[str, Any]:
     """Collect verifiable local evidence only; unknown operator inputs remain null."""
@@ -245,9 +312,9 @@ def collect_target_environment(
         "instance_id": None,
         "os": platform.platform(),
         "python_version": platform.python_version(),
-        "cpu_model": platform.processor() or None,
-        "vcpu_count": None,
-        "ram_bytes": None,
+        "cpu_model": platform.processor() or platform.uname().processor or None,
+        "vcpu_count": os.cpu_count(),
+        "ram_bytes": psutil.virtual_memory().total,
         "gpu_model": "none",
         "gpu_count": 0,
         "gpu_vram_bytes": 0,
@@ -278,7 +345,11 @@ def collect_target_environment(
     except Exception:
         value["dataset_hashes"] = None
     value["environment_digest"] = environment_digest(value)
-    return value
+    return (
+        merge_operator_metadata(value, operator_metadata)
+        if operator_metadata is not None
+        else value
+    )
 
 
 def task_inventory(plan: dict[str, Any]) -> dict[str, Any]:
