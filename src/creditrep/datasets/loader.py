@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from hashlib import sha256
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -9,23 +11,32 @@ import pandas as pd
 
 from creditrep.datasets.exceptions import DatasetFileError, DatasetSchemaError
 from creditrep.datasets.models import DatasetSpec, LoadedDataset
-from creditrep.datasets.registry import find_repo_root, get_dataset_spec, load_registry, resolve_repo_path
+from creditrep.datasets.registry import (
+    find_repo_root,
+    get_dataset_spec,
+    load_registry,
+    resolve_repo_path,
+)
 
 
-def _read_frame(spec: DatasetSpec, path: Path) -> pd.DataFrame:
+def _read_frame(spec: DatasetSpec, source: BytesIO) -> pd.DataFrame:
     reader_type = spec.reader.get("type")
     na_values = list(spec.missing_values)
     if reader_type == "csv":
         return pd.read_csv(
-            path,
+            source,
             na_values=na_values or None,
             encoding=spec.reader.get("encoding"),
         )
     if reader_type == "delimited":
-        sep = r"\s+" if spec.reader.get("sep") == "whitespace" else spec.reader.get("sep", ",")
+        sep = (
+            r"\s+"
+            if spec.reader.get("sep") == "whitespace"
+            else spec.reader.get("sep", ",")
+        )
         header = None if spec.reader.get("header") is False else "infer"
         return pd.read_csv(
-            path,
+            source,
             sep=sep,
             header=header,
             names=spec.reader.get("columns"),
@@ -34,7 +45,7 @@ def _read_frame(spec: DatasetSpec, path: Path) -> pd.DataFrame:
         )
     if reader_type == "excel":
         return pd.read_excel(
-            path,
+            source,
             engine=spec.reader.get("engine", "xlrd"),
             header=spec.reader.get("header", 0),
             na_values=na_values or None,
@@ -107,12 +118,25 @@ def _build_metadata(
     source_path: Path,
     repo_root: Path,
 ) -> dict[str, Any]:
-    class_counts = {int(key): int(value) for key, value in target.value_counts().sort_index().items()}
+    class_counts = {
+        int(key): int(value)
+        for key, value in target.value_counts().sort_index().items()
+    }
     default_rate = float(class_counts.get(1, 0) / len(target)) if len(target) else 0.0
-    removed_identifier_columns = [column for column in spec.identifier_columns if column in spec.raw.get("identifier_columns", [])]
-    removed_ignored_columns = [column for column in spec.ignored_columns if column not in removed_identifier_columns]
+    removed_identifier_columns = [
+        column
+        for column in spec.identifier_columns
+        if column in spec.raw.get("identifier_columns", [])
+    ]
+    removed_ignored_columns = [
+        column
+        for column in spec.ignored_columns
+        if column not in removed_identifier_columns
+    ]
     try:
-        absolute_source = str(source_path.resolve().relative_to(repo_root.resolve())).replace("\\", "/")
+        absolute_source = str(
+            source_path.resolve().relative_to(repo_root.resolve())
+        ).replace("\\", "/")
     except ValueError:
         absolute_source = spec.active_file
     return {
@@ -123,7 +147,9 @@ def _build_metadata(
         "target_mapping": {key: value for key, value in spec.target_mapping.items()},
         "removed_identifier_columns": removed_identifier_columns,
         "removed_ignored_columns": removed_ignored_columns,
-        "removed_columns": list(dict.fromkeys([*removed_identifier_columns, *removed_ignored_columns])),
+        "removed_columns": list(
+            dict.fromkeys([*removed_identifier_columns, *removed_ignored_columns])
+        ),
         "row_count": int(len(target)),
         "feature_count": int(features.shape[1]),
         "class_counts": class_counts,
@@ -138,20 +164,48 @@ def load_dataset(
     *,
     registry_path: Path | str | None = None,
     repo_root: Path | str | None = None,
+    registry: dict[str, DatasetSpec] | None = None,
+    expected_source_sha256: str | None = None,
 ) -> LoadedDataset:
     """Load a dataset as features, normalized binary target and metadata."""
 
     root = Path(repo_root).resolve() if repo_root is not None else find_repo_root()
-    registry = load_registry(registry_path, repo_root=root)
-    spec = get_dataset_spec(dataset_id, registry)
-    source_path = resolve_repo_path(spec.active_file, repo_root=root, context=f"{spec.dataset_id}.active_file")
+    selected_registry = (
+        registry
+        if registry is not None
+        else load_registry(registry_path, repo_root=root)
+    )
+    spec = get_dataset_spec(dataset_id, selected_registry)
+    source_path = resolve_repo_path(
+        spec.active_file, repo_root=root, context=f"{spec.dataset_id}.active_file"
+    )
     if not source_path.exists():
-        raise DatasetFileError(f"{spec.dataset_id}: active file does not exist: {spec.active_file}")
+        raise DatasetFileError(
+            f"{spec.dataset_id}: active file does not exist: {spec.active_file}"
+        )
+    try:
+        source_bytes = source_path.read_bytes()
+    except OSError as exc:
+        raise DatasetFileError(
+            f"{spec.dataset_id}: cannot read active file: {spec.active_file}"
+        ) from exc
+    source_digest = sha256(source_bytes).hexdigest().upper()
+    if (
+        expected_source_sha256 is not None
+        and source_digest != expected_source_sha256.upper()
+    ):
+        raise DatasetFileError(
+            f"{spec.dataset_id}: source changed after runtime-input authorization."
+        )
 
-    df = _read_frame(spec, source_path)
+    df = _read_frame(spec, BytesIO(source_bytes))
     _validate_declared_columns(df, spec)
     target = _normalize_target(df, spec)
-    remove_columns = list(dict.fromkeys([spec.target_column, *spec.identifier_columns, *spec.ignored_columns]))
+    remove_columns = list(
+        dict.fromkeys(
+            [spec.target_column, *spec.identifier_columns, *spec.ignored_columns]
+        )
+    )
     features = df.drop(columns=remove_columns)
     if features.shape[1] == 0:
         raise DatasetSchemaError(

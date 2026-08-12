@@ -1,11 +1,13 @@
-"""Fail-closed, static target-preflight evidence and review contracts.
+"""Fail-closed target-preflight evidence and authorization contracts.
 
-This module never starts a model workload and never creates effective authorization.
+This module never starts a model workload. Effective authorization creation only
+builds and returns a scoped artifact after revalidation.
 """
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 import hashlib
 import math
 import os
@@ -20,6 +22,10 @@ from typing import Any, Callable
 import psutil
 from creditrep.checksums import get_dataset_checksum
 from creditrep.datasets.registry import find_repo_root, get_dataset_spec, load_registry
+from creditrep.locked_runtime_inputs import (
+    LockedRuntimeInputError,
+    load_locked_runtime_inputs,
+)
 from creditrep.protocols.p7c4b2c import (
     DATASET_OUTER_REPEATS,
     MODES,
@@ -37,6 +43,8 @@ DISK_POLICY = "p7c4b2d-v1-5GiB-static-canary-output-and-quarantine-margin"
 LOCK_FILES = ("pyproject.toml", "requirements.txt", "requirements-dev.txt")
 ENVIRONMENT_FIELDS = (
     "schema_version",
+    "artifact_type",
+    "checkpoint",
     "provider",
     "region",
     "instance_id",
@@ -60,6 +68,7 @@ ENVIRONMENT_FIELDS = (
     "plan_digest",
     "environment_lock_hash",
     "dataset_hashes",
+    "locked_runtime_inputs_digest",
     "output_directory",
     "hourly_price",
     "currency",
@@ -92,6 +101,7 @@ PRE_RUN_CODES = {
     "plan_digest_mismatch",
     "dataset_input_hash_mismatch",
     "dataset_input_missing",
+    "locked_runtime_input_mismatch",
     "insufficient_free_disk",
     "unsupported_process_spawn",
     "process_spawn_probe_timeout",
@@ -122,6 +132,120 @@ SCIENTIFIC_CODES = {
     "target_canary_not_approved",
     "incomplete_canary",
 }
+EFFECTIVE_AUTHORIZATION_SCHEMA_VERSION = 1
+EFFECTIVE_AUTHORIZATION_TYPE = "effective_authorization"
+TARGET_CANARY_APPROVAL = "APPROVE_P7C4B2D_TARGET_CANARY"
+MAX_AUTHORIZATION_DURATION_SECONDS = 24 * 60 * 60
+ENVIRONMENT_SCHEMA_FIELDS = frozenset(
+    (*ENVIRONMENT_FIELDS, "process_spawn_probe", "environment_digest")
+)
+PROPOSAL_SCHEMA_FIELDS = frozenset(
+    {
+        "schema_version",
+        "artifact_type",
+        "authorization_effective",
+        "checkpoint",
+        "plan_digest",
+        "git_commit",
+        "target_environment_digest",
+        "locked_runtime_inputs_digest",
+        "execution_stage",
+        "execution_mode",
+        "vm_count",
+        "task_ids",
+        "maximum_task_count",
+        "minimum_free_disk_bytes",
+        "disk_policy",
+        "maximum_runtime_hours",
+        "maximum_monetary_budget",
+        "hourly_price",
+        "currency",
+        "output_directory",
+        "proposal_timestamp",
+        "expiry",
+        "stop_conditions",
+        "cost_acknowledgement",
+        "proposal_digest",
+    }
+)
+EFFECTIVE_AUTHORIZATION_FIELDS = frozenset(
+    {
+        "schema_version",
+        "artifact_type",
+        "authorization_effective",
+        "checkpoint",
+        "operator_identity",
+        "operator_approval",
+        "created_at",
+        "expires_at",
+        "proposal_digest",
+        "target_environment_digest",
+        "locked_runtime_inputs_digest",
+        "plan_digest",
+        "git_commit",
+        "execution_stage",
+        "execution_mode",
+        "task_ids",
+        "output_directory",
+        "vm_count",
+        "maximum_task_count",
+        "maximum_runtime_hours",
+        "maximum_monetary_budget",
+        "hourly_price",
+        "currency",
+        "minimum_free_disk_bytes",
+        "disk_policy",
+        "authorization_digest",
+    }
+)
+
+
+def _decimal_value(value: Any) -> Decimal | None:
+    """Parse a positive canonical decimal string without binary-float conversion."""
+    if not isinstance(value, str) or not re.fullmatch(
+        r"(?:0|[1-9]\d*)(?:\.\d+)?", value
+    ):
+        return None
+    try:
+        parsed = Decimal(value)
+    except InvalidOperation:
+        return None
+    return parsed if parsed.is_finite() and parsed > 0 else None
+
+
+def canonical_decimal(value: Any) -> str:
+    parsed = _decimal_value(value)
+    if parsed is None:
+        raise P7C4B2DError("invalid_decimal_value")
+    normalized = format(parsed.normalize(), "f")
+    return normalized if "." in normalized else f"{normalized}.0"
+
+
+def _static_authorization_cost_upper_bound(value: dict[str, Any]) -> Decimal | None:
+    """Return the documented worst-case cost of the authorized runtime window.
+
+    The checkpoint has no trustworthy real-time billing feed. Its monetary
+    control is therefore deliberately static: the full authorized duration
+    must be affordable at the declared hourly price and VM count before a
+    runner can start. Runtime enforcement then stops dispatch at the runtime
+    deadline; this is not represented as live provider billing.
+    """
+    try:
+        hourly_price = _decimal_value(value["hourly_price"])
+        budget_runtime = Decimal(str(value["maximum_runtime_hours"]))
+        vm_count = value["vm_count"]
+    except (KeyError, InvalidOperation, TypeError, ValueError):
+        return None
+    if (
+        hourly_price is None
+        or not isinstance(vm_count, int)
+        or isinstance(vm_count, bool)
+        or vm_count < 1
+        or not budget_runtime.is_finite()
+        or budget_runtime <= 0
+    ):
+        return None
+    return hourly_price * Decimal(vm_count) * budget_runtime
 
 
 class P7C4B2DError(ValueError):
@@ -157,6 +281,13 @@ def _timestamp(value: Any) -> bool:
     except ValueError:
         return False
     return True
+
+
+def _parse_timestamp(value: Any) -> datetime | None:
+    if not _timestamp(value):
+        return None
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return parsed if parsed.tzinfo is not None else None
 
 
 def current_git_head(repo_root: Path) -> str | None:
@@ -276,13 +407,16 @@ def merge_operator_metadata(
         raise P7C4B2DError("operator_metadata_invalid")
     for field in (
         "vm_count",
-        "hourly_price",
         "maximum_runtime_hours",
-        "maximum_monetary_budget",
     ):
         if not _finite_positive(operator_metadata.get(field)):
             raise P7C4B2DError("operator_metadata_invalid")
+    for field in ("hourly_price", "maximum_monetary_budget"):
+        if _decimal_value(operator_metadata.get(field)) is None:
+            raise P7C4B2DError("operator_metadata_invalid")
     merged = {**collected, **operator_metadata}
+    for field in ("hourly_price", "maximum_monetary_budget"):
+        merged[field] = canonical_decimal(merged[field])
     merged["environment_digest"] = environment_digest(merged)
     return merged
 
@@ -307,6 +441,8 @@ def collect_target_environment(
         free_disk = None
     value = {
         "schema_version": SCHEMA_VERSION,
+        "artifact_type": "target_environment",
+        "checkpoint": CHECKPOINT,
         "provider": None,
         "region": None,
         "instance_id": None,
@@ -330,6 +466,7 @@ def collect_target_environment(
         "plan_digest": plan.get("plan_digest"),
         "environment_lock_hash": dependency_lock_fingerprint(root)["sha256"],
         "dataset_hashes": None,
+        "locked_runtime_inputs_digest": None,
         "output_directory": str(target),
         "hourly_price": None,
         "currency": None,
@@ -344,6 +481,10 @@ def collect_target_environment(
         value["dataset_hashes"] = collect_dataset_hashes(plan, mode, repo_root=root)
     except Exception:
         value["dataset_hashes"] = None
+    try:
+        value["locked_runtime_inputs_digest"] = load_locked_runtime_inputs(root).digest
+    except LockedRuntimeInputError:
+        value["locked_runtime_inputs_digest"] = None
     value["environment_digest"] = environment_digest(value)
     return (
         merge_operator_metadata(value, operator_metadata)
@@ -403,6 +544,8 @@ def _safe_output(namespace: Any, root: Path) -> tuple[bool, str | None]:
     if not isinstance(namespace, str) or not namespace.strip():
         return False, None
     candidate = Path(namespace).expanduser()
+    if ".." in candidate.parts:
+        return False, None
     if not candidate.is_absolute():
         candidate = root / candidate
     try:
@@ -419,6 +562,15 @@ def _safe_output(namespace: Any, root: Path) -> tuple[bool, str | None]:
     return True, str(resolved)
 
 
+def normalize_target_output(namespace: Any, repo_root: Path) -> str:
+    """Return the one canonical target path or fail closed."""
+    value = str(namespace) if isinstance(namespace, Path) else namespace
+    safe, normalized = _safe_output(value, repo_root.resolve())
+    if not safe or normalized is None:
+        raise P7C4B2DError("unsafe_output_namespace")
+    return normalized
+
+
 def _validate_values(environment: dict[str, Any]) -> list[str]:
     codes = []
     for field in (
@@ -428,11 +580,14 @@ def _validate_values(environment: dict[str, Any]) -> list[str]:
         "worker_count",
         "vm_count",
         "maximum_runtime_hours",
-        "maximum_monetary_budget",
-        "hourly_price",
     ):
         if not _finite_positive(environment.get(field)):
             codes.append("invalid_environment_value")
+    if any(
+        _decimal_value(environment.get(field)) is None
+        for field in ("hourly_price", "maximum_monetary_budget")
+    ):
+        codes.append("invalid_environment_value")
     gpu_count = environment.get("gpu_count")
     gpu_vram = environment.get("gpu_vram_bytes")
     if (
@@ -469,18 +624,45 @@ def validate_target_environment(
     *,
     repo_root: Path | None = None,
     spawn_probe: Callable[[], dict[str, Any]] | None = None,
+    allow_existing_output: bool = False,
 ) -> dict[str, Any]:
     """Read-only Stage 0 validator against local canonical sources, not declarations."""
     root = (repo_root or find_repo_root()).resolve()
     codes: list[str] = []
     if not isinstance(environment, dict):
         environment = {}
+    if set(environment) != ENVIRONMENT_SCHEMA_FIELDS:
+        codes.append("environment_schema_mismatch")
     missing = [field for field in ENVIRONMENT_FIELDS if environment.get(field) is None]
     if missing:
         codes.append("missing_target_environment_metadata")
     if environment.get("schema_version") != SCHEMA_VERSION or environment.get(
         "environment_digest"
     ) != environment_digest(environment):
+        codes.append("invalid_environment_value")
+    if environment.get("artifact_type") != "target_environment":
+        codes.append("environment_artifact_type_mismatch")
+    if environment.get("checkpoint") != CHECKPOINT:
+        codes.append("environment_checkpoint_mismatch")
+    if not isinstance(environment.get("process_spawn_probe"), dict):
+        codes.append("invalid_environment_value")
+    if any(
+        not _nonempty_text(environment.get(field))
+        for field in (
+            "provider",
+            "region",
+            "instance_id",
+            "os",
+            "python_version",
+            "cpu_model",
+            "disk_type",
+            "network_topology",
+            "disk_policy",
+            "output_directory",
+            "currency",
+            "price_source",
+        )
+    ):
         codes.append("invalid_environment_value")
     actual_head = current_git_head(root)
     if actual_head is None:
@@ -494,6 +676,16 @@ def validate_target_environment(
         environment.get("plan_digest")
     ):
         codes.append("plan_digest_mismatch")
+    try:
+        runtime_inputs = load_locked_runtime_inputs(root)
+        if (
+            not _sha256(environment.get("locked_runtime_inputs_digest"))
+            or environment.get("locked_runtime_inputs_digest", "").upper()
+            != runtime_inputs.digest
+        ):
+            codes.append("locked_runtime_input_mismatch")
+    except LockedRuntimeInputError:
+        codes.append("locked_runtime_input_mismatch")
     try:
         expected_lock = dependency_lock_fingerprint(root)["sha256"]
         if environment.get("environment_lock_hash") != expected_lock:
@@ -516,7 +708,11 @@ def validate_target_environment(
     safe, normalized_output = _safe_output(environment.get("output_directory"), root)
     if not safe:
         codes.append("unsafe_output_namespace")
-    elif Path(normalized_output).exists() and any(Path(normalized_output).iterdir()):
+    elif (
+        not allow_existing_output
+        and Path(normalized_output).exists()
+        and any(Path(normalized_output).iterdir())
+    ):
         codes.append("output_collision")
     if mode in MODES:
         expected_datasets = set(required_canary_datasets(plan, mode))
@@ -671,6 +867,7 @@ def render_authorization_proposal(
         "plan_digest": plan["plan_digest"],
         "git_commit": environment.get("expected_git_commit"),
         "target_environment_digest": environment.get("environment_digest"),
+        "locked_runtime_inputs_digest": environment.get("locked_runtime_inputs_digest"),
         "execution_stage": execution_stage,
         "execution_mode": environment["execution_mode"],
         "vm_count": environment.get("vm_count"),
@@ -679,8 +876,10 @@ def render_authorization_proposal(
         "minimum_free_disk_bytes": MINIMUM_FREE_DISK_BYTES,
         "disk_policy": DISK_POLICY,
         "maximum_runtime_hours": environment.get("maximum_runtime_hours"),
-        "maximum_monetary_budget": environment.get("maximum_monetary_budget"),
-        "hourly_price": environment.get("hourly_price"),
+        "maximum_monetary_budget": canonical_decimal(
+            environment.get("maximum_monetary_budget")
+        ),
+        "hourly_price": canonical_decimal(environment.get("hourly_price")),
         "currency": environment.get("currency"),
         "output_directory": environment.get("output_directory"),
         "proposal_timestamp": environment.get("evidence_observed_at"),
@@ -697,26 +896,52 @@ def render_authorization_proposal(
 def validate_authorization_proposal(
     proposal: dict[str, Any], plan: dict[str, Any], environment: dict[str, Any]
 ) -> dict[str, Any]:
-    codes = []
-    if (
-        proposal.get("artifact_type") != "authorization_proposal"
-        or proposal.get("authorization_effective") is not False
-    ):
+    codes: list[str] = []
+    if not isinstance(proposal, dict):
+        return {
+            "valid": False,
+            "reason_codes": ["authorization_proposal_invalid"],
+            "authorization_effective": False,
+        }
+    environment_value = environment if isinstance(environment, dict) else {}
+    if set(proposal) != PROPOSAL_SCHEMA_FIELDS:
+        codes.append("authorization_proposal_schema_mismatch")
+    if proposal.get("artifact_type") != "authorization_proposal":
         codes.append("authorization_proposal_invalid")
-    if proposal.get("proposal_digest") != canonical_digest(proposal, "proposal_digest"):
+    if proposal.get("schema_version") != SCHEMA_VERSION:
+        codes.append("authorization_proposal_schema_mismatch")
+    if proposal.get("checkpoint") != CHECKPOINT:
+        codes.append("authorization_proposal_checkpoint_mismatch")
+    if proposal.get("authorization_effective") is not False:
+        codes.append("authorization_proposal_invalid")
+    try:
+        digest_matches = proposal.get("proposal_digest") == canonical_digest(
+            proposal, "proposal_digest"
+        )
+    except (TypeError, ValueError):
+        digest_matches = False
+    if not digest_matches:
         codes.append("authorization_proposal_digest_mismatch")
     if proposal.get("plan_digest") != plan.get("plan_digest") or proposal.get(
         "target_environment_digest"
-    ) != environment.get("environment_digest"):
+    ) != environment_value.get("environment_digest"):
+        codes.append("authorization_mismatch")
+    if proposal.get("locked_runtime_inputs_digest") != environment_value.get(
+        "locked_runtime_inputs_digest"
+    ):
         codes.append("authorization_mismatch")
     mode = proposal.get("execution_mode")
     if mode not in MODES:
         codes.append("execution_mode_unsupported")
     else:
         expected = select_canary(plan, mode)["task_ids"]
+        task_ids = proposal.get("task_ids")
         if (
-            proposal.get("task_ids") != expected
-            or len(set(proposal.get("task_ids", []))) != 4
+            not isinstance(task_ids, list)
+            or any(not _nonempty_text(item) for item in task_ids)
+            or task_ids != expected
+            or len(task_ids) != len(set(task_ids))
+            or len(task_ids) != 4
         ):
             codes.append("authorization_proposal_task_scope_mismatch")
     for key in (
@@ -727,20 +952,282 @@ def validate_authorization_proposal(
         "output_directory",
         "disk_policy",
     ):
-        if proposal.get(key) != environment.get(key):
+        if proposal.get(key) != environment_value.get(key):
             codes.append("authorization_mismatch")
+    if proposal.get("execution_stage") != "target_canary":
+        codes.append("authorization_mismatch")
+    if proposal.get("git_commit") != environment_value.get("expected_git_commit"):
+        codes.append("authorization_mismatch")
+    if (
+        not isinstance(proposal.get("vm_count"), int)
+        or isinstance(proposal.get("vm_count"), bool)
+        or proposal.get("vm_count") != environment_value.get("vm_count")
+        or proposal.get("maximum_task_count") != 4
+    ):
+        codes.append("authorization_mismatch")
+    if (
+        _decimal_value(proposal.get("hourly_price")) is None
+        or _decimal_value(proposal.get("maximum_monetary_budget")) is None
+    ):
+        codes.append("authorization_mismatch")
     if proposal.get("minimum_free_disk_bytes") != MINIMUM_FREE_DISK_BYTES:
         codes.append("authorization_mismatch")
-    expiry = proposal.get("expiry")
-    if expiry is not None and (
-        not _timestamp(expiry)
-        or datetime.fromisoformat(expiry.replace("Z", "+00:00")) <= datetime.now(UTC)
+    expiry = _parse_timestamp(proposal.get("expiry"))
+    if proposal.get("expiry") is not None and (
+        expiry is None or expiry <= datetime.now(UTC)
     ):
         codes.append("authorization_expired")
     return {
         "valid": not codes,
         "reason_codes": sorted(set(codes)),
         "authorization_effective": False,
+    }
+
+
+def create_effective_authorization(
+    proposal: dict[str, Any],
+    environment: dict[str, Any],
+    plan: dict[str, Any],
+    *,
+    operator_identity: str,
+    operator_approval: str,
+    expires_at: str,
+    repo_root: Path | None = None,
+    spawn_probe: Callable[[], dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Create a scoped authorization using the program's trusted UTC clock."""
+    return _create_effective_authorization(
+        proposal,
+        environment,
+        plan,
+        operator_identity=operator_identity,
+        operator_approval=operator_approval,
+        expires_at=expires_at,
+        repo_root=repo_root,
+        spawn_probe=spawn_probe,
+        now_provider=lambda: datetime.now(UTC),
+    )
+
+
+def _create_effective_authorization(
+    proposal: dict[str, Any],
+    environment: dict[str, Any],
+    plan: dict[str, Any],
+    *,
+    operator_identity: str,
+    operator_approval: str,
+    expires_at: str,
+    repo_root: Path | None,
+    spawn_probe: Callable[[], dict[str, Any]] | None,
+    now_provider: Callable[[], datetime],
+) -> dict[str, Any]:
+    """Private deterministic seam used by tests; production callers cannot date input."""
+    environment_report = validate_target_environment(
+        environment, plan, repo_root=repo_root, spawn_probe=spawn_probe
+    )
+    proposal_report = validate_authorization_proposal(proposal, plan, environment)
+    if not environment_report["valid"]:
+        raise P7C4B2DError(",".join(sorted(set(environment_report["reason_codes"]))))
+    if not proposal_report["valid"]:
+        raise P7C4B2DError(",".join(sorted(set(proposal_report["reason_codes"]))))
+    if not _nonempty_text(operator_identity):
+        raise P7C4B2DError("operator_identity_missing")
+    if operator_approval != TARGET_CANARY_APPROVAL:
+        raise P7C4B2DError("operator_approval_missing")
+    created = now_provider()
+    if not isinstance(created, datetime) or created.tzinfo is None:
+        raise P7C4B2DError("created_at_missing_or_invalid")
+    created = created.astimezone(UTC)
+    expiry = _parse_timestamp(expires_at)
+    if (
+        expiry is None
+        or expiry <= created
+        or expiry - created > timedelta(seconds=MAX_AUTHORIZATION_DURATION_SECONDS)
+    ):
+        raise P7C4B2DError("expiry_missing_or_invalid")
+    static_cost = _static_authorization_cost_upper_bound(proposal)
+    budget = _decimal_value(proposal.get("maximum_monetary_budget"))
+    if static_cost is None or budget is None or budget < static_cost:
+        raise P7C4B2DError("monetary_budget_mismatch")
+    value = {
+        "schema_version": EFFECTIVE_AUTHORIZATION_SCHEMA_VERSION,
+        "artifact_type": EFFECTIVE_AUTHORIZATION_TYPE,
+        "authorization_effective": True,
+        "checkpoint": CHECKPOINT,
+        "operator_identity": operator_identity.strip(),
+        "operator_approval": operator_approval,
+        "created_at": created.isoformat().replace("+00:00", "Z"),
+        "expires_at": expiry.isoformat().replace("+00:00", "Z"),
+        "proposal_digest": proposal["proposal_digest"],
+        "target_environment_digest": proposal["target_environment_digest"],
+        "locked_runtime_inputs_digest": proposal["locked_runtime_inputs_digest"],
+        "plan_digest": proposal["plan_digest"],
+        "git_commit": proposal["git_commit"],
+        "execution_stage": proposal["execution_stage"],
+        "execution_mode": proposal["execution_mode"],
+        "task_ids": list(proposal["task_ids"]),
+        "output_directory": proposal["output_directory"],
+        "vm_count": proposal["vm_count"],
+        "maximum_task_count": proposal["maximum_task_count"],
+        "maximum_runtime_hours": proposal["maximum_runtime_hours"],
+        "maximum_monetary_budget": proposal["maximum_monetary_budget"],
+        "hourly_price": proposal["hourly_price"],
+        "currency": proposal["currency"],
+        "minimum_free_disk_bytes": proposal["minimum_free_disk_bytes"],
+        "disk_policy": proposal["disk_policy"],
+    }
+    value["authorization_digest"] = canonical_digest(value, "authorization_digest")
+    return value
+
+
+def validate_effective_authorization(
+    authorization: dict[str, Any] | None,
+    proposal: dict[str, Any] | None,
+    environment: dict[str, Any],
+    plan: dict[str, Any],
+    *,
+    now: datetime | None = None,
+    repo_root: Path | None = None,
+    spawn_probe: Callable[[], dict[str, Any]] | None = None,
+    allow_existing_output: bool = False,
+) -> dict[str, Any]:
+    """Fail-closed authorization validator; it has no execution side effects."""
+    codes: list[str] = []
+    if not isinstance(authorization, dict):
+        return {
+            "valid": False,
+            "reason_codes": ["authorization_missing"],
+            "authorization_effective": False,
+        }
+    if set(authorization) != EFFECTIVE_AUTHORIZATION_FIELDS:
+        codes.append("authorization_schema_mismatch")
+    if authorization.get("artifact_type") != EFFECTIVE_AUTHORIZATION_TYPE:
+        codes.append("wrong_artifact_type")
+    if authorization.get("schema_version") != EFFECTIVE_AUTHORIZATION_SCHEMA_VERSION:
+        codes.append("authorization_schema_mismatch")
+    if authorization.get("checkpoint") != CHECKPOINT:
+        codes.append("authorization_checkpoint_mismatch")
+    if authorization.get("authorization_effective") is not True:
+        codes.append("authorization_not_effective")
+    if not _nonempty_text(authorization.get("operator_identity")):
+        codes.append("operator_identity_missing")
+    if authorization.get("operator_approval") != TARGET_CANARY_APPROVAL:
+        codes.append("operator_approval_missing")
+    created, expiry = (
+        _parse_timestamp(authorization.get("created_at")),
+        _parse_timestamp(authorization.get("expires_at")),
+    )
+    if created is None:
+        codes.append("created_at_missing_or_invalid")
+    if (
+        expiry is None
+        or created is None
+        or expiry <= created
+        or expiry - created > timedelta(seconds=MAX_AUTHORIZATION_DURATION_SECONDS)
+    ):
+        codes.append("expiry_missing_or_invalid")
+    current = now or datetime.now(UTC)
+    if not isinstance(current, datetime) or current.tzinfo is None:
+        codes.append("validation_clock_invalid")
+        current = datetime.now(UTC)
+    else:
+        current = current.astimezone(UTC)
+    if created is not None and created > current:
+        codes.append("authorization_not_yet_valid")
+    if expiry is not None and expiry <= current:
+        codes.append("authorization_expired")
+    try:
+        integrity_matches = authorization.get(
+            "authorization_digest"
+        ) == canonical_digest(authorization, "authorization_digest")
+    except (TypeError, ValueError):
+        integrity_matches = False
+    if not integrity_matches:
+        codes.append("authorization_digest_mismatch")
+    environment_report = validate_target_environment(
+        environment,
+        plan,
+        repo_root=repo_root,
+        spawn_probe=spawn_probe,
+        allow_existing_output=allow_existing_output,
+    )
+    codes.extend(environment_report["reason_codes"])
+    if not isinstance(proposal, dict):
+        codes.append("proposal_digest_mismatch")
+    else:
+        proposal_report = validate_authorization_proposal(proposal, plan, environment)
+        codes.extend(proposal_report["reason_codes"])
+        if authorization.get("proposal_digest") != proposal.get("proposal_digest"):
+            codes.append("proposal_digest_mismatch")
+    environment_value = environment if isinstance(environment, dict) else {}
+    expected = {
+        "target_environment_digest": environment_value.get("environment_digest"),
+        "locked_runtime_inputs_digest": environment_value.get(
+            "locked_runtime_inputs_digest"
+        ),
+        "plan_digest": plan.get("plan_digest"),
+        "git_commit": environment_value.get("expected_git_commit"),
+        "execution_stage": "target_canary",
+        "execution_mode": environment_value.get("execution_mode"),
+        "output_directory": environment_value.get("output_directory"),
+        "vm_count": environment_value.get("vm_count"),
+        "maximum_runtime_hours": environment_value.get("maximum_runtime_hours"),
+        "maximum_monetary_budget": environment_value.get("maximum_monetary_budget"),
+        "hourly_price": environment_value.get("hourly_price"),
+        "currency": environment_value.get("currency"),
+        "minimum_free_disk_bytes": MINIMUM_FREE_DISK_BYTES,
+        "disk_policy": DISK_POLICY,
+    }
+    code_for = {
+        "target_environment_digest": "target_environment_digest_mismatch",
+        "locked_runtime_inputs_digest": "locked_runtime_input_mismatch",
+        "plan_digest": "plan_digest_mismatch",
+        "git_commit": "git_provenance_mismatch",
+        "execution_stage": "execution_stage_mismatch",
+        "execution_mode": "execution_mode_mismatch",
+        "output_directory": "output_directory_mismatch",
+        "vm_count": "vm_count_mismatch",
+        "maximum_runtime_hours": "runtime_limit_mismatch",
+        "maximum_monetary_budget": "monetary_budget_mismatch",
+        "hourly_price": "price_currency_mismatch",
+        "currency": "price_currency_mismatch",
+        "minimum_free_disk_bytes": "disk_policy_mismatch",
+        "disk_policy": "disk_policy_mismatch",
+    }
+    for field, expected_value in expected.items():
+        if authorization.get(field) != expected_value:
+            codes.append(code_for[field])
+    static_cost = _static_authorization_cost_upper_bound(authorization)
+    budget = _decimal_value(authorization.get("maximum_monetary_budget"))
+    budget_covers_window = (
+        static_cost is not None and budget is not None and budget >= static_cost
+    )
+    if not budget_covers_window:
+        codes.append("monetary_budget_mismatch")
+    mode = environment_value.get("execution_mode")
+    expected_tasks = select_canary(plan, mode)["task_ids"] if mode in MODES else []
+    task_ids = authorization.get("task_ids")
+    if (
+        not isinstance(task_ids, list)
+        or any(not _nonempty_text(item) for item in task_ids)
+        or len(task_ids) != len(set(task_ids))
+        or task_ids != expected_tasks
+    ):
+        codes.append("task_scope_mismatch")
+    if (
+        not isinstance(authorization.get("maximum_task_count"), int)
+        or isinstance(authorization.get("maximum_task_count"), bool)
+        or authorization.get("maximum_task_count") != len(expected_tasks)
+    ):
+        codes.append("task_count_limit_mismatch")
+    if not isinstance(authorization.get("vm_count"), int) or isinstance(
+        authorization.get("vm_count"), bool
+    ):
+        codes.append("vm_count_mismatch")
+    return {
+        "valid": not codes,
+        "reason_codes": sorted(set(codes)),
+        "authorization_effective": authorization.get("authorization_effective") is True,
     }
 
 

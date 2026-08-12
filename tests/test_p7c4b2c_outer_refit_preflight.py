@@ -7,9 +7,9 @@ import pytest
 
 from creditrep.config.loader import sha256_canonical
 from creditrep.experiments.p7c4b2c_preflight import (
+    canonical_outer_refit,
     resume,
     run,
-    synthetic_outer_refit,
     validate_artifacts,
 )
 from creditrep.experiments.p7c4b2c_cli import main as cli_main
@@ -20,6 +20,7 @@ from creditrep.protocols.p7c4b2c import (
     build_plan,
     eligibility,
     project_validated,
+    validate_canonical_plan,
     validate_plan,
 )
 
@@ -40,7 +41,6 @@ def _synthetic_run(
         execution_class="synthetic_validation",
         mode="cpu_parallel_1",
         max_samples=2,
-        workload=None if spawned else synthetic_outer_refit,
     )
     assert result["validation"]["valid"] is True
     return output
@@ -86,6 +86,73 @@ def test_plan_mutation_and_worker_mismatch_are_rejected():
     assert "execution_mode_worker_mismatch" in str(exc.value)
 
 
+@pytest.mark.parametrize(
+    "mutation,code",
+    [
+        (lambda plan: plan.__setitem__("unknown", True), "plan_schema_invalid"),
+        (
+            lambda plan: plan["tasks"][0].__setitem__("unknown", True),
+            "plan_task_schema_invalid",
+        ),
+        (
+            lambda plan: plan["tasks"][0]["candidate"].__setitem__("unknown", 1),
+            "plan_candidate_schema_invalid",
+        ),
+        (
+            lambda plan: plan["tasks"][0].__setitem__("seed", True),
+            "plan_task_schema_invalid",
+        ),
+        (
+            lambda plan: plan["tasks"][0].__setitem__("mode", ["cpu_parallel_1"]),
+            "plan_task_schema_invalid",
+        ),
+        (
+            lambda plan: plan["tasks"][0].__setitem__("candidate_id", ["invalid"]),
+            "plan_task_schema_invalid",
+        ),
+        (
+            lambda plan: plan["tasks"][0]["candidate"].__setitem__(
+                "dropout", float("nan")
+            ),
+            "plan_candidate_schema_invalid",
+        ),
+        (
+            lambda plan: plan["tasks"][0]["candidate"].__setitem__(
+                "hidden_units", (5,)
+            ),
+            "plan_candidate_schema_invalid",
+        ),
+    ],
+)
+def test_plan_schema_is_closed_world_and_never_coerces(mutation, code):
+    plan = _plan()
+    mutation(plan)
+    with pytest.raises(P7C4B2CError, match=code):
+        validate_plan(plan)
+
+
+def test_exact_plan_is_rebuilt_from_locked_inputs():
+    plan = _plan()
+    rebuilt = validate_canonical_plan(plan, Path.cwd())
+    assert rebuilt == plan
+    changed = json.loads(json.dumps(plan))
+    task = changed["tasks"][0]
+    task["candidate"]["hidden_units"] = [999]
+    task["sample_id"] = sha256_canonical(
+        {key: value for key, value in task.items() if key != "sample_id"}
+    )
+    changed["plan_digest"] = sha256_canonical(
+        {key: value for key, value in changed.items() if key != "plan_digest"}
+    )
+    with pytest.raises(P7C4B2CError, match="plan_"):
+        validate_canonical_plan(changed, Path.cwd())
+
+
+def test_missing_locked_inputs_fail_closed(tmp_path):
+    with pytest.raises(P7C4B2CError, match="plan_locked_input_mismatch"):
+        validate_canonical_plan(_plan(), tmp_path)
+
+
 def test_synthetic_end_to_end_has_real_stages_and_is_ineligible(tmp_path):
     output = _synthetic_run(tmp_path, spawned=True)
     report = validate_artifacts(output)
@@ -108,16 +175,18 @@ def test_synthetic_end_to_end_has_real_stages_and_is_ineligible(tmp_path):
     assert "synthetic_evidence_not_target_evidence" in projection["reason_codes"]
 
 
-def test_target_requires_matching_explicit_authorization(tmp_path):
+def test_target_requires_effective_authorization_and_rejects_legacy_bypass(tmp_path):
     plan = _plan()
-    with pytest.raises(P7C4B2CError, match="target_authorization_missing_or_mismatch"):
+    with pytest.raises(P7C4B2CError, match="authorization_missing"):
         run(
             plan,
             tmp_path / "target",
             execution_class="target_preflight",
             mode="cpu_parallel_1",
         )
-    with pytest.raises(P7C4B2CError, match="target_authorization_missing_or_mismatch"):
+    with pytest.raises(
+        P7C4B2CError, match="legacy_target_authorization_flags_forbidden"
+    ):
         run(
             plan,
             tmp_path / "target-2",
@@ -157,23 +226,54 @@ def test_resume_quarantines_corrupt_sample_and_stale_temp(tmp_path):
     assert any("stale_temporary_attempt" in name for name in names)
 
 
-def test_failure_artifact_has_attempt_identity(tmp_path):
+def test_public_workload_injection_is_rejected_before_output(tmp_path):
     def fail(_task, _root):
         raise RuntimeError("fixture failure")
 
-    with pytest.raises(RuntimeError, match="fixture failure"):
+    output = tmp_path / "failed-run"
+    with pytest.raises(TypeError, match="unexpected keyword argument 'workload'"):
         run(
             _plan(),
-            tmp_path / "failed-run",
+            output,
             execution_class="synthetic_validation",
             mode="cpu_parallel_1",
             max_samples=1,
             workload=fail,
         )
-    failure = _read(next((tmp_path / "failed-run" / "failures").glob("*.json")))
-    assert failure["attempt"] == 1
-    assert failure["attempt_id"]
-    assert failure["sample_id"]
+    assert not output.exists()
+
+
+def test_canonical_workload_cannot_be_paired_with_synthetic_class(tmp_path):
+    output = tmp_path / "bypass"
+    with pytest.raises(TypeError, match="unexpected keyword argument 'workload'"):
+        run(
+            _plan(),
+            output,
+            execution_class="synthetic_validation",
+            mode="cpu_parallel_1",
+            workload=canonical_outer_refit,
+        )
+    assert not output.exists()
+
+
+def test_resume_rejects_workload_injection_before_mutation(tmp_path):
+    output = _synthetic_run(tmp_path)
+    before = sorted(path.relative_to(output) for path in output.rglob("*"))
+    with pytest.raises(TypeError, match="unexpected keyword argument 'workload'"):
+        resume(output, workload=canonical_outer_refit)
+    assert sorted(path.relative_to(output) for path in output.rglob("*")) == before
+
+
+def test_unknown_execution_class_is_rejected_before_output(tmp_path):
+    output = tmp_path / "unknown"
+    with pytest.raises(P7C4B2CError, match="unsupported_execution_class"):
+        run(
+            _plan(),
+            output,
+            execution_class="foreign",
+            mode="cpu_parallel_1",
+        )
+    assert not output.exists()
 
 
 @pytest.mark.parametrize(
@@ -187,7 +287,7 @@ def test_failure_artifact_has_attempt_identity(tmp_path):
         ),
         (
             lambda record: record.update(model_fit_elapsed_seconds=float("inf")),
-            "invalid_timing_component",
+            "invalid_json_number",
         ),
         (
             lambda record: record.update(completed_monotonic=0),

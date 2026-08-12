@@ -12,11 +12,14 @@ from creditrep.protocols.p7c4b2c import build_plan
 from creditrep.protocols.p7c4b2d import (
     P7C4B2DError,
     collect_target_environment,
+    create_effective_authorization,
     decision_package,
     render_authorization_proposal,
     validate_authorization_proposal,
+    validate_effective_authorization,
     validate_target_environment,
 )
+from creditrep.strict_json import StrictJSONError, load_strict_json_object
 
 EXIT_OK = 0
 EXIT_REVIEW_BLOCKED = 3
@@ -38,13 +41,7 @@ def _plan(root: Path) -> dict:
 
 
 def _read(path: Path) -> dict:
-    def reject_constant(_: str) -> None:
-        raise P7C4B2DError("invalid_json_number")
-
-    value = json.loads(path.read_text(encoding="utf-8"), parse_constant=reject_constant)
-    if not isinstance(value, dict):
-        raise P7C4B2DError("invalid_json_object")
-    return value
+    return load_strict_json_object(path)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -57,16 +54,22 @@ def main(argv: list[str] | None = None) -> int:
             "inspect-target-requirements",
             "render-authorization-proposal",
             "validate-authorization-proposal",
+            "create-effective-authorization",
+            "validate-effective-authorization",
         ),
     )
     parser.add_argument("--environment", type=Path)
     parser.add_argument("--proposal", type=Path)
+    parser.add_argument("--authorization", type=Path)
     parser.add_argument("--operator-metadata", type=Path)
     parser.add_argument(
         "--mode", choices=("cpu_parallel_1", "cpu_parallel_2"), default="cpu_parallel_1"
     )
     parser.add_argument("--output-directory")
     parser.add_argument("--stage", default="target_canary")
+    parser.add_argument("--operator-identity")
+    parser.add_argument("--operator-approval")
+    parser.add_argument("--expires-at")
     args = parser.parse_args(argv)
     root = find_repo_root()
     plan = _plan(root)
@@ -119,12 +122,45 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
             return EXIT_OK
+        if args.command == "create-effective-authorization":
+            if args.proposal is None:
+                raise P7C4B2DError("authorization_proposal_invalid")
+            if args.operator_identity is None:
+                raise P7C4B2DError("operator_identity_missing")
+            if args.operator_approval is None:
+                raise P7C4B2DError("operator_approval_missing")
+            if args.expires_at is None:
+                raise P7C4B2DError("expiry_missing_or_invalid")
+            _print(
+                create_effective_authorization(
+                    _read(args.proposal),
+                    environment,
+                    plan,
+                    operator_identity=args.operator_identity,
+                    operator_approval=args.operator_approval,
+                    expires_at=args.expires_at,
+                    repo_root=root,
+                )
+            )
+            return EXIT_OK
+        if args.command == "validate-effective-authorization":
+            if args.proposal is None or args.authorization is None:
+                raise P7C4B2DError("authorization_missing")
+            value = validate_effective_authorization(
+                _read(args.authorization),
+                _read(args.proposal),
+                environment,
+                plan,
+                repo_root=root,
+            )
+            _print(value)
+            return EXIT_OK if value["valid"] else EXIT_INVALID
         if args.proposal is None:
             raise P7C4B2DError("authorization_proposal_invalid")
         value = validate_authorization_proposal(_read(args.proposal), plan, environment)
         _print(value)
         return EXIT_OK if value["valid"] else EXIT_INVALID
-    except (P7C4B2DError, OSError, json.JSONDecodeError) as exc:
+    except (P7C4B2DError, StrictJSONError) as exc:
         _print({"valid": False, "reason_codes": sorted(set(str(exc).split(",")))})
         return EXIT_INVALID
     except Exception:
