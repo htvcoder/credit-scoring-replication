@@ -24,6 +24,7 @@ from creditrep.protocols.p7c4b2c import (
     project_validated,
     validate_plan,
 )
+from creditrep.strict_json import StrictJSONError, load_strict_json_object
 
 
 def _print(value):
@@ -39,7 +40,7 @@ def _default_plan(root: Path) -> dict:
 
 
 def _read(path: Path) -> dict:
-    return json.loads(path.read_text(encoding="utf-8"))
+    return load_strict_json_object(path)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -67,8 +68,9 @@ def main(argv: list[str] | None = None) -> int:
         "--mode", choices=("cpu_parallel_1", "cpu_parallel_2"), default="cpu_parallel_1"
     )
     parser.add_argument("--max-samples", type=int)
-    parser.add_argument("--target-preflight-authorized", action="store_true")
-    parser.add_argument("--authorization-plan-digest")
+    parser.add_argument("--target-environment", type=Path)
+    parser.add_argument("--authorization-proposal", type=Path)
+    parser.add_argument("--effective-authorization", type=Path)
     parser.add_argument("--inner-projection", type=Path)
     parser.add_argument("--overhead-mapping", type=Path)
     parser.add_argument("--price-input", type=Path)
@@ -92,14 +94,27 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "run":
             if not args.output:
                 parser.error("run requires --output")
+            if args.execution_class == "target_preflight" and (
+                not args.target_environment
+                or not args.authorization_proposal
+                or not args.effective_authorization
+            ):
+                raise P7C4B2CError("authorization_missing")
             result = run(
                 plan,
                 args.output,
                 execution_class=args.execution_class,
                 mode=args.mode,
                 repo_root=root,
-                target_authorized=args.target_preflight_authorized,
-                authorization_plan_digest=args.authorization_plan_digest,
+                target_environment=_read(args.target_environment)
+                if args.target_environment
+                else None,
+                authorization_proposal=_read(args.authorization_proposal)
+                if args.authorization_proposal
+                else None,
+                effective_authorization=_read(args.effective_authorization)
+                if args.effective_authorization
+                else None,
                 max_samples=args.max_samples,
             )
             _print(result)
@@ -110,8 +125,15 @@ def main(argv: list[str] | None = None) -> int:
             result = resume(
                 args.run_dir[0],
                 repo_root=root,
-                target_authorized=args.target_preflight_authorized,
-                authorization_plan_digest=args.authorization_plan_digest,
+                target_environment=_read(args.target_environment)
+                if args.target_environment
+                else None,
+                authorization_proposal=_read(args.authorization_proposal)
+                if args.authorization_proposal
+                else None,
+                effective_authorization=_read(args.effective_authorization)
+                if args.effective_authorization
+                else None,
             )
             _print(result)
             return EXIT_OK if result["validation"]["valid"] else EXIT_VALIDATION
@@ -166,7 +188,7 @@ def main(argv: list[str] | None = None) -> int:
             }
         )
         return EXIT_OK if projection["execution_plan_eligible"] else EXIT_INCOMPLETE
-    except P7C4B2CError as exc:
+    except (P7C4B2CError, StrictJSONError) as exc:
         codes = str(exc).split(",")
         _print({"valid": False, "reason_codes": codes})
         return (

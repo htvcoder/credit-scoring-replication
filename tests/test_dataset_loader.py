@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import hashlib
+from io import BytesIO
 from pathlib import Path
 
 import pandas as pd
 import pytest
 import yaml
 
+from creditrep.datasets import loader as dataset_loader
 from creditrep.datasets.exceptions import (
     DatasetFileError,
     DatasetNotFoundError,
@@ -20,7 +23,9 @@ def write_registry(root: Path, datasets: dict) -> Path:
     data_dir = root / "data"
     data_dir.mkdir(exist_ok=True)
     registry_path = data_dir / "datasets.yaml"
-    registry_path.write_text(yaml.safe_dump({"datasets": datasets}, sort_keys=False), encoding="utf-8")
+    registry_path.write_text(
+        yaml.safe_dump({"datasets": datasets}, sort_keys=False), encoding="utf-8"
+    )
     return registry_path
 
 
@@ -57,8 +62,12 @@ def write_csv(root: Path, relative: str, rows: list[dict]) -> None:
 
 
 def test_registry_loads_successfully(tmp_path):
-    write_csv(tmp_path, "data/raw/toy.csv", [{"score": 10, "BAD": 0}, {"score": 20, "BAD": 1}])
-    registry_path = write_registry(tmp_path, {"toy": base_spec("toy", "data/raw/toy.csv")})
+    write_csv(
+        tmp_path, "data/raw/toy.csv", [{"score": 10, "BAD": 0}, {"score": 20, "BAD": 1}]
+    )
+    registry_path = write_registry(
+        tmp_path, {"toy": base_spec("toy", "data/raw/toy.csv")}
+    )
 
     registry = load_registry(registry_path, repo_root=tmp_path)
 
@@ -67,7 +76,9 @@ def test_registry_loads_successfully(tmp_path):
 
 
 def test_unknown_dataset_id_is_rejected(tmp_path):
-    write_csv(tmp_path, "data/raw/toy.csv", [{"score": 10, "BAD": 0}, {"score": 20, "BAD": 1}])
+    write_csv(
+        tmp_path, "data/raw/toy.csv", [{"score": 10, "BAD": 0}, {"score": 20, "BAD": 1}]
+    )
     write_registry(tmp_path, {"toy": base_spec("toy", "data/raw/toy.csv")})
 
     with pytest.raises(DatasetNotFoundError, match="missing"):
@@ -82,7 +93,9 @@ def test_missing_active_file_is_rejected(tmp_path):
 
 
 def test_binary_target_mapping_is_preserved(tmp_path):
-    write_csv(tmp_path, "data/raw/toy.csv", [{"score": 10, "BAD": 0}, {"score": 20, "BAD": 1}])
+    write_csv(
+        tmp_path, "data/raw/toy.csv", [{"score": 10, "BAD": 0}, {"score": 20, "BAD": 1}]
+    )
     write_registry(tmp_path, {"toy": base_spec("toy", "data/raw/toy.csv")})
 
     loaded = load_dataset("TOY", repo_root=tmp_path)
@@ -92,7 +105,11 @@ def test_binary_target_mapping_is_preserved(tmp_path):
 
 
 def test_gc_mapping_1_to_0_and_2_to_1(tmp_path):
-    write_csv(tmp_path, "data/raw/gc.csv", [{"score": 10, "target": 1}, {"score": 20, "target": 2}])
+    write_csv(
+        tmp_path,
+        "data/raw/gc.csv",
+        [{"score": 10, "target": 1}, {"score": 20, "target": 2}],
+    )
     write_registry(
         tmp_path,
         {
@@ -117,7 +134,10 @@ def test_identifier_and_target_columns_are_removed_from_features(tmp_path):
         "data/raw/tc.csv",
         [{"ID": 1, "score": 10, "BAD": 0}, {"ID": 2, "score": 20, "BAD": 1}],
     )
-    write_registry(tmp_path, {"tc": base_spec("tc", "data/raw/tc.csv", identifiers=["ID"], ignored=["ID"])})
+    write_registry(
+        tmp_path,
+        {"tc": base_spec("tc", "data/raw/tc.csv", identifiers=["ID"], ignored=["ID"])},
+    )
 
     loaded = load_dataset("tc", repo_root=tmp_path)
 
@@ -127,7 +147,9 @@ def test_identifier_and_target_columns_are_removed_from_features(tmp_path):
 
 
 def test_unknown_target_value_is_rejected(tmp_path):
-    write_csv(tmp_path, "data/raw/toy.csv", [{"score": 10, "BAD": 0}, {"score": 20, "BAD": 2}])
+    write_csv(
+        tmp_path, "data/raw/toy.csv", [{"score": 10, "BAD": 0}, {"score": 20, "BAD": 2}]
+    )
     write_registry(tmp_path, {"toy": base_spec("toy", "data/raw/toy.csv")})
 
     with pytest.raises(DatasetSchemaError, match="outside mapping"):
@@ -143,7 +165,11 @@ def test_missing_target_column_is_rejected(tmp_path):
 
 
 def test_target_null_after_normalization_is_rejected(tmp_path):
-    write_csv(tmp_path, "data/raw/toy.csv", [{"score": 10, "BAD": 0}, {"score": 20, "BAD": None}])
+    write_csv(
+        tmp_path,
+        "data/raw/toy.csv",
+        [{"score": 10, "BAD": 0}, {"score": 20, "BAD": None}],
+    )
     write_registry(tmp_path, {"toy": base_spec("toy", "data/raw/toy.csv")})
 
     with pytest.raises(DatasetSchemaError, match="null values"):
@@ -166,8 +192,12 @@ def test_metadata_counts_are_correct(tmp_path):
     assert loaded.metadata["default_rate"] == pytest.approx(2 / 3)
 
 
-def test_portable_path_resolution_ignores_current_working_directory(tmp_path, monkeypatch):
-    write_csv(tmp_path, "data/raw/toy.csv", [{"score": 10, "BAD": 0}, {"score": 20, "BAD": 1}])
+def test_portable_path_resolution_ignores_current_working_directory(
+    tmp_path, monkeypatch
+):
+    write_csv(
+        tmp_path, "data/raw/toy.csv", [{"score": 10, "BAD": 0}, {"score": 20, "BAD": 1}]
+    )
     write_registry(tmp_path, {"toy": base_spec("toy", "data/raw/toy.csv")})
     other = tmp_path / "other"
     other.mkdir()
@@ -184,3 +214,45 @@ def test_conflicting_registry_metadata_is_rejected(tmp_path):
 
     with pytest.raises(RegistryError, match="target column"):
         load_registry(repo_root=tmp_path)
+
+
+def test_expected_hash_and_parser_use_same_immutable_snapshot(tmp_path, monkeypatch):
+    relative = "data/raw/toy.csv"
+    original = b"score,BAD\n10,0\n20,1\n"
+    replacement = b"score,BAD\n999,0\n888,1\n"
+    source_path = tmp_path / relative
+    source_path.parent.mkdir(parents=True)
+    source_path.write_bytes(original)
+    write_registry(tmp_path, {"toy": base_spec("toy", relative)})
+    expected = hashlib.sha256(original).hexdigest().upper()
+    original_reader = dataset_loader._read_frame
+    observed = {"calls": 0}
+
+    def mutate_path_before_parse(spec, source):
+        observed["calls"] += 1
+        assert isinstance(source, BytesIO)
+        assert source.getvalue() == original
+        source_path.write_bytes(replacement)
+        return original_reader(spec, source)
+
+    monkeypatch.setattr(dataset_loader, "_read_frame", mutate_path_before_parse)
+
+    loaded = load_dataset("toy", repo_root=tmp_path, expected_source_sha256=expected)
+
+    assert observed == {"calls": 1}
+    assert loaded.features["score"].tolist() == [10, 20]
+    assert source_path.read_bytes() == replacement
+
+
+def test_expected_hash_mismatch_fails_before_parser(tmp_path, monkeypatch):
+    relative = "data/raw/toy.csv"
+    write_csv(tmp_path, relative, [{"score": 10, "BAD": 0}, {"score": 20, "BAD": 1}])
+    write_registry(tmp_path, {"toy": base_spec("toy", relative)})
+
+    def forbidden_parser(*_args, **_kwargs):
+        raise AssertionError("parser called after checksum mismatch")
+
+    monkeypatch.setattr(dataset_loader, "_read_frame", forbidden_parser)
+
+    with pytest.raises(DatasetFileError, match="source changed"):
+        load_dataset("toy", repo_root=tmp_path, expected_source_sha256="0" * 64)

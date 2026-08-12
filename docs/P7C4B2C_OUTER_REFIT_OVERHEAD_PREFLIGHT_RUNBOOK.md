@@ -109,11 +109,73 @@ Planning and synthetic validation:
 .\.venv\Scripts\python.exe -m creditrep.experiments.p7c4b2c_cli inspect-eligibility --run-dir <run-dir>
 ```
 
-A future target command additionally requires both
-`--target-preflight-authorized` and `--authorization-plan-digest` equal to the
-immutable plan digest. Operators must first display/review the full plan, 324
-task upper bound, machine budget and a new ignored output directory. This task
-does not create authorization or execute that command.
+A target-canary command requires separate `--target-environment`,
+`--authorization-proposal` and `--effective-authorization` artifacts validated
+by P7C.4B.2d. The legacy `--target-preflight-authorized` and
+`--authorization-plan-digest` bypass is forbidden. Execution class selects its
+workload from a closed mapping; public Python APIs reject callable injection.
+Target output must resolve exactly to the authorized namespace, and live disk,
+expiry and remaining runtime are checked before dispatch.
+
+Target manifests bind the original authorization digest and full scope.
+`authorization_runtime.json` conservatively counts the wall-clock envelope from
+the original start, including crash/downtime, so resume cannot replace the
+authorization or reset elapsed runtime. The runner does not claim to hard-kill a
+task already running when authorization expires; it prevents subsequent dispatch.
+This runbook does not create a real authorization or execute a target command.
+
+On target run and resume, a self-consistent `sample_id`, plan digest, manifest or
+task-set digest does not establish canonicality. The runner first applies exact
+closed-world schemas at every plan, task and nested-candidate level, including
+primitive types, finite numeric values, enums, ranges, counts and ordering. It
+then reloads the locked P7C.4B.2a scientific manifest, which validates and
+materializes its P7A source manifest and deterministic candidate generator, and
+rebuilds the complete P7C.4B.2c plan with seed 4202. The submitted or persisted
+plan must be canonical-JSON identical to this independently rebuilt plan.
+
+The runner resolves the four ordered authorized IDs only against task objects
+from the rebuilt plan. Submitted `plan.json` and `manifest.expected_tasks` are
+persisted representations for exact comparison, never dispatch authorities. The
+authorization provenance task-set digest is an additional consistency check, not
+a replacement for locked-input rebuild or exact comparison. All mismatches fail
+before cleanup, runtime-state mutation, executor construction or submission.
+
+The locked manifests and their digests are unsigned local artifacts. This design
+prevents an isolated plan edit followed by recomputation of local plan/sample
+digests; it does not provide cryptographic authenticity against an attacker able
+to rewrite every locked input, authorization and provenance artifact together.
+Digests and checksums are not signatures.
+
+Target plans also declare the closed `runtime_input_binding` contract. Its
+`locked_runtime_inputs_digest` is a canonical semantic projection of the complete
+Protocol A typed config; the AC/GMC active file, target mapping, identifier,
+ignored, categorical, numeric and missing-value fields; the reader options that
+the loader actually consumes; and the unique selected SHA-256 registry rows plus
+verified raw bytes. Descriptive registry metadata and unused datasets are
+deliberately excluded, so documentation-only edits do not invalidate execution.
+Git HEAD alone is insufficient because it cannot detect uncommitted edits.
+
+Run and resume recompute this projection before output/cleanup/runtime mutation,
+executor construction or submit. The digest is carried by target environment,
+proposal, effective authorization and persisted provenance. Each worker reloads
+and exact-checks it again, then passes the same typed Protocol A config and
+dataset registry snapshot into `canonical_outer_refit`. Locked runtime YAML uses
+safe duplicate-key rejection at every mapping level and strict primitive types;
+numeric fields reject booleans and non-finite values. For each dataset load, the
+loader reads the source once into an immutable byte snapshot, computes and checks
+SHA-256 over those bytes before parsing, and gives pandas a `BytesIO` over the same
+snapshot. It never reopens the source path for parsing or falls back to path-based
+reading. This guarantees checked-byte/parsed-byte identity, not an atomic
+filesystem read. The workload therefore does not independently reload unchecked
+protocol or registry data.
+
+Runtime state is cross-bound to the run ID, authorization/proposal/environment/
+plan digests, normalized output, runtime limit and immutable original start.
+Its checkpoint is mirrored in the manifest with a generation and state digest.
+Missing, malformed, future-dated, clock-rollback, inconsistent or rollback state
+fails closed before cleanup or dispatch; remaining runtime cannot increase across
+valid resumes. These checks detect accidental corruption and localized tampering,
+not an attacker able to rewrite every artifact and recompute all checksums.
 
 Exit code 2 is artifact/config validation failure, 3 is valid but incomplete or
 ineligible evidence, and 4 is authorization failure. Target evidence must still

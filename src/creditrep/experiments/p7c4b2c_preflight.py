@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import csv
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
+import math
 from multiprocessing import get_context
 import os
 from pathlib import Path
@@ -24,6 +24,11 @@ from sklearn.preprocessing import StandardScaler
 
 from creditrep.config.loader import sha256_canonical
 from creditrep.datasets.registry import find_repo_root
+from creditrep.locked_runtime_inputs import (
+    LockedRuntimeInputError,
+    ValidatedRuntimeInputs,
+    validate_locked_runtime_inputs,
+)
 from creditrep.protocols.p7c4b2c import (
     ADDITIVE_COMPONENTS,
     EXECUTION_CLASSES,
@@ -33,15 +38,25 @@ from creditrep.protocols.p7c4b2c import (
     canonical_digest,
     project_validated,
     summarize,
+    validate_canonical_plan,
     validate_plan,
     validate_sample,
 )
+from creditrep.protocols.p7c4b2d import (
+    P7C4B2DError,
+    normalize_target_output,
+    validate_effective_authorization,
+)
+from creditrep.strict_json import StrictJSONError, load_strict_json_object
 
 EXIT_OK = 0
 EXIT_VALIDATION = 2
 EXIT_INCOMPLETE = 3
 EXIT_AUTHORIZATION = 4
 Workload = Callable[[dict[str, Any], Path], dict[str, Any]]
+PROVENANCE_SCHEMA_VERSION = 1
+RUNTIME_STATE_SCHEMA_VERSION = 2
+RUNTIME_CLOCK_SKEW_SECONDS = 5.0
 
 
 def _utc() -> str:
@@ -60,11 +75,9 @@ def _atomic_json(path: Path, value: dict[str, Any] | list[Any]) -> None:
 
 def _read_json(path: Path, codes: list[str]) -> Any:
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        codes.append("missing_required_artifact")
-    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
-        codes.append("malformed_artifact")
+        return load_strict_json_object(path)
+    except StrictJSONError as exc:
+        codes.append(str(exc))
     return None
 
 
@@ -160,20 +173,29 @@ def synthetic_outer_refit(task: dict[str, Any], _repo_root: Path) -> dict[str, A
     }
 
 
-def canonical_outer_refit(task: dict[str, Any], repo_root: Path) -> dict[str, Any]:
+def canonical_outer_refit(
+    task: dict[str, Any],
+    repo_root: Path,
+    *,
+    locked_runtime_inputs: ValidatedRuntimeInputs,
+) -> dict[str, Any]:
     """Run the canonical preprocessing/refit primitive for one authorized target unit."""
     from creditrep.datasets import load_dataset
     from creditrep.experiments.model_validation import _fit_for_partition
     from creditrep.experiments.p7c3_feasibility import adapt_mlp_feasibility_candidate
-    from creditrep.preprocessing import load_protocol_a_config
     from creditrep.splitting import create_nested_cv_definition
 
-    dataset = load_dataset(task["dataset_id"], repo_root=repo_root)
-    with (repo_root / "data" / "checksums-sha256.csv").open(
-        encoding="utf-8-sig", newline=""
-    ) as handle:
-        checksums = {row["Path"]: row["Hash"] for row in csv.DictReader(handle)}
-    source_hash = checksums[dataset.metadata["source_file"]]
+    dataset_id = task["dataset_id"]
+    try:
+        source_hash = locked_runtime_inputs.source_hashes[dataset_id]
+    except KeyError as exc:
+        raise P7C4B2CError("locked_runtime_input_dataset_missing") from exc
+    dataset = load_dataset(
+        dataset_id,
+        repo_root=repo_root,
+        registry=locked_runtime_inputs.registry,
+        expected_source_sha256=source_hash,
+    )
     nested = create_nested_cv_definition(
         dataset,
         dataset_checksum=source_hash,
@@ -205,7 +227,7 @@ def canonical_outer_refit(task: dict[str, Any], repo_root: Path) -> dict[str, An
         candidate_id=task["candidate_id"],
         train_indices=outer.train_indices,
         evaluation_indices=outer.test_indices,
-        protocol_config=load_protocol_a_config(repo_root=repo_root),
+        protocol_config=locked_runtime_inputs.protocol_config,
         model_stage="outer_refit",
         timing_sink=timings,
     )
@@ -254,6 +276,280 @@ def _task_subset(
     return warmups[: min(max_samples, len(warmups))] + measured[:max_samples]
 
 
+def _workload_for_execution_class(execution_class: str) -> Workload:
+    """Closed production mapping; callers never select a workload callable."""
+    mapping: dict[str, Workload] = {
+        "synthetic_validation": synthetic_outer_refit,
+        "target_preflight": canonical_outer_refit,
+    }
+    try:
+        return mapping[execution_class]
+    except KeyError as exc:
+        raise P7C4B2CError("unsupported_execution_class") from exc
+
+
+def _parse_utc(value: Any, code: str) -> datetime:
+    if not isinstance(value, str):
+        raise P7C4B2CError(code)
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise P7C4B2CError(code) from exc
+    if parsed.tzinfo is None:
+        raise P7C4B2CError(code)
+    return parsed.astimezone(timezone.utc)
+
+
+def _existing_filesystem_anchor(path: Path) -> Path:
+    candidate = path
+    while not candidate.exists():
+        parent = candidate.parent
+        if parent == candidate:
+            raise P7C4B2CError("live_disk_lookup_failed")
+        candidate = parent
+    return candidate
+
+
+def _require_live_disk(
+    output: Path,
+    minimum_free_bytes: int,
+    disk_usage_provider: Callable[[Path], Any],
+) -> None:
+    if (
+        not isinstance(minimum_free_bytes, int)
+        or isinstance(minimum_free_bytes, bool)
+        or minimum_free_bytes < 1
+    ):
+        raise P7C4B2CError("disk_policy_mismatch")
+    try:
+        usage = disk_usage_provider(_existing_filesystem_anchor(output))
+        free = usage.free
+    except (OSError, AttributeError, TypeError):
+        raise P7C4B2CError("live_disk_lookup_failed") from None
+    if not isinstance(free, int) or isinstance(free, bool) or free < minimum_free_bytes:
+        raise P7C4B2CError("insufficient_live_disk")
+
+
+def _canonical_authorized_tasks(
+    plan: dict[str, Any], authorization: dict[str, Any], mode: str
+) -> list[dict[str, Any]]:
+    """Resolve the only target task payloads from the validated canonical plan."""
+    validate_plan(plan)
+    if authorization.get("execution_mode") != mode:
+        raise P7C4B2CError("execution_mode_mismatch")
+    task_ids = authorization.get("task_ids")
+    if not isinstance(task_ids, list) or len(task_ids) != len(set(task_ids)):
+        raise P7C4B2CError("authorization_task_scope_mismatch")
+    by_id = {task["sample_id"]: task for task in plan["tasks"] if task["mode"] == mode}
+    try:
+        tasks = [by_id[task_id] for task_id in task_ids]
+    except (KeyError, TypeError) as exc:
+        raise P7C4B2CError("authorization_task_scope_mismatch") from exc
+    if len(tasks) != 4:
+        raise P7C4B2CError("authorization_task_scope_mismatch")
+    return tasks
+
+
+def _task_set_digest(tasks: list[dict[str, Any]]) -> str:
+    return sha256_canonical(tasks)
+
+
+def _authorization_provenance(
+    authorization: dict[str, Any],
+    normalized_output: str,
+    worker_count: int,
+    canonical_tasks: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "schema_version": PROVENANCE_SCHEMA_VERSION,
+        "authorization_digest": authorization["authorization_digest"],
+        "proposal_digest": authorization["proposal_digest"],
+        "target_environment_digest": authorization["target_environment_digest"],
+        "locked_runtime_inputs_digest": authorization["locked_runtime_inputs_digest"],
+        "plan_digest": authorization["plan_digest"],
+        "git_commit": authorization["git_commit"],
+        "authorization_created_at": authorization["created_at"],
+        "authorization_expires_at": authorization["expires_at"],
+        "execution_stage": authorization["execution_stage"],
+        "execution_mode": authorization["execution_mode"],
+        "task_ids": list(authorization["task_ids"]),
+        "canonical_task_set_digest": _task_set_digest(canonical_tasks),
+        "normalized_output_directory": normalized_output,
+        "vm_count": authorization["vm_count"],
+        "worker_count": worker_count,
+        "maximum_task_count": authorization["maximum_task_count"],
+        "maximum_runtime_hours": authorization["maximum_runtime_hours"],
+        "maximum_monetary_budget": authorization["maximum_monetary_budget"],
+        "hourly_price": authorization["hourly_price"],
+        "currency": authorization["currency"],
+        "minimum_free_disk_bytes": authorization["minimum_free_disk_bytes"],
+    }
+
+
+def _validate_resume_provenance(
+    manifest: dict[str, Any],
+    authorization: dict[str, Any],
+    normalized_output: str,
+    canonical_tasks: list[dict[str, Any]],
+) -> dict[str, Any]:
+    stored = manifest.get("authorization_provenance")
+    expected = _authorization_provenance(
+        authorization, normalized_output, manifest.get("worker_count"), canonical_tasks
+    )
+    if (
+        not isinstance(stored, dict)
+        or stored.get("schema_version") != PROVENANCE_SCHEMA_VERSION
+    ):
+        raise P7C4B2CError("target_resume_provenance_missing")
+    if stored != expected:
+        raise P7C4B2CError("authorization_provenance_mismatch")
+    # The persisted manifest is evidence, never an alternate workload source.
+    if manifest.get("expected_tasks") != canonical_tasks:
+        raise P7C4B2CError("canonical_task_manifest_mismatch")
+    return stored
+
+
+def _runtime_state_digest(state: dict[str, Any]) -> str:
+    return sha256_canonical(
+        {key: value for key, value in state.items() if key != "state_digest"}
+    )
+
+
+def _runtime_checkpoint(state: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "generation": state["generation"],
+        "accumulated_elapsed_seconds": state["accumulated_elapsed_seconds"],
+        "last_accounted_at": state["last_accounted_at"],
+        "state_digest": state["state_digest"],
+    }
+
+
+def _validate_runtime_state(
+    state: dict[str, Any],
+    manifest: dict[str, Any],
+    provenance: dict[str, Any],
+    wall_now: datetime,
+) -> float:
+    origin = manifest.get("runtime_origin")
+    checkpoint = manifest.get("runtime_checkpoint")
+    if (
+        not isinstance(state, dict)
+        or not isinstance(origin, dict)
+        or not isinstance(checkpoint, dict)
+    ):
+        raise P7C4B2CError("runtime_state_invalid")
+    required = {
+        "schema_version",
+        "run_id",
+        "authorization_digest",
+        "proposal_digest",
+        "target_environment_digest",
+        "plan_digest",
+        "normalized_output_directory",
+        "maximum_runtime_hours",
+        "runtime_started_at",
+        "last_accounted_at",
+        "accumulated_elapsed_seconds",
+        "generation",
+        "state_digest",
+    }
+    if (
+        set(state) != required
+        or state.get("schema_version") != RUNTIME_STATE_SCHEMA_VERSION
+    ):
+        raise P7C4B2CError("runtime_state_invalid")
+    expected_binding = {
+        "run_id": manifest.get("run_id"),
+        "authorization_digest": provenance.get("authorization_digest"),
+        "proposal_digest": provenance.get("proposal_digest"),
+        "target_environment_digest": provenance.get("target_environment_digest"),
+        "plan_digest": provenance.get("plan_digest"),
+        "normalized_output_directory": provenance.get("normalized_output_directory"),
+        "maximum_runtime_hours": provenance.get("maximum_runtime_hours"),
+        "runtime_started_at": origin.get("runtime_started_at"),
+    }
+    if any(state.get(key) != value for key, value in expected_binding.items()):
+        raise P7C4B2CError("runtime_state_provenance_mismatch")
+    if state.get("state_digest") != _runtime_state_digest(
+        state
+    ) or checkpoint != _runtime_checkpoint(state):
+        raise P7C4B2CError("runtime_state_rollback_or_integrity_failure")
+    elapsed = state.get("accumulated_elapsed_seconds")
+    generation = state.get("generation")
+    if (
+        not isinstance(elapsed, (int, float))
+        or isinstance(elapsed, bool)
+        or not math.isfinite(elapsed)
+        or elapsed < 0
+        or not isinstance(generation, int)
+        or isinstance(generation, bool)
+        or generation < 0
+    ):
+        raise P7C4B2CError("runtime_state_invalid")
+    started = _parse_utc(state["runtime_started_at"], "runtime_state_invalid")
+    last = _parse_utc(state["last_accounted_at"], "runtime_state_invalid")
+    created = _parse_utc(
+        provenance["authorization_created_at"], "runtime_state_invalid"
+    )
+    manifest_created = _parse_utc(manifest.get("created_utc"), "runtime_state_invalid")
+    if wall_now < last - timedelta(seconds=RUNTIME_CLOCK_SKEW_SECONDS):
+        raise P7C4B2CError("runtime_clock_rollback")
+    if (
+        started < created
+        or started > manifest_created
+        or started > wall_now + timedelta(seconds=RUNTIME_CLOCK_SKEW_SECONDS)
+    ):
+        raise P7C4B2CError("runtime_state_timestamp_invalid")
+    if last < started or last > wall_now + timedelta(
+        seconds=RUNTIME_CLOCK_SKEW_SECONDS
+    ):
+        raise P7C4B2CError("runtime_state_timestamp_invalid")
+    maximum = float(provenance["maximum_runtime_hours"]) * 3600.0
+    if elapsed > maximum:
+        raise P7C4B2CError("runtime_state_invalid")
+    return max(float(elapsed), (wall_now - started).total_seconds())
+
+
+def _persist_runtime_state(
+    run_dir: Path,
+    manifest: dict[str, Any],
+    state: dict[str, Any],
+    elapsed: float,
+    wall_now: datetime,
+) -> None:
+    state["accumulated_elapsed_seconds"] = max(
+        float(state["accumulated_elapsed_seconds"]), elapsed
+    )
+    state["last_accounted_at"] = wall_now.astimezone(timezone.utc).isoformat()
+    state["generation"] += 1
+    state["state_digest"] = _runtime_state_digest(state)
+    _atomic_json(run_dir / "authorization_runtime.json", state)
+    manifest["runtime_checkpoint"] = _runtime_checkpoint(state)
+    _atomic_json(run_dir / "manifest.json", manifest)
+
+
+def _deadline(
+    provenance: dict[str, Any],
+    state: dict[str, Any],
+    manifest: dict[str, Any],
+    wall_now: datetime,
+    monotonic_now: float,
+) -> tuple[float, float]:
+    expiry = _parse_utc(provenance["authorization_expires_at"], "authorization_expired")
+    expiry_remaining = (expiry - wall_now).total_seconds()
+    elapsed = _validate_runtime_state(state, manifest, provenance, wall_now)
+    maximum_seconds = float(provenance["maximum_runtime_hours"]) * 3600.0
+    runtime_remaining = maximum_seconds - elapsed
+    remaining = min(expiry_remaining, runtime_remaining)
+    if remaining <= 0:
+        raise P7C4B2CError(
+            "authorization_expired"
+            if expiry_remaining <= 0
+            else "runtime_budget_exceeded"
+        )
+    return monotonic_now + remaining, elapsed
+
+
 def _quarantine(path: Path, run_dir: Path, reason: str) -> None:
     destination = run_dir / "quarantine" / f"{path.name}-{reason}-{uuid4().hex[:8]}"
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -275,10 +571,33 @@ def _execute_task(
     environment: dict[str, Any],
     run_dir: Path,
     repo_root: Path,
-    workload: Workload,
     attempt: int,
     dispatch_started: float | None = None,
+    authorization_deadline_monotonic: float | None = None,
 ) -> dict[str, Any]:
+    execution_class = manifest.get("execution_class")
+    workload = _workload_for_execution_class(execution_class)
+    locked_runtime_inputs = None
+    if execution_class == "target_preflight":
+        provenance = manifest.get("authorization_provenance")
+        if (
+            not isinstance(provenance, dict)
+            or authorization_deadline_monotonic is None
+            or task.get("sample_id") not in provenance.get("task_ids", [])
+            or str(run_dir.resolve()) != provenance.get("normalized_output_directory")
+        ):
+            raise P7C4B2CError("task_authorization_context_invalid")
+        try:
+            locked_runtime_inputs = validate_locked_runtime_inputs(
+                provenance.get("locked_runtime_inputs_digest"), repo_root
+            )
+        except LockedRuntimeInputError as exc:
+            raise P7C4B2CError("locked_runtime_input_mismatch") from exc
+    if (
+        authorization_deadline_monotonic is not None
+        and time.perf_counter() >= authorization_deadline_monotonic
+    ):
+        raise P7C4B2CError("runtime_budget_exceeded")
     attempt_identity = {
         "sample_id": task["sample_id"],
         "attempt": attempt,
@@ -295,8 +614,21 @@ def _execute_task(
     started = time.perf_counter()
     started_utc = _utc()
     try:
-        detail = workload(task, repo_root)
+        detail = (
+            canonical_outer_refit(
+                task,
+                repo_root,
+                locked_runtime_inputs=locked_runtime_inputs,
+            )
+            if execution_class == "target_preflight"
+            else workload(task, repo_root)
+        )
         completed_workload = time.perf_counter()
+        if (
+            authorization_deadline_monotonic is not None
+            and completed_workload >= authorization_deadline_monotonic
+        ):
+            raise P7C4B2CError("runtime_budget_exceeded")
         timings = detail["timings"]
         for field in ADDITIVE_COMPONENTS:
             timings.setdefault(
@@ -394,29 +726,130 @@ def run(
     execution_class: str,
     mode: str,
     repo_root: Path | None = None,
+    target_environment: dict[str, Any] | None = None,
+    authorization_proposal: dict[str, Any] | None = None,
+    effective_authorization: dict[str, Any] | None = None,
     target_authorized: bool = False,
     authorization_plan_digest: str | None = None,
     max_samples: int | None = None,
-    workload: Workload | None = None,
+) -> dict[str, Any]:
+    return _run_impl(
+        plan,
+        output_dir,
+        execution_class=execution_class,
+        mode=mode,
+        repo_root=repo_root,
+        target_environment=target_environment,
+        authorization_proposal=authorization_proposal,
+        effective_authorization=effective_authorization,
+        target_authorized=target_authorized,
+        authorization_plan_digest=authorization_plan_digest,
+        max_samples=max_samples,
+        wall_clock=lambda: datetime.now(timezone.utc),
+        monotonic_clock=time.perf_counter,
+        disk_usage_provider=shutil.disk_usage,
+    )
+
+
+def _run_impl(
+    plan: dict[str, Any],
+    output_dir: Path,
+    *,
+    execution_class: str,
+    mode: str,
+    repo_root: Path | None,
+    target_environment: dict[str, Any] | None,
+    authorization_proposal: dict[str, Any] | None,
+    effective_authorization: dict[str, Any] | None,
+    target_authorized: bool,
+    authorization_plan_digest: str | None,
+    max_samples: int | None,
+    wall_clock: Callable[[], datetime],
+    monotonic_clock: Callable[[], float],
+    disk_usage_provider: Callable[[Path], Any],
 ) -> dict[str, Any]:
     root = (repo_root or find_repo_root()).resolve()
-    output_dir = output_dir.resolve()
+    requested_output = Path(output_dir)
     validate_plan(plan)
     if execution_class not in EXECUTION_CLASSES:
         raise P7C4B2CError("unsupported_execution_class")
+    _workload_for_execution_class(execution_class)
     if mode not in MODES:
         raise P7C4B2CError("unsupported_execution_mode")
-    if execution_class == "target_preflight" and (
-        not target_authorized or authorization_plan_digest != plan["plan_digest"]
-    ):
-        raise P7C4B2CError("target_authorization_missing_or_mismatch")
+    provenance = None
+    runtime_state = None
+    canonical_tasks = None
+    if execution_class == "target_preflight":
+        canonical_plan = validate_canonical_plan(plan, root)
+        if target_authorized or authorization_plan_digest is not None:
+            raise P7C4B2CError("legacy_target_authorization_flags_forbidden")
+        report = validate_effective_authorization(
+            effective_authorization,
+            authorization_proposal,
+            target_environment or {},
+            canonical_plan,
+            repo_root=root,
+        )
+        if not report["valid"]:
+            raise P7C4B2CError(",".join(report["reason_codes"]))
+        if mode != effective_authorization["execution_mode"]:
+            raise P7C4B2CError("execution_mode_mismatch")
+        canonical_tasks = _canonical_authorized_tasks(
+            canonical_plan, effective_authorization, mode
+        )
+        plan = canonical_plan
+        try:
+            normalized_output = normalize_target_output(requested_output, root)
+            authorized_output = normalize_target_output(
+                effective_authorization["output_directory"], root
+            )
+        except P7C4B2DError as exc:
+            raise P7C4B2CError(str(exc)) from exc
+        if normalized_output != authorized_output:
+            raise P7C4B2CError("authorized_output_mismatch")
+        output_dir = Path(normalized_output)
+        _require_live_disk(
+            output_dir,
+            effective_authorization["minimum_free_disk_bytes"],
+            disk_usage_provider,
+        )
+        now = wall_clock().astimezone(timezone.utc)
+        provenance = _authorization_provenance(
+            effective_authorization, normalized_output, MODES[mode], canonical_tasks
+        )
+        runtime_state = {
+            "schema_version": RUNTIME_STATE_SCHEMA_VERSION,
+            "run_id": output_dir.name,
+            "authorization_digest": provenance["authorization_digest"],
+            "proposal_digest": provenance["proposal_digest"],
+            "target_environment_digest": provenance["target_environment_digest"],
+            "plan_digest": provenance["plan_digest"],
+            "normalized_output_directory": normalized_output,
+            "maximum_runtime_hours": provenance["maximum_runtime_hours"],
+            "runtime_started_at": now.isoformat(),
+            "last_accounted_at": now.isoformat(),
+            "accumulated_elapsed_seconds": 0.0,
+            "generation": 0,
+        }
+        runtime_state["state_digest"] = _runtime_state_digest(runtime_state)
+    else:
+        output_dir = requested_output.resolve()
     if execution_class == "target_preflight" and max_samples is not None:
         raise P7C4B2CError("target_sample_truncation_forbidden")
     if output_dir.exists():
         raise P7C4B2CError("output_collision")
     output_dir.mkdir(parents=True)
+    if (
+        execution_class == "target_preflight"
+        and str(output_dir.resolve()) != provenance["normalized_output_directory"]
+    ):
+        raise P7C4B2CError("authorized_output_changed")
     environment = capture_environment(root)
-    expected = _task_subset(plan, mode, max_samples)
+    expected = (
+        canonical_tasks
+        if execution_class == "target_preflight"
+        else _task_subset(plan, mode, max_samples)
+    )
     manifest = {
         "schema_version": SCHEMA_VERSION,
         "run_id": output_dir.name,
@@ -431,15 +864,30 @@ def run(
         if execution_class == "synthetic_validation"
         else "validator_required",
     }
+    if provenance is not None:
+        manifest["authorization_provenance"] = provenance
+        manifest["runtime_origin"] = {
+            "runtime_started_at": runtime_state["runtime_started_at"]
+        }
+        manifest["runtime_checkpoint"] = _runtime_checkpoint(runtime_state)
+        _deadline(provenance, runtime_state, manifest, now, monotonic_clock())
     _atomic_json(output_dir / "plan.json", plan)
     _atomic_json(output_dir / "manifest.json", manifest)
     _atomic_json(output_dir / "environment.json", environment)
-    return resume(
+    if runtime_state is not None:
+        _atomic_json(output_dir / "authorization_runtime.json", runtime_state)
+    return _resume_impl(
         output_dir,
         repo_root=root,
-        target_authorized=target_authorized,
-        authorization_plan_digest=authorization_plan_digest,
-        workload=workload,
+        target_environment=target_environment,
+        authorization_proposal=authorization_proposal,
+        effective_authorization=effective_authorization,
+        target_authorized=False,
+        authorization_plan_digest=None,
+        wall_clock=wall_clock,
+        monotonic_clock=monotonic_clock,
+        disk_usage_provider=disk_usage_provider,
+        initial_authorization_validated=True,
     )
 
 
@@ -447,9 +895,40 @@ def resume(
     run_dir: Path,
     *,
     repo_root: Path | None = None,
+    target_environment: dict[str, Any] | None = None,
+    authorization_proposal: dict[str, Any] | None = None,
+    effective_authorization: dict[str, Any] | None = None,
     target_authorized: bool = False,
     authorization_plan_digest: str | None = None,
-    workload: Workload | None = None,
+) -> dict[str, Any]:
+    return _resume_impl(
+        run_dir,
+        repo_root=repo_root,
+        target_environment=target_environment,
+        authorization_proposal=authorization_proposal,
+        effective_authorization=effective_authorization,
+        target_authorized=target_authorized,
+        authorization_plan_digest=authorization_plan_digest,
+        wall_clock=lambda: datetime.now(timezone.utc),
+        monotonic_clock=time.perf_counter,
+        disk_usage_provider=shutil.disk_usage,
+        initial_authorization_validated=False,
+    )
+
+
+def _resume_impl(
+    run_dir: Path,
+    *,
+    repo_root: Path | None,
+    target_environment: dict[str, Any] | None,
+    authorization_proposal: dict[str, Any] | None,
+    effective_authorization: dict[str, Any] | None,
+    target_authorized: bool,
+    authorization_plan_digest: str | None,
+    wall_clock: Callable[[], datetime],
+    monotonic_clock: Callable[[], float],
+    disk_usage_provider: Callable[[Path], Any],
+    initial_authorization_validated: bool,
 ) -> dict[str, Any]:
     root = (repo_root or find_repo_root()).resolve()
     run_dir = run_dir.resolve()
@@ -459,20 +938,98 @@ def resume(
     environment = _read_json(run_dir / "environment.json", codes)
     if codes or not plan or not manifest or not environment:
         raise P7C4B2CError("incompatible_resume")
-    if manifest["execution_class"] == "target_preflight" and (
-        not target_authorized or authorization_plan_digest != plan["plan_digest"]
-    ):
-        raise P7C4B2CError("target_authorization_missing_or_mismatch")
+    execution_class = manifest.get("execution_class")
+    _workload_for_execution_class(execution_class)
+    authorization_deadline_monotonic = None
+    provenance = None
+    runtime_state = None
+    canonical_tasks = None
+    session_started_monotonic = monotonic_clock()
+    session_started_elapsed = 0.0
+    if execution_class == "target_preflight":
+        # Rebuild from locked inputs and compare the persisted representation before
+        # any authorization-dependent operation or filesystem cleanup. Dispatch uses
+        # only task objects from the rebuilt plan returned here.
+        plan = validate_canonical_plan(plan, root)
+        if target_authorized or authorization_plan_digest is not None:
+            raise P7C4B2CError("legacy_target_authorization_flags_forbidden")
+        if not initial_authorization_validated:
+            report = validate_effective_authorization(
+                effective_authorization,
+                authorization_proposal,
+                target_environment or {},
+                plan,
+                repo_root=root,
+                allow_existing_output=True,
+            )
+            if not report["valid"]:
+                raise P7C4B2CError(",".join(report["reason_codes"]))
+        if not isinstance(effective_authorization, dict):
+            raise P7C4B2CError("authorization_missing")
+        try:
+            authorized_output = normalize_target_output(
+                effective_authorization["output_directory"], root
+            )
+        except (KeyError, P7C4B2DError) as exc:
+            raise P7C4B2CError("authorized_output_mismatch") from exc
+        if str(run_dir) != authorized_output:
+            raise P7C4B2CError("authorized_output_mismatch")
+        if manifest.get("mode") != effective_authorization.get("execution_mode"):
+            raise P7C4B2CError("execution_mode_mismatch")
+        canonical_tasks = _canonical_authorized_tasks(
+            plan, effective_authorization, manifest.get("mode")
+        )
+        provenance = _validate_resume_provenance(
+            manifest, effective_authorization, authorized_output, canonical_tasks
+        )
+        runtime_codes: list[str] = []
+        runtime_state = _read_json(
+            run_dir / "authorization_runtime.json", runtime_codes
+        )
+        if runtime_codes or not runtime_state:
+            raise P7C4B2CError("runtime_state_invalid")
+        now = wall_clock().astimezone(timezone.utc)
+        authorization_deadline_monotonic, session_started_elapsed = _deadline(
+            provenance, runtime_state, manifest, now, session_started_monotonic
+        )
+        _require_live_disk(
+            run_dir,
+            provenance["minimum_free_disk_bytes"],
+            disk_usage_provider,
+        )
     _clean_stale_temps(run_dir)
-    adapter = workload or (
-        synthetic_outer_refit
-        if manifest["execution_class"] == "synthetic_validation"
-        else canonical_outer_refit
-    )
+
+    def target_task_gate() -> None:
+        nonlocal authorization_deadline_monotonic
+        if provenance is None or runtime_state is None:
+            return
+        now = wall_clock().astimezone(timezone.utc)
+        session_elapsed = session_started_elapsed + max(
+            0.0, monotonic_clock() - session_started_monotonic
+        )
+        conservative_elapsed = max(
+            _validate_runtime_state(runtime_state, manifest, provenance, now),
+            session_elapsed,
+        )
+        _persist_runtime_state(
+            run_dir, manifest, runtime_state, conservative_elapsed, now
+        )
+        authorization_deadline_monotonic, _ = _deadline(
+            provenance, runtime_state, manifest, now, monotonic_clock()
+        )
+        _require_live_disk(
+            run_dir,
+            provenance["minimum_free_disk_bytes"],
+            disk_usage_provider,
+        )
+
     records = []
     pending: list[dict[str, Any]] = []
     skipped = executed = 0
-    for task in manifest["expected_tasks"]:
+    tasks_for_dispatch = (
+        canonical_tasks if canonical_tasks is not None else manifest["expected_tasks"]
+    )
+    for task in tasks_for_dispatch:
         directory = run_dir / "samples" / task["sample_id"]
         if directory.exists():
             local_codes: list[str] = []
@@ -491,49 +1048,34 @@ def resume(
                 skipped += 1
                 continue
         pending.append(task)
-    if workload is not None:
-        for task in pending:
-            records.append(
-                _execute_task(
+    # Warmups finish before the measured pool starts. Authorization and live disk
+    # are rechecked before every submission; already-running work is not hard-killed.
+    for classification in ("warmup", "measured"):
+        phase = [task for task in pending if task["classification"] == classification]
+        if not phase:
+            continue
+        with ProcessPoolExecutor(
+            max_workers=manifest["worker_count"], mp_context=get_context("spawn")
+        ) as executor:
+            futures = {}
+            for task in phase:
+                target_task_gate()
+                future = executor.submit(
+                    _execute_task,
                     task,
                     manifest=manifest,
                     environment=environment,
                     run_dir=run_dir,
                     repo_root=root,
-                    workload=adapter,
                     attempt=1,
+                    dispatch_started=monotonic_clock(),
+                    authorization_deadline_monotonic=authorization_deadline_monotonic,
                 )
-            )
-            executed += 1
-    else:
-        # Warmups finish before the measured pool starts. Each submitted unit runs
-        # in a spawned process, so startup/queue time has the same boundary in
-        # synthetic validation and an authorized target preflight.
-        for classification in ("warmup", "measured"):
-            phase = [
-                task for task in pending if task["classification"] == classification
-            ]
-            with ProcessPoolExecutor(
-                max_workers=manifest["worker_count"],
-                mp_context=get_context("spawn"),
-            ) as executor:
-                futures = {
-                    executor.submit(
-                        _execute_task,
-                        task,
-                        manifest=manifest,
-                        environment=environment,
-                        run_dir=run_dir,
-                        repo_root=root,
-                        workload=adapter,
-                        attempt=1,
-                        dispatch_started=time.perf_counter(),
-                    ): task
-                    for task in phase
-                }
-                for future in as_completed(futures):
-                    records.append(future.result())
-                    executed += 1
+                futures[future] = task
+            for future in as_completed(futures):
+                records.append(future.result())
+                executed += 1
+        target_task_gate()
     records.sort(key=lambda item: item["sample_id"])
     coverage, stratum_summary = summarize(
         records, plan, expected_tasks=manifest["expected_tasks"]
@@ -566,6 +1108,8 @@ def resume(
                 "run_id": manifest["run_id"],
             },
         )
+    if provenance is not None and runtime_state is not None:
+        target_task_gate()
     return {
         "run_id": manifest["run_id"],
         "executed": executed,
