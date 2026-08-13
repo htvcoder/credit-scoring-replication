@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import Future
 from datetime import UTC, datetime, timedelta
 import hashlib
 import json
@@ -11,7 +12,9 @@ from types import SimpleNamespace
 import pytest
 
 from creditrep.experiments import p7c4b2d_cli as cli
+from creditrep.experiments import p7c4b2c_cli as preflight_cli
 from creditrep.experiments import p7c4b2c_preflight as runner
+from creditrep.experiments.p7c4b2c_cli import main as preflight_cli_main
 from creditrep.experiments.p7c4b2d_cli import EXIT_REVIEW_BLOCKED, main as cli_main
 from creditrep.locked_runtime_inputs import (
     LockedRuntimeInputError,
@@ -1012,6 +1015,606 @@ def _stopped_target_run(tmp_path, monkeypatch):
             effective_authorization=authorization,
         )
     return plan, root, output, environment, proposal, authorization
+
+
+def _complete_four_task_target_fixture(tmp_path, monkeypatch):
+    plan, root, output, environment, proposal, authorization = _stopped_target_run(
+        tmp_path, monkeypatch
+    )
+    manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
+    persisted_environment = json.loads(
+        (output / "environment.json").read_text(encoding="utf-8")
+    )
+    persisted_environment["schema_version"] = runner.SCHEMA_VERSION
+    persisted_environment["environment_digest"] = runner.canonical_digest(
+        persisted_environment, "environment_digest"
+    )
+    runner._atomic_json(output / "environment.json", persisted_environment)
+    tasks = manifest["expected_tasks"]
+    assert len(tasks) == 4
+    for index, task in enumerate(tasks):
+        record = {
+            **task,
+            "schema_version": runner.SCHEMA_VERSION,
+            "run_id": manifest["run_id"],
+            "attempt": 1,
+            "attempt_id": f"fixture-attempt-{index}",
+            "execution_class": "target_preflight",
+            "git_commit": persisted_environment["git_commit"],
+            "plan_digest": plan["plan_digest"],
+            "preprocessing_identity": "fixture",
+            "input_identity": {},
+            "input_hash": runner.sha256_canonical({}),
+            "started_utc": "2026-08-10T00:00:00Z",
+            "completed_utc": "2026-08-10T00:00:00Z",
+            "started_monotonic": 0.0,
+            "completed_monotonic": 0.0,
+            "status": "completed",
+            "projection_eligible": False,
+            "limitations": ["synthetic_target_canary_fixture"],
+            "result": {},
+            **{field: 0.0 for field in TIMING_FIELDS},
+        }
+        sample_dir = output / "samples" / task["sample_id"]
+        sample_dir.mkdir(parents=True)
+        runner._atomic_json(sample_dir / "result.json", record)
+        runner._atomic_json(sample_dir / "telemetry.json", record)
+        runner._atomic_json(
+            sample_dir / "COMPLETED.json",
+            {
+                "record_digest": runner.sha256_canonical(record),
+                "attempt_id": record["attempt_id"],
+            },
+        )
+    records = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in sorted((output / "samples").glob("*/result.json"))
+    ]
+    coverage, summary = runner.summarize(
+        records, plan, expected_tasks=manifest["expected_tasks"]
+    )
+    runner._atomic_json(output / "coverage.json", coverage)
+    runner._atomic_json(output / "stratum_summary.json", summary)
+    preliminary = runner._validate_artifacts(
+        output, allow_missing_derived=True, allow_missing_marker=True
+    )
+    projection = runner.project_validated(
+        records,
+        plan,
+        artifact_validation=preliminary,
+        execution_class="target_preflight",
+    )
+    runner._atomic_json(output / "projection.json", projection)
+    runner._atomic_json(
+        output / "eligibility.json",
+        {
+            "schema_version": runner.SCHEMA_VERSION,
+            "execution_plan_eligible": projection["execution_plan_eligible"],
+            "reason_codes": projection["reason_codes"],
+        },
+    )
+    report = runner._validate_artifacts(output, allow_missing_marker=True)
+    runner._atomic_json(output / "validation.json", report)
+    runner._atomic_json(
+        output / "COMPLETED.json",
+        {
+            "validation_digest": runner.sha256_canonical(report),
+            "run_id": manifest["run_id"],
+        },
+    )
+    return plan, root, output, environment, proposal, authorization
+
+
+def _finalize_completed_fixture_as_initial_run(
+    output, root, environment, proposal, authorization
+):
+    (output / "COMPLETED.json").unlink()
+    return runner._resume_impl(
+        output,
+        repo_root=root,
+        target_environment=environment,
+        authorization_proposal=proposal,
+        effective_authorization=authorization,
+        target_authorized=False,
+        authorization_plan_digest=None,
+        wall_clock=lambda: datetime.now(UTC),
+        monotonic_clock=time.perf_counter,
+        disk_usage_provider=runner.shutil.disk_usage,
+        initial_authorization_validated=True,
+    )
+
+
+def test_four_task_target_canary_acceptance_is_separate_from_scientific_coverage(
+    tmp_path, monkeypatch
+):
+    _plan_value, _root, output, *_authorization = _complete_four_task_target_fixture(
+        tmp_path, monkeypatch
+    )
+    report = runner.validate_artifacts(output)
+    projection = json.loads((output / "projection.json").read_text(encoding="utf-8"))
+    coverage = json.loads((output / "coverage.json").read_text(encoding="utf-8"))
+    assert report["valid"] is True
+    assert report["completed"] == report["expected"] == 4
+    assert report["target_canary_acceptance"]["applicable"] is True
+    assert report["target_canary_acceptance"]["accepted"] is True
+    assert report["target_canary_acceptance"]["reason_codes"] == []
+    assert (
+        report["target_canary_acceptance"]["scientific_projection_eligible"]
+        is False
+    )
+    assert (
+        report["target_canary_acceptance"][
+            "canonical_scientific_execution_authorized"
+        ]
+        is False
+    )
+    assert report["scientific_coverage"]["valid"] is False
+    assert report["scientific_coverage"]["reason_codes"] == [
+        "incomplete_required_stratum",
+        "insufficient_repetitions",
+    ]
+    assert coverage["minimum_repetitions"] == 2
+    assert coverage["covered_strata"] == 0
+    assert projection["execution_plan_eligible"] is False
+    assert "incomplete_required_stratum" in projection["reason_codes"]
+    assert "insufficient_repetitions" in projection["reason_codes"]
+    assert (
+        preflight_cli_main(["validate-artifacts", "--run-dir", str(output)])
+        == runner.EXIT_OK
+    )
+    assert (
+        preflight_cli_main(["project", "--run-dir", str(output)])
+        == runner.EXIT_INCOMPLETE
+    )
+
+
+def test_fresh_target_missing_run_marker_fails_normal_validation_and_cli(
+    tmp_path, monkeypatch
+):
+    _plan_value, _root, output, *_authorization = _complete_four_task_target_fixture(
+        tmp_path, monkeypatch
+    )
+    (output / "COMPLETED.json").unlink()
+
+    report = runner.validate_artifacts(output)
+
+    assert report["valid"] is False
+    assert report["target_canary_acceptance"]["accepted"] is False
+    assert "completed_run_missing_marker" in report["reason_codes"]
+    assert (
+        preflight_cli_main(["validate-artifacts", "--run-dir", str(output)])
+        == runner.EXIT_VALIDATION
+    )
+
+
+def test_legacy_shaped_validation_cannot_bypass_missing_run_marker(
+    tmp_path, monkeypatch
+):
+    _plan_value, _root, output, *_authorization = _complete_four_task_target_fixture(
+        tmp_path, monkeypatch
+    )
+    (output / "COMPLETED.json").unlink()
+    runner._atomic_json(
+        output / "validation.json",
+        {
+            "schema_version": runner.SCHEMA_VERSION,
+            "valid": False,
+            "reason_codes": [
+                "incomplete_required_stratum",
+                "insufficient_repetitions",
+            ],
+            "expected": 4,
+            "completed": 4,
+        },
+    )
+
+    report = runner.validate_artifacts(output)
+
+    assert report["valid"] is False
+    assert report["target_canary_acceptance"]["accepted"] is False
+    assert "completed_run_missing_marker" in report["reason_codes"]
+    assert (
+        preflight_cli_main(["validate-artifacts", "--run-dir", str(output)])
+        == runner.EXIT_VALIDATION
+    )
+
+
+@pytest.mark.parametrize(
+    "artifact,value",
+    [
+        ("environment", "b" * 40),
+        ("environment", None),
+        ("environment", "NOT-A-LOWERCASE-SHA40"),
+        ("sample", "b" * 40),
+        ("sample", None),
+        ("sample", "NOT-A-LOWERCASE-SHA40"),
+        ("provenance", "b" * 40),
+        ("provenance", None),
+        ("provenance", "NOT-A-LOWERCASE-SHA40"),
+    ],
+)
+def test_target_source_identity_is_cross_bound_and_strictly_validated(
+    tmp_path, monkeypatch, artifact, value
+):
+    _plan_value, _root, output, *_authorization = _complete_four_task_target_fixture(
+        tmp_path, monkeypatch
+    )
+    if artifact == "environment":
+        environment_path = output / "environment.json"
+        environment = json.loads(environment_path.read_text(encoding="utf-8"))
+        if value is None:
+            environment.pop("git_commit")
+        else:
+            environment["git_commit"] = value
+        environment["environment_digest"] = runner.canonical_digest(
+            environment, "environment_digest"
+        )
+        runner._atomic_json(environment_path, environment)
+    elif artifact == "sample":
+        sample_dir = next((output / "samples").iterdir())
+        record_path = sample_dir / "result.json"
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+        if value is None:
+            record.pop("git_commit")
+        else:
+            record["git_commit"] = value
+        runner._atomic_json(record_path, record)
+        runner._atomic_json(sample_dir / "telemetry.json", record)
+        runner._atomic_json(
+            sample_dir / "COMPLETED.json",
+            {
+                "record_digest": runner.sha256_canonical(record),
+                "attempt_id": record["attempt_id"],
+            },
+        )
+        records = [
+            json.loads(path.read_text(encoding="utf-8"))
+            for path in sorted((output / "samples").glob("*/result.json"))
+        ]
+        projection_path = output / "projection.json"
+        projection = json.loads(projection_path.read_text(encoding="utf-8"))
+        projection["source_evidence_digest"] = runner.sha256_canonical(records)
+        runner._atomic_json(projection_path, projection)
+    else:
+        manifest_path = output / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if value is None:
+            manifest["authorization_provenance"].pop("git_commit")
+        else:
+            manifest["authorization_provenance"]["git_commit"] = value
+        runner._atomic_json(manifest_path, manifest)
+
+    report = runner.validate_artifacts(output)
+
+    assert report["valid"] is False
+    assert report["target_canary_acceptance"]["accepted"] is False
+    assert "git_provenance_mismatch" in report["reason_codes"]
+
+
+def test_target_output_path_is_bound_to_persisted_authorization(
+    tmp_path, monkeypatch
+):
+    _plan_value, _root, output, *_authorization = _complete_four_task_target_fixture(
+        tmp_path, monkeypatch
+    )
+    moved = output.with_name(f"{output.name}-moved")
+    output.rename(moved)
+
+    report = runner.validate_artifacts(moved)
+
+    assert report["valid"] is False
+    assert report["target_canary_acceptance"]["accepted"] is False
+    assert "authorization_provenance_mismatch" in report["reason_codes"]
+
+
+def test_target_run_completion_marker_is_bound_to_manifest_run_id(
+    tmp_path, monkeypatch
+):
+    _plan_value, _root, output, *_authorization = _complete_four_task_target_fixture(
+        tmp_path, monkeypatch
+    )
+    marker_path = output / "COMPLETED.json"
+    marker = json.loads(marker_path.read_text(encoding="utf-8"))
+    marker["run_id"] = "different-run"
+    runner._atomic_json(marker_path, marker)
+
+    report = runner.validate_artifacts(output)
+
+    assert report["valid"] is False
+    assert report["target_canary_acceptance"]["accepted"] is False
+    assert "run_complete_marker_integrity_failure" in report["reason_codes"]
+
+
+def test_valid_finalization_returns_post_marker_public_validation(
+    tmp_path, monkeypatch
+):
+    _plan_value, root, output, environment, proposal, authorization = (
+        _complete_four_task_target_fixture(tmp_path, monkeypatch)
+    )
+    public_calls = []
+    original_validate = runner.validate_artifacts
+
+    def tracked_public_validation(run_dir):
+        public_calls.append((run_dir / "COMPLETED.json").exists())
+        return original_validate(run_dir)
+
+    monkeypatch.setattr(runner, "validate_artifacts", tracked_public_validation)
+    result = _finalize_completed_fixture_as_initial_run(
+        output, root, environment, proposal, authorization
+    )
+
+    assert public_calls == [True]
+    assert result["validation"]["valid"] is True
+    assert result["validation"] == original_validate(output)
+    assert preflight_cli_main(
+        ["validate-artifacts", "--run-dir", str(output)]
+    ) == runner.EXIT_OK
+
+
+def test_corrupt_marker_write_returns_post_marker_failure_and_cli_exit_two(
+    tmp_path, monkeypatch
+):
+    _plan_value, root, output, environment, proposal, authorization = (
+        _complete_four_task_target_fixture(tmp_path, monkeypatch)
+    )
+    original_write = runner._atomic_json
+
+    def corrupt_run_marker(path, value):
+        if path == output / "COMPLETED.json":
+            value = {**value, "run_id": "corrupt-run-id"}
+        original_write(path, value)
+
+    monkeypatch.setattr(runner, "_atomic_json", corrupt_run_marker)
+    result = _finalize_completed_fixture_as_initial_run(
+        output, root, environment, proposal, authorization
+    )
+
+    assert result["validation"]["valid"] is False
+    assert "run_complete_marker_integrity_failure" in result["validation"][
+        "reason_codes"
+    ]
+    assert (
+        preflight_cli_main(["validate-artifacts", "--run-dir", str(output)])
+        == runner.EXIT_VALIDATION
+    )
+
+
+def test_marker_write_exception_propagates_without_success(tmp_path, monkeypatch):
+    _plan_value, root, output, environment, proposal, authorization = (
+        _complete_four_task_target_fixture(tmp_path, monkeypatch)
+    )
+    original_write = runner._atomic_json
+
+    def fail_run_marker(path, value):
+        if path == output / "COMPLETED.json":
+            raise OSError("simulated marker write failure")
+        original_write(path, value)
+
+    monkeypatch.setattr(runner, "_atomic_json", fail_run_marker)
+    with pytest.raises(OSError, match="simulated marker write failure"):
+        _finalize_completed_fixture_as_initial_run(
+            output, root, environment, proposal, authorization
+        )
+    assert not (output / "COMPLETED.json").exists()
+
+
+def test_completed_markerless_resume_is_rejected_without_reclassification(
+    tmp_path, monkeypatch, capsys
+):
+    plan, root, output, environment, proposal, authorization = (
+        _complete_four_task_target_fixture(tmp_path, monkeypatch)
+    )
+    marker_path = output / "COMPLETED.json"
+    marker_path.unlink()
+    validation_path = output / "validation.json"
+    validation_before = validation_path.read_bytes()
+
+    result = runner.resume(
+        output,
+        repo_root=root,
+        target_environment=environment,
+        authorization_proposal=proposal,
+        effective_authorization=authorization,
+    )
+
+    assert result["executed"] == 0
+    assert result["skipped"] == 4
+    assert result["validation"]["valid"] is False
+    assert "completed_run_missing_marker" in result["validation"]["reason_codes"]
+    assert not marker_path.exists()
+    assert validation_path.read_bytes() == validation_before
+
+    environment_path = tmp_path / "target-environment.json"
+    proposal_path = tmp_path / "proposal.json"
+    authorization_path = tmp_path / "authorization.json"
+    runner._atomic_json(environment_path, environment)
+    runner._atomic_json(proposal_path, proposal)
+    runner._atomic_json(authorization_path, authorization)
+    monkeypatch.setattr(preflight_cli, "find_repo_root", lambda: root)
+    monkeypatch.setattr(preflight_cli, "_default_plan", lambda _root: plan)
+    assert (
+        preflight_cli.main(
+            [
+                "resume",
+                "--run-dir",
+                str(output),
+                "--target-environment",
+                str(environment_path),
+                "--authorization-proposal",
+                str(proposal_path),
+                "--effective-authorization",
+                str(authorization_path),
+            ]
+        )
+        == runner.EXIT_VALIDATION
+    )
+    capsys.readouterr()
+
+
+def test_resume_rejects_existing_corrupt_run_marker_without_repair(
+    tmp_path, monkeypatch
+):
+    _plan_value, root, output, environment, proposal, authorization = (
+        _complete_four_task_target_fixture(tmp_path, monkeypatch)
+    )
+    marker_path = output / "COMPLETED.json"
+    marker = json.loads(marker_path.read_text(encoding="utf-8"))
+    marker["run_id"] = "corrupt-run-id"
+    runner._atomic_json(marker_path, marker)
+    marker_before = marker_path.read_bytes()
+    validation_path = output / "validation.json"
+    validation_before = validation_path.read_bytes()
+
+    result = runner.resume(
+        output,
+        repo_root=root,
+        target_environment=environment,
+        authorization_proposal=proposal,
+        effective_authorization=authorization,
+    )
+
+    assert result["executed"] == 0
+    assert result["validation"]["valid"] is False
+    assert "run_complete_marker_integrity_failure" in result["validation"][
+        "reason_codes"
+    ]
+    assert marker_path.read_bytes() == marker_before
+    assert validation_path.read_bytes() == validation_before
+
+
+def test_incomplete_resume_finishes_without_fit_and_uses_post_marker_validation(
+    tmp_path, monkeypatch
+):
+    _plan_value, root, output, environment, proposal, authorization = (
+        _complete_four_task_target_fixture(tmp_path, monkeypatch)
+    )
+    (output / "COMPLETED.json").unlink()
+    missing = next((output / "samples").iterdir())
+    shutil.rmtree(missing)
+
+    def no_fit_outer_refit(_task, _root, *, locked_runtime_inputs):
+        assert locked_runtime_inputs is not None
+        return {
+            "timings": {field: 0.0 for field in TIMING_FIELDS},
+            "preprocessing_identity": "no-fit-resume-fixture",
+            "input_identity": {},
+            "limitations": ["no_fit_resume_fixture"],
+            "result": {},
+        }
+
+    class InlineExecutor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def submit(self, fn, *args, **kwargs):
+            future = Future()
+            try:
+                future.set_result(fn(*args, **kwargs))
+            except Exception as exc:  # pragma: no cover - surfaced by future.result
+                future.set_exception(exc)
+            return future
+
+    monkeypatch.setattr(runner, "canonical_outer_refit", no_fit_outer_refit)
+    monkeypatch.setattr(
+        runner, "ProcessPoolExecutor", lambda *_args, **_kwargs: InlineExecutor()
+    )
+    public_calls = []
+    original_validate = runner.validate_artifacts
+
+    def tracked_public_validation(run_dir):
+        public_calls.append((run_dir / "COMPLETED.json").exists())
+        return original_validate(run_dir)
+
+    monkeypatch.setattr(runner, "validate_artifacts", tracked_public_validation)
+    result = runner.resume(
+        output,
+        repo_root=root,
+        target_environment=environment,
+        authorization_proposal=proposal,
+        effective_authorization=authorization,
+    )
+
+    assert result["executed"] == 1
+    assert result["skipped"] == 3
+    assert public_calls == [True]
+    assert result["validation"]["valid"] is True
+    assert result["validation"] == original_validate(output)
+
+
+def test_complete_four_task_target_canary_resume_skips_without_expanding_scope(
+    tmp_path, monkeypatch
+):
+    _plan_value, root, output, environment, proposal, authorization = (
+        _complete_four_task_target_fixture(tmp_path, monkeypatch)
+    )
+    result = runner.resume(
+        output,
+        repo_root=root,
+        target_environment=environment,
+        authorization_proposal=proposal,
+        effective_authorization=authorization,
+    )
+    assert result["executed"] == 0
+    assert result["skipped"] == 4
+    assert result["validation"]["valid"] is True
+    assert result["validation"]["scientific_coverage"]["valid"] is False
+    assert len(list((output / "samples").iterdir())) == 4
+
+
+@pytest.mark.parametrize(
+    "mutation,reason",
+    [
+        ("missing-task", "missing_planned_sample"),
+        ("unexpected-task", "unexpected_sample"),
+        ("missing-result", "missing_required_artifact"),
+        ("missing-telemetry", "missing_required_artifact"),
+        ("missing-marker", "complete_marker_integrity_failure"),
+        ("provenance", "authorization_provenance_mismatch"),
+        ("runtime", "runtime_state_rollback_or_integrity_failure"),
+    ],
+)
+def test_four_task_target_canary_failures_remain_fail_closed(
+    tmp_path, monkeypatch, mutation, reason
+):
+    _plan_value, _root, output, *_authorization = _complete_four_task_target_fixture(
+        tmp_path, monkeypatch
+    )
+    sample = next((output / "samples").iterdir())
+    if mutation == "missing-task":
+        shutil.rmtree(sample)
+    elif mutation == "unexpected-task":
+        extra = output / "samples" / "unexpected"
+        extra.mkdir()
+        runner._atomic_json(extra / "result.json", {})
+    elif mutation == "missing-result":
+        (sample / "result.json").unlink()
+    elif mutation == "missing-telemetry":
+        (sample / "telemetry.json").unlink()
+    elif mutation == "missing-marker":
+        (sample / "COMPLETED.json").unlink()
+    elif mutation == "provenance":
+        manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
+        manifest["authorization_provenance"]["task_ids"] = manifest[
+            "authorization_provenance"
+        ]["task_ids"][:-1]
+        runner._atomic_json(output / "manifest.json", manifest)
+    else:
+        state = json.loads(
+            (output / "authorization_runtime.json").read_text(encoding="utf-8")
+        )
+        state["generation"] += 1
+        runner._atomic_json(output / "authorization_runtime.json", state)
+    report = runner.validate_artifacts(output)
+    assert report["valid"] is False
+    assert report["target_canary_acceptance"]["accepted"] is False
+    assert reason in report["reason_codes"]
+    if mutation == "missing-task":
+        assert preflight_cli_main(
+            ["validate-artifacts", "--run-dir", str(output)]
+        ) == runner.EXIT_VALIDATION
 
 
 def test_target_runner_accepts_valid_gate_and_persists_provenance_without_workload(
