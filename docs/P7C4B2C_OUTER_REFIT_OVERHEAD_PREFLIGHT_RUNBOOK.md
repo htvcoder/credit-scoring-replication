@@ -119,9 +119,12 @@ Planning and synthetic validation:
 .\.venv\Scripts\python.exe -m creditrep.experiments.p7c4b2c_cli inspect-eligibility --run-dir <run-dir>
 ```
 
-A target-canary command requires separate `--target-environment`,
+A target command requires separate `--target-environment`,
 `--authorization-proposal` and `--effective-authorization` artifacts validated
-by P7C.4B.2d. The legacy `--target-preflight-authorized` and
+by P7C.4B.2d. `target_canary` remains a four-task operational scope;
+`target_projection_preflight` authorizes one complete 162-task mode. Canary
+residual reuse is forbidden across source SHAs. The legacy
+`--target-preflight-authorized` and
 `--authorization-plan-digest` bypass is forbidden. Execution class selects its
 workload from a closed mapping; public Python APIs reject callable injection.
 Target output must resolve exactly to the authorized namespace, and live disk,
@@ -130,8 +133,11 @@ expiry and remaining runtime are checked before dispatch.
 Target manifests bind the original authorization digest and full scope.
 `authorization_runtime.json` conservatively counts the wall-clock envelope from
 the original start, including crash/downtime, so resume cannot replace the
-authorization or reset elapsed runtime. The runner does not claim to hard-kill a
-task already running when authorization expires; it prevents subsequent dispatch.
+authorization or reset elapsed runtime. The four-task canary retains its original
+dispatch boundary. The projection-preflight stage instead uses killable spawned
+children, a 20-minute task timeout, 12 GiB aggregate process-tree RSS, zero
+tolerated failures, a maximum of two in-flight tasks, and independent per-run
+12-hour/USD 5 ceilings. Any violation stops dispatch and terminates/reaps children.
 This runbook does not create a real authorization or execute a target command.
 
 On target run and resume, a self-consistent `sample_id`, plan digest, manifest or
@@ -189,5 +195,7 @@ not an attacker able to rewrite every artifact and recompute all checksums.
 
 Exit code 2 is artifact/config validation failure, 3 is valid but incomplete or
 ineligible evidence, and 4 is authorization failure. Target evidence must still
-supply complete inner projection, overhead event mapping and current price input
-before an execution plan can be considered.
+supply validator-bound P7C.4B.2b inner projection, a closed-schema overhead event
+mapping and current typed price input before an execution plan can be considered.
+Combined projection rejects missing, unexpected or duplicate canonical task
+identities and always leaves canonical scientific authorization false.

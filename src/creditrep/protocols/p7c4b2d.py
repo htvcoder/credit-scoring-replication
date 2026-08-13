@@ -40,6 +40,12 @@ SHA256_RE = re.compile(r"^[A-Fa-f0-9]{64}$")
 GIT_RE = re.compile(r"^[a-f0-9]{40}$")
 MINIMUM_FREE_DISK_BYTES = 5 * 1024**3
 DISK_POLICY = "p7c4b2d-v1-5GiB-static-canary-output-and-quarantine-margin"
+PROJECTION_MAXIMUM_RUNTIME_HOURS = 12
+PROJECTION_MAXIMUM_MONETARY_BUDGET = "5.0"
+PROJECTION_TASK_TIMEOUT_SECONDS = 20 * 60
+PROJECTION_AGGREGATE_RSS_LIMIT_BYTES = 12 * 1024**3
+PROJECTION_MAXIMUM_FAILED_TASKS = 0
+PROJECTION_MAXIMUM_IN_FLIGHT_CAP = 2
 LOCK_FILES = ("pyproject.toml", "requirements.txt", "requirements-dev.txt")
 ENVIRONMENT_FIELDS = (
     "schema_version",
@@ -76,6 +82,7 @@ ENVIRONMENT_FIELDS = (
     "price_observed_at",
     "maximum_runtime_hours",
     "maximum_monetary_budget",
+    "projection_preflight_resource_policy",
     "evidence_observed_at",
 )
 OPERATOR_METADATA_FIELDS = (
@@ -135,6 +142,15 @@ SCIENTIFIC_CODES = {
 EFFECTIVE_AUTHORIZATION_SCHEMA_VERSION = 1
 EFFECTIVE_AUTHORIZATION_TYPE = "effective_authorization"
 TARGET_CANARY_APPROVAL = "APPROVE_P7C4B2D_TARGET_CANARY"
+TARGET_PROJECTION_PREFLIGHT_APPROVAL = "APPROVE_P7C4B2_TARGET_PROJECTION_PREFLIGHT"
+TARGET_CANARY_STAGE = "target_canary"
+TARGET_PROJECTION_PREFLIGHT_STAGE = "target_projection_preflight"
+TARGET_EXECUTION_STAGES = frozenset(
+    {
+        TARGET_CANARY_STAGE,
+        TARGET_PROJECTION_PREFLIGHT_STAGE,
+    }
+)
 MAX_AUTHORIZATION_DURATION_SECONDS = 24 * 60 * 60
 ENVIRONMENT_SCHEMA_FIELDS = frozenset(
     (*ENVIRONMENT_FIELDS, "process_spawn_probe", "environment_digest")
@@ -165,6 +181,7 @@ PROPOSAL_SCHEMA_FIELDS = frozenset(
         "expiry",
         "stop_conditions",
         "cost_acknowledgement",
+        "resource_policy",
         "proposal_digest",
     }
 )
@@ -195,9 +212,32 @@ EFFECTIVE_AUTHORIZATION_FIELDS = frozenset(
         "currency",
         "minimum_free_disk_bytes",
         "disk_policy",
+        "resource_policy",
         "authorization_digest",
     }
 )
+
+
+def projection_preflight_resource_policy(mode: str) -> dict[str, Any]:
+    if mode not in MODES:
+        raise P7C4B2DError("execution_mode_unsupported")
+    return {
+        "schema_version": 1,
+        "policy_type": "p7c4b2_outer_projection_preflight_resource_policy",
+        "maximum_runtime_hours": PROJECTION_MAXIMUM_RUNTIME_HOURS,
+        "maximum_monetary_budget": PROJECTION_MAXIMUM_MONETARY_BUDGET,
+        "per_task_timeout_seconds": PROJECTION_TASK_TIMEOUT_SECONDS,
+        "aggregate_process_tree_rss_limit_bytes": PROJECTION_AGGREGATE_RSS_LIMIT_BYTES,
+        "maximum_failed_task_count": PROJECTION_MAXIMUM_FAILED_TASKS,
+        "maximum_in_flight_tasks": min(MODES[mode], PROJECTION_MAXIMUM_IN_FLIGHT_CAP),
+    }
+
+
+def _valid_projection_resource_policy(value: Any, mode: Any) -> bool:
+    try:
+        return value == projection_preflight_resource_policy(mode)
+    except P7C4B2DError:
+        return False
 
 
 def _decimal_value(value: Any) -> Decimal | None:
@@ -474,6 +514,11 @@ def collect_target_environment(
         "price_observed_at": None,
         "maximum_runtime_hours": None,
         "maximum_monetary_budget": None,
+        "projection_preflight_resource_policy": projection_preflight_resource_policy(
+            mode
+        )
+        if mode in MODES
+        else None,
         "evidence_observed_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "process_spawn_probe": probe_process_spawn(),
     }
@@ -615,6 +660,11 @@ def _validate_values(environment: dict[str, Any]) -> list[str]:
         for field in ("price_observed_at", "evidence_observed_at")
     ):
         codes.append("invalid_environment_value")
+    mode = environment.get("execution_mode")
+    if not _valid_projection_resource_policy(
+        environment.get("projection_preflight_resource_policy"), mode
+    ):
+        codes.append("invalid_projection_resource_policy")
     return codes
 
 
@@ -786,6 +836,42 @@ def select_canary(plan: dict[str, Any], mode: str) -> dict[str, Any]:
     }
 
 
+def select_projection_preflight(plan: dict[str, Any], mode: str) -> dict[str, Any]:
+    """Select one mode's self-contained projection workload from the locked plan."""
+    if mode not in MODES:
+        raise P7C4B2DError("execution_mode_unsupported")
+    selected = [task for task in plan["tasks"] if task["mode"] == mode]
+    return {
+        "execution_stage": TARGET_PROJECTION_PREFLIGHT_STAGE,
+        "scientific_projection_eligible": False,
+        "canonical_scientific_execution_authorized": False,
+        "mode": mode,
+        "task_ids": [task["sample_id"] for task in selected],
+        "task_count": len(selected),
+        "tasks": selected,
+        "selection": "all_warmup_and_two_measured_tasks_for_mode",
+        "plan_digest": plan["plan_digest"],
+    }
+
+
+def select_authorized_scope(
+    plan: dict[str, Any], mode: str, execution_stage: str
+) -> dict[str, Any]:
+    if execution_stage == TARGET_CANARY_STAGE:
+        return select_canary(plan, mode)
+    if execution_stage == TARGET_PROJECTION_PREFLIGHT_STAGE:
+        return select_projection_preflight(plan, mode)
+    raise P7C4B2DError("invalid_execution_stage")
+
+
+def required_operator_approval(execution_stage: str) -> str:
+    if execution_stage == TARGET_CANARY_STAGE:
+        return TARGET_CANARY_APPROVAL
+    if execution_stage == TARGET_PROJECTION_PREFLIGHT_STAGE:
+        return TARGET_PROJECTION_PREFLIGHT_APPROVAL
+    raise P7C4B2DError("invalid_execution_stage")
+
+
 def estimate_cost(
     *,
     mode: str,
@@ -853,12 +939,31 @@ def render_authorization_proposal(
     execution_stage: str,
     expiry: str | None,
 ) -> dict[str, Any]:
-    if (
-        execution_stage != "target_canary"
-        or environment.get("execution_mode") not in MODES
-    ):
+    if execution_stage not in TARGET_EXECUTION_STAGES or environment.get(
+        "execution_mode"
+    ) not in MODES:
         raise P7C4B2DError("invalid_execution_stage")
-    canary = select_canary(plan, environment["execution_mode"])
+    scope = select_authorized_scope(
+        plan, environment["execution_mode"], execution_stage
+    )
+    resource_policy = (
+        environment.get("projection_preflight_resource_policy")
+        if execution_stage == TARGET_PROJECTION_PREFLIGHT_STAGE
+        else None
+    )
+    if execution_stage == TARGET_PROJECTION_PREFLIGHT_STAGE and (
+        not _valid_projection_resource_policy(
+            resource_policy, environment.get("execution_mode")
+        )
+        or environment.get("maximum_runtime_hours")
+        != PROJECTION_MAXIMUM_RUNTIME_HOURS
+        or canonical_decimal(environment.get("maximum_monetary_budget"))
+        != PROJECTION_MAXIMUM_MONETARY_BUDGET
+        or not isinstance(environment.get("ram_bytes"), int)
+        or isinstance(environment.get("ram_bytes"), bool)
+        or environment["ram_bytes"] <= PROJECTION_AGGREGATE_RSS_LIMIT_BYTES
+    ):
+        raise P7C4B2DError("invalid_projection_resource_policy")
     value = {
         "schema_version": SCHEMA_VERSION,
         "artifact_type": "authorization_proposal",
@@ -871,8 +976,8 @@ def render_authorization_proposal(
         "execution_stage": execution_stage,
         "execution_mode": environment["execution_mode"],
         "vm_count": environment.get("vm_count"),
-        "task_ids": canary["task_ids"],
-        "maximum_task_count": 4,
+        "task_ids": scope["task_ids"],
+        "maximum_task_count": scope["task_count"],
         "minimum_free_disk_bytes": MINIMUM_FREE_DISK_BYTES,
         "disk_policy": DISK_POLICY,
         "maximum_runtime_hours": environment.get("maximum_runtime_hours"),
@@ -888,6 +993,7 @@ def render_authorization_proposal(
             PRE_RUN_CODES | RUNTIME_STOP_CODES | AUTHORIZATION_CODES
         ),
         "cost_acknowledgement": "target_execution_may_incur_cost",
+        "resource_policy": resource_policy,
     }
     value["proposal_digest"] = canonical_digest(value, "proposal_digest")
     return value
@@ -931,17 +1037,23 @@ def validate_authorization_proposal(
     ):
         codes.append("authorization_mismatch")
     mode = proposal.get("execution_mode")
+    expected: list[str] = []
     if mode not in MODES:
         codes.append("execution_mode_unsupported")
     else:
-        expected = select_canary(plan, mode)["task_ids"]
+        stage = proposal.get("execution_stage")
+        try:
+            expected = select_authorized_scope(plan, mode, stage)["task_ids"]
+        except P7C4B2DError:
+            expected = []
+            codes.append("invalid_execution_stage")
         task_ids = proposal.get("task_ids")
         if (
             not isinstance(task_ids, list)
             or any(not _nonempty_text(item) for item in task_ids)
             or task_ids != expected
             or len(task_ids) != len(set(task_ids))
-            or len(task_ids) != 4
+            or len(task_ids) != len(expected)
         ):
             codes.append("authorization_proposal_task_scope_mismatch")
     for key in (
@@ -954,7 +1066,25 @@ def validate_authorization_proposal(
     ):
         if proposal.get(key) != environment_value.get(key):
             codes.append("authorization_mismatch")
-    if proposal.get("execution_stage") != "target_canary":
+    if proposal.get("execution_stage") not in TARGET_EXECUTION_STAGES:
+        codes.append("authorization_mismatch")
+    stage = proposal.get("execution_stage")
+    if stage == TARGET_PROJECTION_PREFLIGHT_STAGE:
+        if (
+            not _valid_projection_resource_policy(proposal.get("resource_policy"), mode)
+            or proposal.get("resource_policy")
+            != environment_value.get("projection_preflight_resource_policy")
+            or proposal.get("maximum_runtime_hours")
+            != PROJECTION_MAXIMUM_RUNTIME_HOURS
+            or proposal.get("maximum_monetary_budget")
+            != PROJECTION_MAXIMUM_MONETARY_BUDGET
+            or not isinstance(environment_value.get("ram_bytes"), int)
+            or isinstance(environment_value.get("ram_bytes"), bool)
+            or environment_value["ram_bytes"]
+            <= PROJECTION_AGGREGATE_RSS_LIMIT_BYTES
+        ):
+            codes.append("invalid_projection_resource_policy")
+    elif proposal.get("resource_policy") is not None:
         codes.append("authorization_mismatch")
     if proposal.get("git_commit") != environment_value.get("expected_git_commit"):
         codes.append("authorization_mismatch")
@@ -962,7 +1092,7 @@ def validate_authorization_proposal(
         not isinstance(proposal.get("vm_count"), int)
         or isinstance(proposal.get("vm_count"), bool)
         or proposal.get("vm_count") != environment_value.get("vm_count")
-        or proposal.get("maximum_task_count") != 4
+        or proposal.get("maximum_task_count") != len(expected)
     ):
         codes.append("authorization_mismatch")
     if (
@@ -1032,7 +1162,7 @@ def _create_effective_authorization(
         raise P7C4B2DError(",".join(sorted(set(proposal_report["reason_codes"]))))
     if not _nonempty_text(operator_identity):
         raise P7C4B2DError("operator_identity_missing")
-    if operator_approval != TARGET_CANARY_APPROVAL:
+    if operator_approval != required_operator_approval(proposal["execution_stage"]):
         raise P7C4B2DError("operator_approval_missing")
     created = now_provider()
     if not isinstance(created, datetime) or created.tzinfo is None:
@@ -1075,6 +1205,7 @@ def _create_effective_authorization(
         "currency": proposal["currency"],
         "minimum_free_disk_bytes": proposal["minimum_free_disk_bytes"],
         "disk_policy": proposal["disk_policy"],
+        "resource_policy": proposal["resource_policy"],
     }
     value["authorization_digest"] = canonical_digest(value, "authorization_digest")
     return value
@@ -1111,7 +1242,14 @@ def validate_effective_authorization(
         codes.append("authorization_not_effective")
     if not _nonempty_text(authorization.get("operator_identity")):
         codes.append("operator_identity_missing")
-    if authorization.get("operator_approval") != TARGET_CANARY_APPROVAL:
+    try:
+        expected_approval = required_operator_approval(
+            authorization.get("execution_stage")
+        )
+    except P7C4B2DError:
+        expected_approval = None
+        codes.append("execution_stage_mismatch")
+    if authorization.get("operator_approval") != expected_approval:
         codes.append("operator_approval_missing")
     created, expiry = (
         _parse_timestamp(authorization.get("created_at")),
@@ -1167,7 +1305,9 @@ def validate_effective_authorization(
         ),
         "plan_digest": plan.get("plan_digest"),
         "git_commit": environment_value.get("expected_git_commit"),
-        "execution_stage": "target_canary",
+        "execution_stage": proposal.get("execution_stage")
+        if isinstance(proposal, dict)
+        else None,
         "execution_mode": environment_value.get("execution_mode"),
         "output_directory": environment_value.get("output_directory"),
         "vm_count": environment_value.get("vm_count"),
@@ -1177,6 +1317,9 @@ def validate_effective_authorization(
         "currency": environment_value.get("currency"),
         "minimum_free_disk_bytes": MINIMUM_FREE_DISK_BYTES,
         "disk_policy": DISK_POLICY,
+        "resource_policy": proposal.get("resource_policy")
+        if isinstance(proposal, dict)
+        else None,
     }
     code_for = {
         "target_environment_digest": "target_environment_digest_mismatch",
@@ -1193,6 +1336,7 @@ def validate_effective_authorization(
         "currency": "price_currency_mismatch",
         "minimum_free_disk_bytes": "disk_policy_mismatch",
         "disk_policy": "disk_policy_mismatch",
+        "resource_policy": "resource_policy_mismatch",
     }
     for field, expected_value in expected.items():
         if authorization.get(field) != expected_value:
@@ -1205,7 +1349,13 @@ def validate_effective_authorization(
     if not budget_covers_window:
         codes.append("monetary_budget_mismatch")
     mode = environment_value.get("execution_mode")
-    expected_tasks = select_canary(plan, mode)["task_ids"] if mode in MODES else []
+    try:
+        expected_tasks = select_authorized_scope(
+            plan, mode, authorization.get("execution_stage")
+        )["task_ids"]
+    except P7C4B2DError:
+        expected_tasks = []
+        codes.append("execution_stage_mismatch")
     task_ids = authorization.get("task_ids")
     if (
         not isinstance(task_ids, list)
@@ -1276,6 +1426,14 @@ def decision_package(
             mode: {
                 key: value
                 for key, value in select_canary(plan, mode).items()
+                if key != "tasks"
+            }
+            for mode in MODES
+        },
+        "projection_preflight": {
+            mode: {
+                key: value
+                for key, value in select_projection_preflight(plan, mode).items()
                 if key != "tasks"
             }
             for mode in MODES

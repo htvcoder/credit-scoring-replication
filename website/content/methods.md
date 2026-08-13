@@ -47,6 +47,7 @@ Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái 
 - Runbook và CLI vận hành đã hoàn tất và qua fixture tests: launch record bất biến, submission receipt một lần qua systemd, monitor-only, resume precheck và final artifact validation.
 - Fresh run đã có target operation, effective authorization và submission receipt trong scope canary; 4/4 authorized task completed và `target_canary_acceptance.accepted` là true.
 - Đây vẫn chỉ là canary vận hành, không phải full scientific execution: `scientific_coverage.valid` là false với `incomplete_required_stratum` và `insufficient_repetitions`; scientific projection và canonical execution vẫn không eligible/chưa authorized.
+- Bước kỹ thuật kế tiếp trong P7C.4B.2 là target projection preflight: target inner-fit B2b cho cả hai CPU mode và hai self-contained outer-refit scope 162 task. Mỗi outer run bind riêng 12 giờ/USD 5, timeout task 20 phút, aggregate RSS 12 GiB, zero failure và tối đa hai task in-flight; các giới hạn này không áp dụng cho B2b hoặc canonical execution. Canary cũ không được dùng làm residual vì khác source SHA. Combined projection yêu cầu exact 324 task, closed inner/outer identity, reviewed typed overhead/price và luôn giữ canonical scientific authorization là false.
 
 ## Modern reassessment
 

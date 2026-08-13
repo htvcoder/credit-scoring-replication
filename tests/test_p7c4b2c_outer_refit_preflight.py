@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -16,12 +17,17 @@ from creditrep.experiments.p7c4b2c_cli import main as cli_main
 from creditrep.protocols.p7c4b2a import load_manifest
 from creditrep.protocols.p7c4b2c import (
     ADDITIVE_COMPONENTS,
+    OVERHEAD_EVENT_COUNTS,
+    OVERHEAD_METHOD_IDENTITY,
     P7C4B2CError,
     build_plan,
     eligibility,
     project_validated,
+    overhead_artifact_digest,
     validate_canonical_plan,
     validate_plan,
+    validate_combined_projection_sources,
+    validate_combined_projection_identity,
 )
 
 
@@ -372,7 +378,12 @@ def _controlled_records(plan):
 def test_controlled_complete_evidence_can_pass_eligibility_logic():
     plan = _plan()
     records = _controlled_records(plan)
-    validation = {"valid": True, "evidence_digest": sha256_canonical(records)}
+    validation = {
+        "valid": True,
+        "evidence_digest": sha256_canonical(records),
+        "source_git_commit": "d" * 40,
+        "source_artifact_hashes": ["e" * 64, "f" * 64],
+    }
     projection = project_validated(
         records,
         plan,
@@ -492,3 +503,213 @@ def test_validator_rejects_invalid_projection_source(tmp_path):
     projection["source_evidence_digest"] = "foreign"
     _write(output / "projection.json", projection)
     assert "invalid_projection_source" in validate_artifacts(output)["reason_codes"]
+
+
+def test_combined_projection_requires_exact_duplicate_free_canonical_scope():
+    plan = _plan()
+    records = [{"sample_id": task["sample_id"]} for task in plan["tasks"]]
+    report = validate_combined_projection_sources(
+        records, plan, [{"valid": True, "evidence_digest": "a" * 64}]
+    )
+    assert report["valid"] is True
+    assert report["completed_tasks"] == report["expected_tasks"] == 324
+
+    duplicate = validate_combined_projection_sources(
+        [*records, records[0]],
+        plan,
+        [{"valid": True, "evidence_digest": "a" * 64}],
+    )
+    assert duplicate["valid"] is False
+    assert "duplicate_projection_sample" in duplicate["reason_codes"]
+
+    incomplete = validate_combined_projection_sources(
+        records[:-1], plan, [{"valid": True, "evidence_digest": "a" * 64}]
+    )
+    assert incomplete["valid"] is False
+    assert "incomplete_projection_task_scope" in incomplete["reason_codes"]
+
+
+def _combined_identity_fixture():
+    source = "a" * 40
+    scientific = "b" * 64
+    outer_plan = {"plan_digest": "c" * 64}
+    outer = []
+    inner = []
+    for index, mode in enumerate(("cpu_parallel_1", "cpu_parallel_2"), start=1):
+        outer_path = str((Path.cwd() / f"outer-p{index}").resolve())
+        outer.append(
+            {
+                "run_directory": outer_path,
+                "manifest": {
+                    "run_id": Path(outer_path).name,
+                    "execution_class": "target_preflight",
+                    "mode": mode,
+                    "plan_digest": outer_plan["plan_digest"],
+                    "scientific_manifest_digest": scientific,
+                    "authorization_provenance": {
+                        "execution_stage": "target_projection_preflight",
+                        "execution_mode": mode,
+                        "normalized_output_directory": outer_path,
+                        "git_commit": source,
+                        "target_environment_digest": f"{index}" * 64,
+                        "proposal_digest": f"{index + 2}" * 64,
+                        "authorization_digest": f"{index + 4}" * 64,
+                    },
+                },
+                "environment": {"git_commit": source},
+                "validation": {"valid": True},
+            }
+        )
+        inner_path = str((Path.cwd() / f"inner-p{index}").resolve())
+        profile_digest = f"{index + 6}" * 64
+        inner.append(
+            {
+                "run_directory": inner_path,
+                "manifest": {
+                    "run_id": Path(inner_path).name,
+                    "normalized_output_directory": inner_path,
+                    "mode": mode,
+                    "evidence_scope": "target_single_vm_measured",
+                    "scientific_manifest_digest": scientific,
+                    "plan_digest": "d" * 64,
+                    "machine_profile_digest": profile_digest,
+                },
+                "profile": {
+                    "machine_role": "intended_single_vm_target",
+                    "profile_digest": profile_digest,
+                    "git_commit": source,
+                    "scientific_manifest_digest": scientific,
+                },
+                "plan": {"plan_digest": "d" * 64},
+                "validation": {"valid": True},
+            }
+        )
+    return outer, inner, outer_plan
+
+
+@pytest.mark.parametrize(
+    "mutation,reason",
+    [
+        (lambda o, _i: o[1]["manifest"]["authorization_provenance"].__setitem__("git_commit", "e" * 40), "mixed_source_git_commit"),
+        (lambda o, _i: o[1]["manifest"].__setitem__("mode", "cpu_parallel_1"), "outer_mode_scope_mismatch"),
+        (lambda o, _i: o[1]["manifest"]["authorization_provenance"].__setitem__("execution_stage", "target_canary"), "projection_execution_stage_mismatch"),
+        (lambda o, _i: o[1].__setitem__("run_directory", o[0]["run_directory"]), "projection_output_identity_mismatch"),
+        (lambda _o, i: i[1]["manifest"].__setitem__("mode", "cpu_parallel_1"), "inner_mode_scope_mismatch"),
+        (lambda _o, i: i[1].__setitem__("run_directory", str((Path.cwd() / "relocated" / "inner-p2").resolve())), "inner_run_identity_mismatch"),
+        (lambda o, _i: o[1].__setitem__("validation", {"valid": False}), "invalid_artifact_evidence"),
+    ],
+)
+def test_combined_projection_identity_is_closed_world(mutation, reason):
+    outer, inner, plan = _combined_identity_fixture()
+    assert validate_combined_projection_identity(outer, inner, plan)["valid"]
+    changed_outer, changed_inner = deepcopy(outer), deepcopy(inner)
+    mutation(changed_outer, changed_inner)
+    report = validate_combined_projection_identity(changed_outer, changed_inner, plan)
+    assert report["valid"] is False
+    assert reason in report["reason_codes"]
+
+
+def test_target_projection_requires_typed_inner_overhead_and_price_inputs():
+    plan = _plan()
+    records = _controlled_records(plan)
+    validation = {
+        "valid": True,
+        "evidence_digest": sha256_canonical(records),
+        "source_git_commit": "d" * 40,
+        "source_artifact_hashes": ["e" * 64, "f" * 64],
+    }
+    inner = {
+        "schema_version": 1,
+        "artifact_type": "p7c4b2b_validated_inner_projection",
+        "valid_for_combination": True,
+        "selected_mode": "cpu_parallel_2",
+        "conditional_elapsed_seconds": {
+            "point": 100.0,
+            "lower": 90.0,
+            "upper": 110.0,
+        },
+        "source_evidence_digest": "a" * 64,
+        "source_artifact_hashes": ["b" * 64, "c" * 64],
+    }
+    references = sorted(["e" * 64, "f" * 64, "b" * 64, "c" * 64])
+    overhead = {
+        "schema_version": 1,
+        "artifact_type": "p7c4b2_outer_projection_overhead",
+        "source_git_commit": "d" * 40,
+        "locked_plan_digest": plan["plan_digest"],
+        "selected_mode": "cpu_parallel_2",
+        "method_identity": OVERHEAD_METHOD_IDENTITY,
+        "event_counts": OVERHEAD_EVENT_COUNTS,
+        "event_overhead_seconds": {"canonical_orchestration_and_io": 5.0},
+        "outer_refits_parallel": True,
+        "source_evidence_references": references,
+        "source_evidence_digest": sha256_canonical(
+            {"source_evidence_references": references}
+        ),
+        "reviewed_creation_timestamp": "2026-08-13T00:00:00Z",
+    }
+    overhead["artifact_digest"] = overhead_artifact_digest(overhead)
+    price = {
+        "price_per_hour": 0.26,
+        "currency": "USD",
+        "billing_unit": "vm_hour",
+        "pricing_timestamp": "2026-08-13T00:00:00Z",
+        "source": "operator_provider_quote",
+        "vm_count": 1,
+    }
+    projection = project_validated(
+        records,
+        plan,
+        artifact_validation=validation,
+        execution_class="target_preflight",
+        inner_projection=inner,
+        overhead_mapping=overhead,
+        price_input=price,
+    )
+    assert projection["execution_plan_eligible"] is True
+    assert projection["cost_projection"]["currency"] == "USD"
+    assert projection["scientific_projection_eligible"] is True
+    assert projection["canonical_scientific_execution_authorized"] is False
+
+    invalid = project_validated(
+        records,
+        plan,
+        artifact_validation=validation,
+        execution_class="target_preflight",
+        inner_projection={**inner, "unknown": True},
+        overhead_mapping=overhead,
+        price_input=price,
+    )
+    assert invalid["execution_plan_eligible"] is False
+    assert "inner_fit_evidence_missing" in invalid["reason_codes"]
+
+    mutations = []
+    missing = deepcopy(overhead)
+    missing.pop("event_counts")
+    mutations.append(missing)
+    extra = {**overhead, "unknown": True}
+    mutations.append(extra)
+    wrong_event = deepcopy(overhead)
+    wrong_event["event_counts"] = {"canonical_inner_fits": 54_000}
+    wrong_event["artifact_digest"] = overhead_artifact_digest(wrong_event)
+    mutations.append(wrong_event)
+    wrong_source = deepcopy(overhead)
+    wrong_source["source_git_commit"] = "e" * 40
+    wrong_source["artifact_digest"] = overhead_artifact_digest(wrong_source)
+    mutations.append(wrong_source)
+    for numeric in (0.0, -1.0, float("nan"), float("inf")):
+        changed = deepcopy(overhead)
+        changed["event_overhead_seconds"]["canonical_orchestration_and_io"] = numeric
+        mutations.append(changed)
+    for changed in mutations:
+        result = project_validated(
+            records,
+            plan,
+            artifact_validation=validation,
+            execution_class="target_preflight",
+            inner_projection=inner,
+            overhead_mapping=changed,
+            price_input=price,
+        )
+        assert result["execution_plan_eligible"] is False
+        assert "clean_overhead_measurement_missing" in result["reason_codes"]

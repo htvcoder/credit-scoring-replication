@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from copy import deepcopy
+from datetime import datetime
 import math
 from pathlib import Path
 import re
@@ -790,6 +791,316 @@ def eligibility(
     }
 
 
+def validate_combined_projection_sources(
+    records: list[dict[str, Any]],
+    plan: dict[str, Any],
+    artifact_reports: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Require an exact, duplicate-free canonical task set before projection."""
+    expected_ids = [task["sample_id"] for task in plan["tasks"]]
+    actual_ids = [record.get("sample_id") for record in records]
+    codes: list[str] = []
+    if not artifact_reports or any(report.get("valid") is not True for report in artifact_reports):
+        codes.append("invalid_artifact_evidence")
+    if len(actual_ids) != len(set(actual_ids)):
+        codes.append("duplicate_projection_sample")
+    if set(actual_ids) - set(expected_ids):
+        codes.append("unexpected_projection_sample")
+    if set(expected_ids) - set(actual_ids):
+        codes.append("incomplete_projection_task_scope")
+    return {
+        "valid": not codes,
+        "reason_codes": sorted(set(codes)),
+        "expected_tasks": len(expected_ids),
+        "completed_tasks": len(actual_ids),
+        "evidence_digest": sha256_canonical(records),
+        "source_artifact_hashes": [
+            report.get("evidence_digest") for report in artifact_reports
+        ],
+    }
+
+
+def validate_combined_projection_identity(
+    outer_runs: list[dict[str, Any]],
+    inner_runs: list[dict[str, Any]],
+    outer_plan: dict[str, Any],
+) -> dict[str, Any]:
+    """Cross-bind the exact two outer and two inner validator-passed run roots."""
+    codes: list[str] = []
+    required_outer = {"run_directory", "manifest", "environment", "validation"}
+    required_inner = {
+        "run_directory",
+        "manifest",
+        "profile",
+        "plan",
+        "validation",
+    }
+    if len(outer_runs) != 2 or any(
+        not isinstance(run, dict) or set(run) != required_outer for run in outer_runs
+    ):
+        codes.append("outer_run_contract_mismatch")
+    if len(inner_runs) != 2 or any(
+        not isinstance(run, dict) or set(run) != required_inner for run in inner_runs
+    ):
+        codes.append("inner_run_contract_mismatch")
+    if codes:
+        return {"valid": False, "reason_codes": sorted(set(codes))}
+
+    source_shas: list[Any] = []
+    outer_modes: list[Any] = []
+    outer_plan_digests: list[Any] = []
+    scientific_digests: list[Any] = []
+    run_ids: list[Any] = []
+    output_paths: list[Any] = []
+    environment_digests: list[Any] = []
+    proposal_digests: list[Any] = []
+    authorization_digests: list[Any] = []
+    for run in outer_runs:
+        manifest = run["manifest"]
+        environment = run["environment"]
+        validation = run["validation"]
+        provenance = manifest.get("authorization_provenance") if isinstance(manifest, dict) else None
+        if validation.get("valid") is not True:
+            codes.append("invalid_artifact_evidence")
+        if (
+            not isinstance(provenance, dict)
+            or manifest.get("execution_class") != "target_preflight"
+            or provenance.get("execution_stage") != "target_projection_preflight"
+        ):
+            codes.append("projection_execution_stage_mismatch")
+            provenance = {}
+        mode = manifest.get("mode")
+        outer_modes.append(mode)
+        if provenance.get("execution_mode") != mode:
+            codes.append("projection_mode_identity_mismatch")
+        run_directory = run["run_directory"]
+        if (
+            not isinstance(run_directory, str)
+            or not run_directory
+            or manifest.get("run_id") != Path(run_directory).name
+            or provenance.get("normalized_output_directory") != run_directory
+        ):
+            codes.append("projection_output_identity_mismatch")
+        source_shas.extend([provenance.get("git_commit"), environment.get("git_commit")])
+        outer_plan_digests.append(manifest.get("plan_digest"))
+        scientific_digests.append(manifest.get("scientific_manifest_digest"))
+        run_ids.append(manifest.get("run_id"))
+        output_paths.append(run_directory)
+        environment_digests.append(provenance.get("target_environment_digest"))
+        proposal_digests.append(provenance.get("proposal_digest"))
+        authorization_digests.append(provenance.get("authorization_digest"))
+    if set(outer_modes) != set(MODES) or len(outer_modes) != len(set(outer_modes)):
+        codes.append("outer_mode_scope_mismatch")
+    if set(outer_plan_digests) != {outer_plan.get("plan_digest")}:
+        codes.append("combined_plan_hash_mismatch")
+
+    inner_modes: list[Any] = []
+    inner_plan_digests: list[Any] = []
+    inner_run_ids: list[Any] = []
+    inner_paths: list[Any] = []
+    inner_profile_digests: list[Any] = []
+    for run in inner_runs:
+        manifest = run["manifest"]
+        profile = run["profile"]
+        plan = run["plan"]
+        validation = run["validation"]
+        if validation.get("valid") is not True:
+            codes.append("invalid_inner_artifact_evidence")
+        mode = manifest.get("mode")
+        inner_modes.append(mode)
+        run_directory = run["run_directory"]
+        if (
+            manifest.get("evidence_scope") != "target_single_vm_measured"
+            or profile.get("machine_role") != "intended_single_vm_target"
+            or not isinstance(run_directory, str)
+            or not run_directory
+            or manifest.get("run_id") != Path(run_directory).name
+            or manifest.get("normalized_output_directory") != run_directory
+            or manifest.get("machine_profile_digest") != profile.get("profile_digest")
+            or manifest.get("plan_digest") != plan.get("plan_digest")
+        ):
+            codes.append("inner_run_identity_mismatch")
+        source_shas.append(profile.get("git_commit"))
+        scientific_digests.extend(
+            [manifest.get("scientific_manifest_digest"), profile.get("scientific_manifest_digest")]
+        )
+        inner_plan_digests.append(manifest.get("plan_digest"))
+        inner_run_ids.append(manifest.get("run_id"))
+        inner_paths.append(run_directory)
+        inner_profile_digests.append(profile.get("profile_digest"))
+    if set(inner_modes) != set(MODES) or len(inner_modes) != len(set(inner_modes)):
+        codes.append("inner_mode_scope_mismatch")
+    if len(set(inner_plan_digests)) != 1:
+        codes.append("inner_plan_hash_mismatch")
+    if len(set(scientific_digests)) != 1 or None in scientific_digests:
+        codes.append("scientific_manifest_digest_mismatch")
+    if any(not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{40}", value) is None for value in source_shas):
+        codes.append("git_provenance_mismatch")
+    elif len(set(source_shas)) != 1:
+        codes.append("mixed_source_git_commit")
+    for values, code in (
+        (run_ids, "outer_run_identity_collision"),
+        (output_paths, "outer_output_identity_collision"),
+        (environment_digests, "outer_environment_identity_collision"),
+        (proposal_digests, "outer_proposal_identity_collision"),
+        (authorization_digests, "outer_authorization_identity_collision"),
+        (inner_run_ids, "inner_run_identity_collision"),
+        (inner_paths, "inner_output_identity_collision"),
+        (inner_profile_digests, "inner_environment_identity_collision"),
+    ):
+        if any(not isinstance(value, str) or not value for value in values) or len(set(values)) != len(values):
+            codes.append(code)
+    return {
+        "valid": not codes,
+        "reason_codes": sorted(set(codes)),
+        "source_git_commit": source_shas[0] if source_shas and not codes else None,
+        "outer_modes": sorted(value for value in outer_modes if isinstance(value, str)),
+        "inner_modes": sorted(value for value in inner_modes if isinstance(value, str)),
+    }
+
+
+def _validated_inner_elapsed(
+    value: dict[str, Any] | None, selected_mode: Any
+) -> dict[str, float] | None:
+    required = {
+        "schema_version",
+        "artifact_type",
+        "valid_for_combination",
+        "selected_mode",
+        "conditional_elapsed_seconds",
+        "source_evidence_digest",
+        "source_artifact_hashes",
+    }
+    if not isinstance(value, dict) or set(value) != required:
+        return None
+    elapsed = value.get("conditional_elapsed_seconds")
+    if (
+        value.get("schema_version") != 1
+        or value.get("artifact_type") != "p7c4b2b_validated_inner_projection"
+        or value.get("valid_for_combination") is not True
+        or value.get("selected_mode") != selected_mode
+        or not _digest(value.get("source_evidence_digest"))
+        or not isinstance(value.get("source_artifact_hashes"), list)
+        or not value["source_artifact_hashes"]
+        or any(not _digest(item) for item in value["source_artifact_hashes"])
+        or not isinstance(elapsed, dict)
+        or set(elapsed) != {"point", "lower", "upper"}
+        or any(not _plain_float(elapsed.get(key), minimum=0.0) for key in elapsed)
+        or elapsed["lower"] > elapsed["point"]
+        or elapsed["point"] > elapsed["upper"]
+    ):
+        return None
+    return {key: float(elapsed[key]) for key in ("point", "lower", "upper")}
+
+
+OVERHEAD_EVENT_COUNTS = {
+    "canonical_inner_fits": 54_000,
+    "canonical_outer_refits": 270,
+}
+OVERHEAD_METHOD_IDENTITY = "operator_reviewed_additive_canonical_orchestration_v1"
+
+
+def overhead_artifact_digest(value: dict[str, Any]) -> str:
+    return sha256_canonical({key: item for key, item in value.items() if key != "artifact_digest"})
+
+
+def _validated_overhead_mapping(
+    value: dict[str, Any] | None,
+    *,
+    artifact_validation: dict[str, Any],
+    plan: dict[str, Any],
+    inner_projection: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    required = {
+        "schema_version",
+        "artifact_type",
+        "source_git_commit",
+        "locked_plan_digest",
+        "selected_mode",
+        "method_identity",
+        "event_counts",
+        "event_overhead_seconds",
+        "outer_refits_parallel",
+        "source_evidence_references",
+        "source_evidence_digest",
+        "reviewed_creation_timestamp",
+        "artifact_digest",
+    }
+    if not isinstance(value, dict) or set(value) != required:
+        return None
+    references = sorted([
+        *artifact_validation.get("source_artifact_hashes", []),
+        *((inner_projection or {}).get("source_artifact_hashes", [])),
+    ])
+    timestamp = None
+    try:
+        timestamp = datetime.fromisoformat(
+            str(value.get("reviewed_creation_timestamp", "")).replace("Z", "+00:00")
+        )
+    except ValueError:
+        pass
+    overhead = value.get("event_overhead_seconds")
+    if (
+        value.get("schema_version") != 1
+        or value.get("artifact_type") != "p7c4b2_outer_projection_overhead"
+        or not isinstance(value.get("source_git_commit"), str)
+        or re.fullmatch(r"[0-9a-f]{40}", value["source_git_commit"]) is None
+        or value.get("source_git_commit") != artifact_validation.get("source_git_commit")
+        or value.get("locked_plan_digest") != plan.get("plan_digest")
+        or value.get("selected_mode") not in MODES
+        or value.get("method_identity") != OVERHEAD_METHOD_IDENTITY
+        or value.get("event_counts") != OVERHEAD_EVENT_COUNTS
+        or not isinstance(overhead, dict)
+        or set(overhead) != {"canonical_orchestration_and_io"}
+        or not _plain_float(overhead.get("canonical_orchestration_and_io"), minimum=0.0)
+        or overhead["canonical_orchestration_and_io"] <= 0
+        or not isinstance(value.get("outer_refits_parallel"), bool)
+        or references != value.get("source_evidence_references")
+        or not references
+        or any(not _digest(item) for item in references)
+        or value.get("source_evidence_digest")
+        != sha256_canonical({"source_evidence_references": references})
+        or timestamp is None
+        or timestamp.tzinfo is None
+        or value.get("artifact_digest") != overhead_artifact_digest(value)
+    ):
+        return None
+    return {
+        **value,
+        "projected_seconds": float(overhead["canonical_orchestration_and_io"]),
+    }
+
+
+def _validated_price_input(value: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(value, dict) or set(value) != {
+        "price_per_hour",
+        "currency",
+        "billing_unit",
+        "pricing_timestamp",
+        "source",
+        "vm_count",
+    }:
+        return None
+    try:
+        pricing_timestamp = datetime.fromisoformat(
+            str(value.get("pricing_timestamp", "")).replace("Z", "+00:00")
+        )
+    except ValueError:
+        pricing_timestamp = None
+    if (
+        not _plain_float(value.get("price_per_hour"), minimum=0.0)
+        or value.get("price_per_hour") <= 0
+        or not _nonempty(value.get("currency"))
+        or not _nonempty(value.get("billing_unit"))
+        or pricing_timestamp is None
+        or pricing_timestamp.tzinfo is None
+        or not _nonempty(value.get("source"))
+        or not _plain_int(value.get("vm_count"), minimum=1)
+    ):
+        return None
+    return value
+
+
 def project_validated(
     records: list[dict[str, Any]],
     plan: dict[str, Any],
@@ -837,8 +1148,26 @@ def project_validated(
             "coverage": coverage,
             "total_canonical_elapsed_seconds": None,
             "warnings": warnings,
+            "scientific_projection_eligible": False,
+            "canonical_scientific_execution_authorized": False,
             **gate,
         }
+    mapping = _validated_overhead_mapping(
+        overhead_mapping,
+        artifact_validation=artifact_validation,
+        plan=plan,
+        inner_projection=inner_projection,
+    )
+    selected_mode = mapping.get("selected_mode") if mapping else None
+    inner_elapsed = _validated_inner_elapsed(inner_projection, selected_mode)
+    strict_price = _validated_price_input(price_input)
+    price = strict_price
+    if controlled and allow_controlled_fixture_eligibility:
+        mapping = overhead_mapping
+        selected_mode = (mapping or {}).get("selected_mode")
+        if inner_projection and inner_projection.get("valid_for_combination"):
+            inner_elapsed = inner_projection.get("conditional_elapsed_seconds")
+        price = price_input
     by_mode: dict[str, dict[str, Any]] = {}
     population_counts = plan["population"]["dataset_partition_counts"]
     for mode, workers in MODES.items():
@@ -850,7 +1179,7 @@ def project_validated(
             lower += weight * row["minimum_outer_refit_seconds"]
             upper += weight * row["maximum_outer_refit_seconds"]
         scheduler_parallel = bool(
-            (overhead_mapping or {}).get("outer_refits_parallel", False)
+            (mapping or {}).get("outer_refits_parallel", False)
         )
         divisor = workers if scheduler_parallel else 1
         by_mode[mode] = {
@@ -860,15 +1189,12 @@ def project_validated(
             "upper_seconds": upper / divisor,
             "worker_divisor": divisor,
         }
-    mapping_complete = bool((overhead_mapping or {}).get("complete"))
-    inner_valid = bool(
-        inner_projection and inner_projection.get("valid_for_combination")
-    )
-    selected_mode = (overhead_mapping or {}).get("selected_mode")
+    mapping_complete = mapping is not None
+    inner_valid = inner_elapsed is not None
     total = None
     if selected_mode in by_mode and mapping_complete and inner_valid:
-        overhead = float(overhead_mapping["projected_seconds"])
-        inner = inner_projection["conditional_elapsed_seconds"]
+        overhead = float(mapping["projected_seconds"])
+        inner = inner_elapsed
         total = {
             "point": inner["point"]
             + by_mode[selected_mode]["conditional_elapsed_seconds"]
@@ -887,9 +1213,27 @@ def project_validated(
         clean_overhead=mapping_complete,
         inner_evidence_valid=inner_valid,
         total_elapsed=total,
-        cost_complete=price_input is not None,
+        cost_complete=price is not None,
         high_severity_warnings=[],
     )
+    cost_projection = None
+    if total is not None and strict_price is not None:
+        multiplier = (
+            float(strict_price["price_per_hour"])
+            * int(strict_price["vm_count"])
+            / 3600
+        )
+        cost_projection = {
+            "currency": strict_price["currency"],
+            "point": total["point"] * multiplier,
+            "lower": total["lower"] * multiplier,
+            "upper": total["upper"] * multiplier,
+            "price_per_hour": strict_price["price_per_hour"],
+            "vm_count": strict_price["vm_count"],
+            "billing_unit": strict_price["billing_unit"],
+            "pricing_timestamp": strict_price["pricing_timestamp"],
+            "source": strict_price["source"],
+        }
     return {
         "schema_version": SCHEMA_VERSION,
         "status": "complete" if gate["execution_plan_eligible"] else "incomplete",
@@ -898,8 +1242,14 @@ def project_validated(
         "coverage": coverage,
         "outer_refit_projection_by_mode": by_mode,
         "total_canonical_elapsed_seconds": total,
+        "cost_projection": cost_projection,
+        "inner_projection_source_evidence_digest": (
+            inner_projection or {}
+        ).get("source_evidence_digest"),
         "extrapolation_ratio": 270
         / max(len([x for x in records if x.get("classification") == "measured"]), 1),
         "warnings": warnings,
+        "scientific_projection_eligible": gate["execution_plan_eligible"],
+        "canonical_scientific_execution_authorized": False,
         **gate,
     }
