@@ -219,7 +219,7 @@ Cấu trúc nội dung chính:
 - `website/content/paper.yaml`: thông tin paper gốc, thiết kế thực nghiệm và kết quả chính do paper báo cáo.
 - `website/content/background.md`: bối cảnh và mục đích của đề tài thực tập.
 - `website/content/limitations.md`: hạn chế của paper và hạn chế khi tái thực hiện.
-- `website/content/progress.yaml`: source of truth cho trạng thái phase; Phase 0 đến Phase 6 là `Completed`, Phase 7 là `Next`, Phase 8 đến Phase 11 là `Planned`. Tag Phase 6 đang là đề xuất, chưa được tạo trong Git.
+- `website/content/progress.yaml`: source of truth cho trạng thái phase; Phase 0 đến Phase 6 là `Completed`, Phase 7 là `In Progress`, Phase 8 đến Phase 11 là `Planned`. Tag Phase 6 đang là đề xuất, chưa được tạo trong Git.
 - `website/content/methods.md`: phương pháp dự kiến.
 - `website/content/deviations.md`: deviation và giới hạn hiện tại.
 - `data/datasets.yaml`: source of truth cho metadata dataset hiển thị trên website.
@@ -547,7 +547,7 @@ Generated from website/content/progress.yaml. Do not edit manually.
 - Last completed phase: Phase 6
 - Current phase: Phase 7
 - Next phase: Phase 7 - Core replication run
-- Updated at: 2026-08-10
+- Updated at: 2026-08-13
 
 | Phase | Status | Milestone tag |
 | --- | --- | --- |
@@ -595,14 +595,15 @@ Phase 7 checkpoints:
 - P7C.2.3: Completed - Analysis và final decision completed: full P7A/Table-2 RF 30-candidate và XGBoost 108-candidate grids locked; compute worksheet chỉ dùng cho planning, không authorize execution.
 - P7C.3: Completed - Completed — canonical feasibility pilot accepted. Canonical `vm-run-003` tại Git `84c71266d0eb375effc317601602fb9deb67d7d2` có artifact validator PASS, 60/60 fit completed, 0 failed/missing, CPU feasibility PASS, memory feasibility PASS và execution stability PASS. GPU không bắt buộc cho correctness/feasibility MLP, nhưng quyết định GPU để tối ưu thời gian còn chờ workload projection và phê duyệt. Artifact engineering này non-publishable, không phải kết quả hiệu năng dự báo hoặc kết quả khoa học cuối cùng.
 - P7C.4A: Completed - Completed — benchmark plan ready for human review: decision study, ba candidate-budget scenario, threshold đề xuất, benchmark matrix, telemetry/artifact contract và digest đã được kiểm tra. P7C.4B.2a sau đó đã ghi nhận human decision riêng; không chạy benchmark.
-- P7C.4B: In Progress - P7C.4B.1 harness/readiness và P7C.4B.2a scientific-scope/readiness đã completed. P7C.4B.2b executable bounded-preflight harness is ready; target single-VM preflight remains pending. Canonical/GPU/multi-VM execution chưa authorized.
+- P7C.4B: In Progress - P7C.4B.1 harness/readiness và P7C.4B.2a–P7C.4B.2e planning, preflight, authorization-review và canary-operations contracts đã completed. Target single-VM preflight, effective authorization và canonical/GPU/multi-VM execution vẫn chưa authorized.
 - P7C.4B.1: Completed - Completed — B1a CPU sequential, B1b validation/resume/corruption, B1c CPU parallel-2 và B1d independent operational readiness review passed. Engineering smoke remains non-publishable; no canonical benchmark ran.
 - P7C.4B.1d: Completed - Completed — independent operational readiness review, artifact read-back, full B1 regression, operator checklist and go/no-go policy completed.
-- P7C.4B.2: In Progress - P7C.4B.2a completed planning/readiness. P7C.4B.2b executable bounded-preflight harness is ready, but target single-VM compute preflight is pending; canonical execution remains NO-GO pending preflight, canonical mode, execution/cost approval and execution-plan digest.
+- P7C.4B.2: In Progress - P7C.4B.2a–P7C.4B.2e đã completed ở mức planning, harness, authorization-review và controlled target-canary operations. Target single-VM compute/outer-refit preflight, effective authorization, runtime/cost evidence và canonical execution vẫn pending/NO-GO.
 - P7C.4B.2a: Completed - Completed — balanced MLP-1/3/5 scientific scope 24/48/48 generated deterministically from seed 42, validated and digest-locked; workload 54,270 fits, execution guard and static multi-VM sharding readiness contract added. No execution occurred.
 - P7C.4B.2b: Completed - Executable bounded-preflight harness ready — deterministic plan/CLI, target guard, process-isolated fixture-validated runner, atomic artifacts, resume/retry, validator, telemetry reconstruction and fail-closed projection/RAM/cost contracts pass. Target-machine preflight remains pending.
 - P7C.4B.2c: Completed - Implementation completed / target execution pending — process-isolated run/resume, canonical timing instrumentation, atomic artifact lifecycle, validator, stratified projection and fail-closed eligibility/CLI contracts pass controlled validation. Target outer-refit/overhead preflight has not run; canonical execution remains NO-GO.
 - P7C.4B.2d: Completed - Implementation completed / readiness READY_FOR_OPERATOR_ENVIRONMENT_COLLECTION — Stage 0 static evidence validates actual Git HEAD, dependency fingerprint, AC/GMC input checksums, disk/output namespace and bounded process-spawn probe; proposal is canonical four-task/mode and non-effective. Target environment input, effective authorization and preflight remain pending; canonical execution is NO-GO.
+- P7C.4B.2e: Completed - Controlled target-canary operations runbook and CLI completed with fixture tests: immutable launch record, one-time systemd submission receipt, monitor-only semantics, interrupted-run resume precheck and final artifact-validation gates. No target operation, authorization, submission receipt, fitting or scientific execution occurred.
 
 Current scope limits:
 - Core replication has not run.

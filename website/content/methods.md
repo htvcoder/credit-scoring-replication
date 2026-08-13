@@ -40,6 +40,11 @@ Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái 
 
 - Stage 0 static contract đã harden: đối chiếu Git HEAD, dependency fingerprint, checksum input AC/GMC, disk/output namespace và bounded process-spawn probe; proposal bind đúng bốn canary task của từng mode và luôn non-effective.
 - Chưa có target environment, price/budget, canary approval hay effective authorization. Vì vậy target preflight chưa chạy và canonical execution vẫn NO-GO.
+
+## P7C.4B.2e controlled target-canary operations
+
+- Runbook và CLI vận hành đã hoàn tất và qua fixture tests: launch record bất biến, submission receipt một lần qua systemd, monitor-only, resume precheck và final artifact validation.
+- Đây chỉ là readiness vận hành. Chưa có target operation, authorization, receipt, MLP fitting hoặc scientific execution; target preflight và canonical execution vẫn NO-GO.
 - Readiness hiện tại duy nhất: `READY_FOR_OPERATOR_ENVIRONMENT_COLLECTION`; đây không phải authorization hay permission chạy canary.
 
 ## Modern reassessment
