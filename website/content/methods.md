@@ -39,13 +39,14 @@ Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái 
 ## P7C.4B.2d target authorization readiness
 
 - Stage 0 static contract đã harden: đối chiếu Git HEAD, dependency fingerprint, checksum input AC/GMC, disk/output namespace và bounded process-spawn probe; proposal bind đúng bốn canary task của từng mode và luôn non-effective.
-- Chưa có target environment, price/budget, canary approval hay effective authorization. Vì vậy target preflight chưa chạy và canonical execution vẫn NO-GO.
+- Fresh target canary `p7c4b2d-target-rerun-01` đã có target environment, price/budget scope, effective authorization và 4/4 task `target_preflight` completed ở `cpu_parallel_2`; closeout xác nhận identity/digest/telemetry/completion evidence hợp lệ.
+- Đây chỉ là acceptance vận hành cho canary. Nó không tạo scientific result, không làm scientific projection eligible và không authorize canonical scientific execution; full target compute/outer-refit preflight và canonical execution vẫn NO-GO.
 
 ## P7C.4B.2e controlled target-canary operations
 
 - Runbook và CLI vận hành đã hoàn tất và qua fixture tests: launch record bất biến, submission receipt một lần qua systemd, monitor-only, resume precheck và final artifact validation.
-- Đây chỉ là readiness vận hành. Chưa có target operation, authorization, receipt, MLP fitting hoặc scientific execution; target preflight và canonical execution vẫn NO-GO.
-- Readiness hiện tại duy nhất: `READY_FOR_OPERATOR_ENVIRONMENT_COLLECTION`; đây không phải authorization hay permission chạy canary.
+- Fresh run đã có target operation, effective authorization và submission receipt trong scope canary; 4/4 authorized task completed và `target_canary_acceptance.accepted` là true.
+- Đây vẫn chỉ là canary vận hành, không phải full scientific execution: `scientific_coverage.valid` là false với `incomplete_required_stratum` và `insufficient_repetitions`; scientific projection và canonical execution vẫn không eligible/chưa authorized.
 
 ## Modern reassessment
 
