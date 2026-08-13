@@ -18,6 +18,7 @@ from creditrep.protocols.p7c4b2d import (
     validate_authorization_proposal,
     validate_effective_authorization,
     validate_target_environment,
+    TARGET_EXECUTION_STAGES,
 )
 from creditrep.strict_json import StrictJSONError, load_strict_json_object
 
@@ -66,7 +67,9 @@ def main(argv: list[str] | None = None) -> int:
         "--mode", choices=("cpu_parallel_1", "cpu_parallel_2"), default="cpu_parallel_1"
     )
     parser.add_argument("--output-directory")
-    parser.add_argument("--stage", default="target_canary")
+    parser.add_argument(
+        "--stage", choices=sorted(TARGET_EXECUTION_STAGES), default="target_canary"
+    )
     parser.add_argument("--operator-identity")
     parser.add_argument("--operator-approval")
     parser.add_argument("--expires-at")

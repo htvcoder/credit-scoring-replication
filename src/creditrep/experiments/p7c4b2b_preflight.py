@@ -444,6 +444,7 @@ def run(
         {
             "schema_version": 1,
             "run_id": output_dir.name,
+            "normalized_output_directory": str(output_dir.resolve()),
             "mode": mode,
             "evidence_scope": EVIDENCE_FIXTURE
             if fixture
@@ -501,6 +502,10 @@ def resume(
         not manifest
         or manifest.get("plan_digest") != plan["plan_digest"]
         or manifest.get("machine_profile_digest") != profile["profile_digest"]
+        or (
+            manifest.get("normalized_output_directory") is not None
+            and manifest.get("normalized_output_directory") != str(run_dir.resolve())
+        )
     ):
         raise PreflightError("incompatible_resume")
     expected = _tasks(plan, mode, max_tasks)
@@ -732,6 +737,10 @@ def validate_artifacts(
     ) or profile.get("profile_digest") != machine_profile_digest(profile):
         codes.append("machine_profile_digest_mismatch")
     if manifest.get("run_id") != run_dir.name:
+        codes.append("foreign_machine_or_run")
+    if manifest.get("normalized_output_directory") is not None and manifest.get(
+        "normalized_output_directory"
+    ) != str(run_dir):
         codes.append("foreign_machine_or_run")
     if manifest.get("max_workers", 3) > 2:
         codes.append("worker_limit_violation")

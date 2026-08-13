@@ -4,12 +4,15 @@ from concurrent.futures import Future
 from datetime import UTC, datetime, timedelta
 import hashlib
 import json
+from multiprocessing import get_context
+import os
 from pathlib import Path
 import shutil
 import time
 from types import SimpleNamespace
 
 import pytest
+import psutil
 
 from creditrep.experiments import p7c4b2d_cli as cli
 from creditrep.experiments import p7c4b2c_cli as preflight_cli
@@ -29,7 +32,10 @@ from creditrep.protocols.p7c4b2d import (
     DISK_POLICY,
     MINIMUM_FREE_DISK_BYTES,
     P7C4B2DError,
+    PROJECTION_AGGREGATE_RSS_LIMIT_BYTES,
     TARGET_CANARY_APPROVAL,
+    TARGET_PROJECTION_PREFLIGHT_APPROVAL,
+    TARGET_PROJECTION_PREFLIGHT_STAGE,
     _create_effective_authorization,
     _static_authorization_cost_upper_bound,
     collect_target_environment,
@@ -39,8 +45,10 @@ from creditrep.protocols.p7c4b2d import (
     environment_digest,
     merge_operator_metadata,
     normalize_target_output,
+    projection_preflight_resource_policy,
     render_authorization_proposal,
     select_canary,
+    select_projection_preflight,
     validate_authorization_proposal,
     validate_effective_authorization,
     validate_target_environment,
@@ -123,7 +131,7 @@ def _environment(plan, root: Path, monkeypatch, *, mode="cpu_parallel_1"):
         "python_version": "3.11",
         "cpu_model": "fixture",
         "vcpu_count": 2,
-        "ram_bytes": 8,
+        "ram_bytes": 16 * 1024**3,
         "gpu_model": "none",
         "gpu_count": 0,
         "gpu_vram_bytes": 0,
@@ -147,6 +155,9 @@ def _environment(plan, root: Path, monkeypatch, *, mode="cpu_parallel_1"):
         "price_observed_at": "2026-08-10T00:00:00Z",
         "maximum_runtime_hours": 10.0,
         "maximum_monetary_budget": "25.0",
+        "projection_preflight_resource_policy": projection_preflight_resource_policy(
+            mode
+        ),
         "evidence_observed_at": "2026-08-10T00:00:00Z",
         "process_spawn_probe": _pass_probe(),
     }
@@ -154,8 +165,24 @@ def _environment(plan, root: Path, monkeypatch, *, mode="cpu_parallel_1"):
     return value
 
 
+def _as_projection_environment(value):
+    value["maximum_runtime_hours"] = 12
+    value["maximum_monetary_budget"] = "5.0"
+    value["hourly_price"] = "0.26"
+    value["ram_bytes"] = PROJECTION_AGGREGATE_RSS_LIMIT_BYTES + 1
+    value["environment_digest"] = environment_digest(value)
+    return value
+
+
 def _pass_probe():
     return {"probe": "fixture", "status": "pass", "timeout_seconds": 1}
+
+
+def _spawn_sleeping_descendant(pid_queue):
+    descendant = get_context("spawn").Process(target=time.sleep, args=(30,))
+    descendant.start()
+    pid_queue.put((os.getpid(), descendant.pid))
+    time.sleep(30)
 
 
 def _operator_metadata():
@@ -208,6 +235,271 @@ def test_stage_zero_verifies_canonical_sources_and_rejects_placeholders(
         environment, plan, repo_root=root, spawn_probe=_pass_probe
     )
     assert "dataset_input_hash_mismatch" in report["reason_codes"]
+
+
+@pytest.mark.parametrize("mode", ["cpu_parallel_1", "cpu_parallel_2"])
+def test_projection_preflight_selection_is_deterministic_and_minimal(mode):
+    plan = _plan()
+    full = select_projection_preflight(plan, mode)
+
+    assert full["execution_stage"] == TARGET_PROJECTION_PREFLIGHT_STAGE
+    assert full["task_count"] == 162
+    assert sum(task["classification"] == "warmup" for task in full["tasks"]) == 54
+    assert sum(task["classification"] == "measured" for task in full["tasks"]) == 108
+    assert full["scientific_projection_eligible"] is False
+    assert full["canonical_scientific_execution_authorized"] is False
+
+
+@pytest.mark.parametrize(
+    "stage,expected_count",
+    [
+        (TARGET_PROJECTION_PREFLIGHT_STAGE, 162),
+    ],
+)
+def test_projection_preflight_proposal_is_typed_and_fail_closed(
+    tmp_path, monkeypatch, stage, expected_count
+):
+    plan, root = _plan(), _repo(tmp_path)
+    environment = _environment(plan, root, monkeypatch, mode="cpu_parallel_2")
+    _as_projection_environment(environment)
+    proposal = render_authorization_proposal(
+        plan, environment, execution_stage=stage, expiry=None
+    )
+
+    assert proposal["maximum_task_count"] == expected_count
+    assert len(proposal["task_ids"]) == expected_count
+    assert validate_authorization_proposal(proposal, plan, environment)["valid"]
+    proposal["task_ids"] = proposal["task_ids"][:-1]
+    _redigest_proposal(proposal)
+    assert "authorization_proposal_task_scope_mismatch" in validate_authorization_proposal(
+        proposal, plan, environment
+    )["reason_codes"]
+
+
+def test_projection_preflight_requires_distinct_operator_approval(tmp_path, monkeypatch):
+    plan, root = _plan(), _repo(tmp_path)
+    environment = _environment(plan, root, monkeypatch)
+    _as_projection_environment(environment)
+    proposal = render_authorization_proposal(
+        plan,
+        environment,
+        execution_stage=TARGET_PROJECTION_PREFLIGHT_STAGE,
+        expiry=None,
+    )
+    with pytest.raises(P7C4B2DError, match="operator_approval_missing"):
+        _create_effective_authorization(
+            proposal,
+            environment,
+            plan,
+            operator_identity="fixture-operator",
+            operator_approval=TARGET_CANARY_APPROVAL,
+            expires_at="2026-08-10T01:00:00Z",
+            repo_root=root,
+            spawn_probe=_pass_probe,
+            now_provider=lambda: datetime.fromisoformat("2026-08-10T00:00:00+00:00"),
+        )
+    authorization = _create_effective_authorization(
+        proposal,
+        environment,
+        plan,
+        operator_identity="fixture-operator",
+        operator_approval=TARGET_PROJECTION_PREFLIGHT_APPROVAL,
+        expires_at="2026-08-10T01:00:00Z",
+        repo_root=root,
+        spawn_probe=_pass_probe,
+        now_provider=lambda: datetime.fromisoformat("2026-08-10T00:00:00+00:00"),
+    )
+    assert authorization["execution_stage"] == TARGET_PROJECTION_PREFLIGHT_STAGE
+    assert validate_effective_authorization(
+        authorization,
+        proposal,
+        environment,
+        plan,
+        now=datetime.fromisoformat("2026-08-10T00:30:00+00:00"),
+        repo_root=root,
+        spawn_probe=_pass_probe,
+    )["valid"]
+
+
+def test_projection_resource_policy_is_exact_and_per_run(tmp_path, monkeypatch):
+    plan, root = _plan(), _repo(tmp_path)
+    first = _as_projection_environment(
+        _environment(plan, root, monkeypatch, mode="cpu_parallel_1")
+    )
+    second = _as_projection_environment(
+        _environment(plan, root, monkeypatch, mode="cpu_parallel_2")
+    )
+    first["output_directory"] = str(root / "artifacts" / "outer-p1")
+    second["output_directory"] = str(root / "artifacts" / "outer-p2")
+    first["environment_digest"] = environment_digest(first)
+    second["environment_digest"] = environment_digest(second)
+    proposals = [
+        render_authorization_proposal(plan, value, execution_stage=TARGET_PROJECTION_PREFLIGHT_STAGE, expiry=None)
+        for value in (first, second)
+    ]
+    assert [item["resource_policy"]["maximum_in_flight_tasks"] for item in proposals] == [1, 2]
+    assert all(item["maximum_runtime_hours"] == 12 for item in proposals)
+    assert all(item["maximum_monetary_budget"] == "5.0" for item in proposals)
+    assert sum(item["maximum_runtime_hours"] for item in proposals) == 24
+    assert sum(float(item["maximum_monetary_budget"]) for item in proposals) == 10
+    assert proposals[0]["target_environment_digest"] != proposals[1]["target_environment_digest"]
+
+
+def test_runtime_and_monetary_guards_are_independent():
+    provenance = {
+        "maximum_runtime_hours": 12,
+        "maximum_monetary_budget": "5.0",
+        "hourly_price": "0.26",
+        "vm_count": 1,
+    }
+    assert runner._elapsed_budget_violation(provenance, 43_200) == "runtime_budget_exceeded"
+    expensive = {**provenance, "hourly_price": "0.5"}
+    assert runner._elapsed_budget_violation(expensive, 36_000) == "monetary_budget_exceeded"
+    assert runner._elapsed_budget_violation(provenance, 1.0) is None
+
+
+def test_killable_child_is_terminated_and_reaped():
+    process = get_context("spawn").Process(target=time.sleep, args=(30,))
+    process.start()
+    runner._terminate_and_reap([process])
+    assert process.is_alive() is False
+    assert process.exitcode is not None
+
+
+def test_killable_process_tree_terminates_and_reaps_descendant():
+    context = get_context("spawn")
+    pid_queue = context.Queue()
+    process = context.Process(target=_spawn_sleeping_descendant, args=(pid_queue,))
+    process.start()
+    root_pid, descendant_pid = pid_queue.get(timeout=10)
+    assert root_pid == process.pid
+    assert psutil.pid_exists(descendant_pid)
+    runner._terminate_and_reap([process])
+    assert process.is_alive() is False
+    assert not psutil.pid_exists(root_pid)
+    assert not psutil.pid_exists(descendant_pid)
+    pid_queue.close()
+
+
+def test_supervisor_timeout_caps_inflight_and_stops_dispatch(tmp_path, monkeypatch):
+    state = {"started": 0, "active": 0, "maximum": 0, "clock": 0.0}
+
+    class FakeQueue:
+        pass
+
+    class FakeProcess:
+        pid = None
+        exitcode = None
+
+        def __init__(self, **_kwargs):
+            self.alive = False
+
+        def start(self):
+            self.alive = True
+            state["started"] += 1
+            state["active"] += 1
+            state["maximum"] = max(state["maximum"], state["active"])
+
+        def is_alive(self):
+            return self.alive
+
+        def terminate(self):
+            if self.alive:
+                state["active"] -= 1
+            self.alive = False
+            self.exitcode = -15
+
+        kill = terminate
+
+        def join(self, timeout=None):
+            del timeout
+
+    class FakeContext:
+        def Queue(self):
+            return FakeQueue()
+
+        def Process(self, **kwargs):
+            return FakeProcess(**kwargs)
+
+    def clock():
+        state["clock"] += 601.0
+        return state["clock"]
+
+    monkeypatch.setattr(runner, "_persist_runtime_state", lambda *_a, **_k: None)
+    monkeypatch.setattr(runner, "_persist_supervisor_failure", lambda *_a, **_k: None)
+    policy = projection_preflight_resource_policy("cpu_parallel_2")
+    manifest = {
+        "run_id": "fixture-run",
+        "worker_count": 2,
+        "execution_class": "target_preflight",
+        "plan_digest": "a" * 64,
+        "authorization_provenance": {"git_commit": "b" * 40},
+    }
+    runtime_state = {
+        "failed_task_count": 0,
+        "accumulated_elapsed_seconds": 0.0,
+        "last_accounted_at": "2026-08-13T00:00:00Z",
+    }
+    with pytest.raises(P7C4B2CError, match="task_timeout_exceeded"):
+        runner._run_supervised_projection_phase(
+            [{"sample_id": str(index)} for index in range(3)],
+            manifest=manifest,
+            environment={},
+            run_dir=tmp_path,
+            repo_root=tmp_path,
+            provenance={
+                "execution_stage": TARGET_PROJECTION_PREFLIGHT_STAGE,
+                "resource_policy": policy,
+            },
+            runtime_state=runtime_state,
+            target_task_gate=lambda: None,
+            authorization_deadline=lambda: 1_000_000.0,
+            monotonic_clock=clock,
+            rss_sampler=lambda _pid: 1,
+            context_provider=lambda _method: FakeContext(),
+            poll_interval_seconds=0.0,
+        )
+    assert state["started"] == state["maximum"] == 2
+    assert state["active"] == 0
+
+
+def test_supervisor_memory_violation_stops_before_dispatch(tmp_path, monkeypatch):
+    persisted = []
+    monkeypatch.setattr(runner, "_persist_runtime_state", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        runner,
+        "_persist_supervisor_failure",
+        lambda *_a, **_k: persisted.append(True),
+    )
+    policy = projection_preflight_resource_policy("cpu_parallel_1")
+    with pytest.raises(P7C4B2CError, match="memory_limit_exceeded"):
+        runner._run_supervised_projection_phase(
+            [{"sample_id": "one"}],
+            manifest={
+                "run_id": "fixture-run",
+                "worker_count": 1,
+                "execution_class": "target_preflight",
+                "plan_digest": "a" * 64,
+                "authorization_provenance": {"git_commit": "b" * 40},
+            },
+            environment={},
+            run_dir=tmp_path,
+            repo_root=tmp_path,
+            provenance={
+                "execution_stage": TARGET_PROJECTION_PREFLIGHT_STAGE,
+                "resource_policy": policy,
+            },
+            runtime_state={
+                "failed_task_count": 0,
+                "accumulated_elapsed_seconds": 0.0,
+                "last_accounted_at": "2026-08-13T00:00:00Z",
+            },
+            target_task_gate=lambda: None,
+            authorization_deadline=lambda: 1_000_000.0,
+            monotonic_clock=lambda: 0.0,
+            rss_sampler=lambda _pid: PROJECTION_AGGREGATE_RSS_LIMIT_BYTES + 1,
+        )
+    assert persisted == [True]
 
 
 @pytest.mark.parametrize(

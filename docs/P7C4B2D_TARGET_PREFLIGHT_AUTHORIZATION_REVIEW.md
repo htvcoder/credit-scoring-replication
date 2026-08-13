@@ -122,7 +122,8 @@ runtime start and accumulated elapsed time. Resume requires the original
 authorization digest and exact provenance; legacy target manifests fail closed.
 Runtime accounting uses a conservative wall-clock envelope from the original
 start, so crash/downtime is counted and resume cannot reset budget. Running work
-is not hard-killed at expiry, but no later task is dispatched.
+for legacy canary scope is not hard-killed at expiry, but no later task is
+dispatched. Projection-preflight uses the stronger supervised policy below.
 
 On every target run and resume, the runner rejects self-consistency as proof of
 canonicality. It validates exact closed-world schemas for the full plan, every
@@ -276,3 +277,26 @@ Reason code tiêu biểu: `git_provenance_unknown`, `git_provenance_mismatch`,
 Readiness hiện tại là **`READY_FOR_OPERATOR_ENVIRONMENT_COLLECTION`**. Nó không
 phải `READY_FOR_CANARY_EXECUTION`, không phải effective authorization và không
 cho phép chạy target canary.
+
+## Post-canary projection-preflight scope
+
+Sau closeout canary, cùng contract P7C.4B.2d hỗ trợ scope engineering
+`target_projection_preflight`, chọn deterministic toàn bộ 162 task của một CPU
+mode. Accepted canary dùng source SHA cũ nên không được ghép với post-merge
+projection evidence. Không có residual scope hoặc compatibility bypass.
+
+Scope này dùng approval phrase riêng
+`APPROVE_P7C4B2_TARGET_PROJECTION_PREFLIGHT`. Canary approval không hợp lệ.
+Authorization chỉ mở đúng engineering preflight task IDs; nó không làm scientific
+projection eligible và không authorize canonical scientific execution.
+
+Mỗi projection-preflight authorization bind riêng đúng 12 giờ, USD 5, timeout
+20 phút/task, aggregate process-tree RSS 12884901888 byte, zero tolerated task
+failure và in-flight count bằng worker count với hard cap 2. Environment phải có
+RAM lớn hơn ceiling để còn safety margin. P1/P2 có environment/proposal/effective
+authorization/output/run riêng: trần lý thuyết cộng là 24 giờ/USD 10 nhưng không
+có shared ledger hoặc chuyển phần còn dư. Supervisor dùng killable spawned child,
+ngừng dispatch, terminate/reap toàn bộ child và giữ failure/quarantine evidence
+khi timeout, expiry, runtime, monetary, RSS hoặc failure guard bị vi phạm. Runtime
+state persist elapsed, consumed cost và failure count từ original start; resume
+không làm mới bất kỳ allowance nào.

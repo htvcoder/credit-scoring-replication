@@ -17,11 +17,18 @@ from creditrep.experiments.p7c4b2c_preflight import (
     run,
     validate_artifacts,
 )
+from creditrep.experiments.p7c4b2b_preflight import (
+    validate_artifacts as validate_inner_artifacts,
+)
+from creditrep.protocols.p7c4b2b import MODES as INNER_MODES
+from creditrep.protocols.p7c4b2b import project as project_inner
 from creditrep.protocols.p7c4b2a import load_manifest
 from creditrep.protocols.p7c4b2c import (
     P7C4B2CError,
     build_plan,
     project_validated,
+    validate_combined_projection_identity,
+    validate_combined_projection_sources,
     validate_plan,
 )
 from creditrep.strict_json import StrictJSONError, load_strict_json_object
@@ -72,6 +79,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--authorization-proposal", type=Path)
     parser.add_argument("--effective-authorization", type=Path)
     parser.add_argument("--inner-projection", type=Path)
+    parser.add_argument("--inner-run", type=Path, action="append")
     parser.add_argument("--overhead-mapping", type=Path)
     parser.add_argument("--price-input", type=Path)
     args = parser.parse_args(argv)
@@ -157,10 +165,117 @@ def main(argv: list[str] | None = None) -> int:
         if len({item["plan_digest"] for item in plans}) != 1:
             raise P7C4B2CError("combined_plan_hash_mismatch")
         execution_classes = {item["execution_class"] for item in manifests}
+        task_report = validate_combined_projection_sources(records, plans[0], reports)
+        outer_entries = [
+            {
+                "run_directory": str(path.resolve()),
+                "manifest": manifest,
+                "environment": _read(path / "environment.json"),
+                "validation": report,
+            }
+            for path, manifest, report in zip(args.run_dir, manifests, reports, strict=True)
+        ]
+        overhead_mapping = (
+            _read(args.overhead_mapping) if args.overhead_mapping else None
+        )
+        inner_projection = (
+            _read(args.inner_projection) if args.inner_projection else None
+        )
+        inner_entries = []
+        if args.inner_run:
+            if args.inner_projection:
+                raise P7C4B2CError("duplicate_inner_projection_source")
+            inner_reports = [validate_inner_artifacts(path) for path in args.inner_run]
+            if any(report.get("valid") is not True for report in inner_reports):
+                raise P7C4B2CError("invalid_inner_artifact_evidence")
+            inner_records = [
+                _read(path)
+                for run_dir in args.inner_run
+                for path in sorted((run_dir / "fits").glob("*/result.json"))
+            ]
+            inner_manifests = [_read(path / "run_manifest.json") for path in args.inner_run]
+            inner_profiles = [_read(path / "machine_profile.json") for path in args.inner_run]
+            inner_plans = [_read(path / "plan.json") for path in args.inner_run]
+            inner_entries = [
+                {
+                    "run_directory": str(path.resolve()),
+                    "manifest": manifest,
+                    "profile": profile,
+                    "plan": inner_plan,
+                    "validation": report,
+                }
+                for path, manifest, profile, inner_plan, report in zip(
+                    args.inner_run,
+                    inner_manifests,
+                    inner_profiles,
+                    inner_plans,
+                    inner_reports,
+                    strict=True,
+                )
+            ]
+            if any(
+                manifest.get("evidence_scope") != "target_single_vm_measured"
+                for manifest in inner_manifests
+            ) or len(inner_manifests) != len(INNER_MODES) or {
+                manifest.get("mode") for manifest in inner_manifests
+            } != set(INNER_MODES):
+                raise P7C4B2CError("inner_projection_not_target_evidence")
+            raw_inner = project_inner(
+                inner_records, evidence_scope="target_single_vm_measured"
+            )
+            selected_mode = (overhead_mapping or {}).get("selected_mode")
+            selected = raw_inner.get(selected_mode, {})
+            hours = (
+                selected.get("inner_fit_projection", {})
+                .get("conditional_work_conserving_elapsed_hours", {})
+            )
+            bounds = hours.get("tc_gmc_range")
+            if (
+                raw_inner.get("coverage", {}).get("observed_strata") != 36
+                or not isinstance(bounds, list)
+                or len(bounds) != 2
+                or not isinstance(hours.get("point"), (int, float))
+            ):
+                raise P7C4B2CError("inner_projection_incomplete")
+            source_hashes = sorted([
+                sha256_canonical(
+                    {
+                        "manifest": manifest,
+                        "records": [
+                            record
+                            for record in inner_records
+                            if record.get("mode") == manifest.get("mode")
+                        ],
+                    }
+                )
+                for manifest in inner_manifests
+            ])
+            inner_projection = {
+                "schema_version": 1,
+                "artifact_type": "p7c4b2b_validated_inner_projection",
+                "valid_for_combination": True,
+                "selected_mode": selected_mode,
+                "conditional_elapsed_seconds": {
+                    "point": float(hours["point"]) * 3600,
+                    "lower": float(min(bounds)) * 3600,
+                    "upper": float(max(bounds)) * 3600,
+                },
+                "source_evidence_digest": sha256_canonical(
+                    {"source_artifact_hashes": source_hashes}
+                ),
+                "source_artifact_hashes": source_hashes,
+            }
+        identity_report = validate_combined_projection_identity(
+            outer_entries, inner_entries, plans[0]
+        )
         combined_report = {
-            "valid": all(item["valid"] for item in reports),
-            "evidence_digest": sha256_canonical(records),
-            "source_artifact_hashes": [item["evidence_digest"] for item in reports],
+            **task_report,
+            "valid": task_report["valid"] and identity_report["valid"],
+            "reason_codes": sorted(
+                set(task_report["reason_codes"] + identity_report["reason_codes"])
+            ),
+            "source_git_commit": identity_report.get("source_git_commit"),
+            "locked_plan_digest": plans[0].get("plan_digest"),
         }
         projection = project_validated(
             records,
@@ -171,12 +286,8 @@ def main(argv: list[str] | None = None) -> int:
                 if len(execution_classes) == 1
                 else "mixed_invalid"
             ),
-            inner_projection=_read(args.inner_projection)
-            if args.inner_projection
-            else None,
-            overhead_mapping=_read(args.overhead_mapping)
-            if args.overhead_mapping
-            else None,
+            inner_projection=inner_projection,
+            overhead_mapping=overhead_mapping,
             price_input=_read(args.price_input) if args.price_input else None,
         )
         _print(

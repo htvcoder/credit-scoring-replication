@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 import json
 import math
 from multiprocessing import get_context
 import os
 from pathlib import Path
+from queue import Empty
 import re
 import shutil
 import subprocess
@@ -17,6 +19,7 @@ from typing import Any, Callable
 from uuid import uuid4
 
 import numpy as np
+import psutil
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
@@ -46,7 +49,14 @@ from creditrep.protocols.p7c4b2c import (
 )
 from creditrep.protocols.p7c4b2d import (
     P7C4B2DError,
+    PROJECTION_MAXIMUM_MONETARY_BUDGET,
+    PROJECTION_MAXIMUM_RUNTIME_HOURS,
+    TARGET_PROJECTION_PREFLIGHT_STAGE,
     normalize_target_output,
+    projection_preflight_resource_policy,
+    select_authorized_scope,
+    TARGET_CANARY_STAGE,
+    TARGET_EXECUTION_STAGES,
     validate_effective_authorization,
 )
 from creditrep.strict_json import StrictJSONError, load_strict_json_object
@@ -353,7 +363,13 @@ def _canonical_authorized_tasks(
         tasks = [by_id[task_id] for task_id in task_ids]
     except (KeyError, TypeError) as exc:
         raise P7C4B2CError("authorization_task_scope_mismatch") from exc
-    if len(tasks) != 4:
+    try:
+        expected_ids = select_authorized_scope(
+            plan, mode, authorization.get("execution_stage")
+        )["task_ids"]
+    except P7C4B2DError as exc:
+        raise P7C4B2CError(str(exc)) from exc
+    if task_ids != expected_ids:
         raise P7C4B2CError("authorization_task_scope_mismatch")
     return tasks
 
@@ -391,6 +407,7 @@ def _authorization_provenance(
         "hourly_price": authorization["hourly_price"],
         "currency": authorization["currency"],
         "minimum_free_disk_bytes": authorization["minimum_free_disk_bytes"],
+        "resource_policy": authorization["resource_policy"],
     }
 
 
@@ -427,6 +444,8 @@ def _runtime_checkpoint(state: dict[str, Any]) -> dict[str, Any]:
     return {
         "generation": state["generation"],
         "accumulated_elapsed_seconds": state["accumulated_elapsed_seconds"],
+        "consumed_monetary_budget": state["consumed_monetary_budget"],
+        "failed_task_count": state["failed_task_count"],
         "last_accounted_at": state["last_accounted_at"],
         "state_digest": state["state_digest"],
     }
@@ -452,7 +471,7 @@ def _validate_persisted_target_contract(
     plan: dict[str, Any],
     expected_tasks: list[dict[str, Any]],
 ) -> list[str]:
-    """Validate immutable target-canary bindings without re-authorizing a run."""
+    """Validate immutable target-preflight bindings without re-authorizing a run."""
     if manifest.get("execution_class") != "target_preflight":
         return []
     codes: list[str] = []
@@ -462,11 +481,21 @@ def _validate_persisted_target_contract(
     ) != PROVENANCE_SCHEMA_VERSION:
         return ["target_resume_provenance_missing"]
     expected_ids = [task.get("sample_id") for task in expected_tasks]
+    try:
+        canonical_stage_ids = select_authorized_scope(
+            plan,
+            manifest.get("mode"),
+            provenance.get("execution_stage"),
+        )["task_ids"]
+    except P7C4B2DError:
+        canonical_stage_ids = []
+        codes.append("authorization_provenance_mismatch")
     if (
-        provenance.get("execution_stage") != "target_canary"
+        provenance.get("execution_stage") not in TARGET_EXECUTION_STAGES
         or provenance.get("execution_mode") != manifest.get("mode")
         or provenance.get("plan_digest") != plan.get("plan_digest")
         or provenance.get("task_ids") != expected_ids
+        or expected_ids != canonical_stage_ids
         or provenance.get("canonical_task_set_digest")
         != _task_set_digest(expected_tasks)
         or not isinstance(provenance.get("maximum_task_count"), int)
@@ -485,6 +514,13 @@ def _validate_persisted_target_contract(
         is None
     ):
         codes.append("authorization_provenance_mismatch")
+    if provenance.get("execution_stage") == TARGET_PROJECTION_PREFLIGHT_STAGE:
+        try:
+            expected_policy = projection_preflight_resource_policy(manifest.get("mode"))
+        except P7C4B2DError:
+            expected_policy = None
+        if provenance.get("resource_policy") != expected_policy:
+            codes.append("authorization_provenance_mismatch")
     runtime_codes: list[str] = []
     state = _read_json(run_dir / "authorization_runtime.json", runtime_codes)
     if runtime_codes or not state:
@@ -499,9 +535,15 @@ def _validate_persisted_target_contract(
         "plan_digest",
         "normalized_output_directory",
         "maximum_runtime_hours",
+        "maximum_monetary_budget",
+        "hourly_price",
+        "vm_count",
+        "resource_policy",
         "runtime_started_at",
         "last_accounted_at",
         "accumulated_elapsed_seconds",
+        "consumed_monetary_budget",
+        "failed_task_count",
         "generation",
         "state_digest",
     }
@@ -520,6 +562,10 @@ def _validate_persisted_target_contract(
             "normalized_output_directory"
         ),
         "maximum_runtime_hours": provenance.get("maximum_runtime_hours"),
+        "maximum_monetary_budget": provenance.get("maximum_monetary_budget"),
+        "hourly_price": provenance.get("hourly_price"),
+        "vm_count": provenance.get("vm_count"),
+        "resource_policy": provenance.get("resource_policy"),
         "runtime_started_at": (manifest.get("runtime_origin") or {}).get(
             "runtime_started_at"
         ),
@@ -533,6 +579,8 @@ def _validate_persisted_target_contract(
     elapsed = state.get("accumulated_elapsed_seconds")
     generation = state.get("generation")
     maximum_hours = state.get("maximum_runtime_hours")
+    consumed = state.get("consumed_monetary_budget")
+    failed = state.get("failed_task_count")
     if (
         not isinstance(elapsed, (int, float))
         or isinstance(elapsed, bool)
@@ -546,7 +594,36 @@ def _validate_persisted_target_contract(
         or not math.isfinite(maximum_hours)
         or maximum_hours <= 0
         or elapsed > maximum_hours * 3600.0
+        or not isinstance(consumed, str)
+        or not isinstance(failed, int)
+        or isinstance(failed, bool)
+        or failed < 0
+        or failed > 0
     ):
+        codes.append("runtime_state_invalid")
+    try:
+        consumed_value = Decimal(consumed)
+        budget_value = Decimal(str(state.get("maximum_monetary_budget")))
+    except (InvalidOperation, TypeError, ValueError):
+        consumed_value = budget_value = Decimal("-1")
+    if (
+        not consumed_value.is_finite()
+        or consumed_value < 0
+        or not budget_value.is_finite()
+        or budget_value <= 0
+        or consumed_value > budget_value
+    ):
+        codes.append("runtime_state_invalid")
+    try:
+        expected_consumed = (
+            Decimal(str(state.get("hourly_price")))
+            * Decimal(state.get("vm_count"))
+            * Decimal(str(elapsed))
+            / Decimal(3600)
+        )
+    except (InvalidOperation, TypeError, ValueError):
+        expected_consumed = Decimal("-1")
+    if consumed_value != expected_consumed:
         codes.append("runtime_state_invalid")
     try:
         started = _parse_utc(state["runtime_started_at"], "runtime_state_invalid")
@@ -559,6 +636,8 @@ def _validate_persisted_target_contract(
         )
         if started < created or started > manifest_created or last < started:
             codes.append("runtime_state_timestamp_invalid")
+        if elapsed + RUNTIME_CLOCK_SKEW_SECONDS < (last - started).total_seconds():
+            codes.append("runtime_state_invalid")
     except (KeyError, P7C4B2CError):
         codes.append("runtime_state_invalid")
     return codes
@@ -608,9 +687,15 @@ def _validate_runtime_state(
         "plan_digest",
         "normalized_output_directory",
         "maximum_runtime_hours",
+        "maximum_monetary_budget",
+        "hourly_price",
+        "vm_count",
+        "resource_policy",
         "runtime_started_at",
         "last_accounted_at",
         "accumulated_elapsed_seconds",
+        "consumed_monetary_budget",
+        "failed_task_count",
         "generation",
         "state_digest",
     }
@@ -627,6 +712,10 @@ def _validate_runtime_state(
         "plan_digest": provenance.get("plan_digest"),
         "normalized_output_directory": provenance.get("normalized_output_directory"),
         "maximum_runtime_hours": provenance.get("maximum_runtime_hours"),
+        "maximum_monetary_budget": provenance.get("maximum_monetary_budget"),
+        "hourly_price": provenance.get("hourly_price"),
+        "vm_count": provenance.get("vm_count"),
+        "resource_policy": provenance.get("resource_policy"),
         "runtime_started_at": origin.get("runtime_started_at"),
     }
     if any(state.get(key) != value for key, value in expected_binding.items()):
@@ -637,6 +726,8 @@ def _validate_runtime_state(
         raise P7C4B2CError("runtime_state_rollback_or_integrity_failure")
     elapsed = state.get("accumulated_elapsed_seconds")
     generation = state.get("generation")
+    consumed = state.get("consumed_monetary_budget")
+    failed = state.get("failed_task_count")
     if (
         not isinstance(elapsed, (int, float))
         or isinstance(elapsed, bool)
@@ -645,6 +736,11 @@ def _validate_runtime_state(
         or not isinstance(generation, int)
         or isinstance(generation, bool)
         or generation < 0
+        or not isinstance(consumed, str)
+        or not isinstance(failed, int)
+        or isinstance(failed, bool)
+        or failed < 0
+        or failed > 0
     ):
         raise P7C4B2CError("runtime_state_invalid")
     started = _parse_utc(state["runtime_started_at"], "runtime_state_invalid")
@@ -665,8 +761,31 @@ def _validate_runtime_state(
         seconds=RUNTIME_CLOCK_SKEW_SECONDS
     ):
         raise P7C4B2CError("runtime_state_timestamp_invalid")
+    if float(elapsed) + RUNTIME_CLOCK_SKEW_SECONDS < (last - started).total_seconds():
+        raise P7C4B2CError("runtime_state_invalid")
     maximum = float(provenance["maximum_runtime_hours"]) * 3600.0
     if elapsed > maximum:
+        raise P7C4B2CError("runtime_state_invalid")
+    try:
+        consumed_value = Decimal(consumed)
+        budget = Decimal(str(provenance["maximum_monetary_budget"]))
+    except (InvalidOperation, KeyError, TypeError, ValueError) as exc:
+        raise P7C4B2CError("runtime_state_invalid") from exc
+    if (
+        not consumed_value.is_finite()
+        or consumed_value < 0
+        or not budget.is_finite()
+        or budget <= 0
+        or consumed_value > budget
+    ):
+        raise P7C4B2CError("runtime_state_invalid")
+    expected_consumed = (
+        Decimal(str(provenance["hourly_price"]))
+        * Decimal(provenance["vm_count"])
+        * Decimal(str(elapsed))
+        / Decimal(3600)
+    )
+    if consumed_value != expected_consumed:
         raise P7C4B2CError("runtime_state_invalid")
     return max(float(elapsed), (wall_now - started).total_seconds())
 
@@ -681,6 +800,11 @@ def _persist_runtime_state(
     state["accumulated_elapsed_seconds"] = max(
         float(state["accumulated_elapsed_seconds"]), elapsed
     )
+    rate = Decimal(str(state["hourly_price"])) * Decimal(state["vm_count"])
+    consumed = rate * Decimal(str(state["accumulated_elapsed_seconds"])) / Decimal(
+        3600
+    )
+    state["consumed_monetary_budget"] = format(consumed, "f")
     state["last_accounted_at"] = wall_now.astimezone(timezone.utc).isoformat()
     state["generation"] += 1
     state["state_digest"] = _runtime_state_digest(state)
@@ -701,14 +825,33 @@ def _deadline(
     elapsed = _validate_runtime_state(state, manifest, provenance, wall_now)
     maximum_seconds = float(provenance["maximum_runtime_hours"]) * 3600.0
     runtime_remaining = maximum_seconds - elapsed
-    remaining = min(expiry_remaining, runtime_remaining)
+    hourly = Decimal(str(provenance["hourly_price"])) * Decimal(
+        provenance["vm_count"]
+    )
+    budget = Decimal(str(provenance["maximum_monetary_budget"]))
+    monetary_seconds = float(budget / hourly * Decimal(3600))
+    monetary_remaining = monetary_seconds - elapsed
+    remaining = min(expiry_remaining, runtime_remaining, monetary_remaining)
     if remaining <= 0:
-        raise P7C4B2CError(
-            "authorization_expired"
-            if expiry_remaining <= 0
-            else "runtime_budget_exceeded"
-        )
+        if expiry_remaining <= 0:
+            code = "authorization_expired"
+        elif runtime_remaining <= 0:
+            code = "runtime_budget_exceeded"
+        else:
+            code = "monetary_budget_exceeded"
+        raise P7C4B2CError(code)
     return monotonic_now + remaining, elapsed
+
+
+def _elapsed_budget_violation(provenance: dict[str, Any], elapsed: float) -> str | None:
+    runtime_seconds = float(provenance["maximum_runtime_hours"]) * 3600.0
+    if elapsed >= runtime_seconds:
+        return "runtime_budget_exceeded"
+    hourly = Decimal(str(provenance["hourly_price"])) * Decimal(provenance["vm_count"])
+    consumed = hourly * Decimal(str(elapsed)) / Decimal(3600)
+    if consumed >= Decimal(str(provenance["maximum_monetary_budget"])):
+        return "monetary_budget_exceeded"
+    return None
 
 
 def _quarantine(path: Path, run_dir: Path, reason: str) -> None:
@@ -735,6 +878,7 @@ def _execute_task(
     attempt: int,
     dispatch_started: float | None = None,
     authorization_deadline_monotonic: float | None = None,
+    commit_artifact: bool = True,
 ) -> dict[str, Any]:
     execution_class = manifest.get("execution_class")
     workload = _workload_for_execution_class(execution_class)
@@ -857,11 +1001,12 @@ def _execute_task(
         codes = validate_sample(record, task, manifest)
         if codes:
             raise P7C4B2CError(",".join(codes))
-        destination = run_dir / "samples" / task["sample_id"]
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        if destination.exists():
-            raise P7C4B2CError("output_collision")
-        os.replace(temporary, destination)
+        if commit_artifact:
+            destination = run_dir / "samples" / task["sample_id"]
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            if destination.exists():
+                raise P7C4B2CError("output_collision")
+            os.replace(temporary, destination)
         return record
     except Exception as exc:
         failure = {
@@ -878,6 +1023,277 @@ def _execute_task(
         if temporary.exists():
             _quarantine(temporary, run_dir, "failed_attempt")
         raise
+
+
+def _task_process_entry(result_queue: Any, kwargs: dict[str, Any]) -> None:
+    """Spawn-safe boundary for one killable projection-preflight task."""
+    try:
+        result_queue.put({"status": "completed", "record": _execute_task(**kwargs)})
+    except BaseException as exc:  # child must report stable failure to its supervisor
+        result_queue.put(
+            {
+                "status": "failed",
+                "exception_type": type(exc).__name__,
+                "message": str(exc)[:300],
+            }
+        )
+
+
+def _aggregate_process_tree_rss(root_pid: int) -> int:
+    try:
+        root = psutil.Process(root_pid)
+        processes = {process.pid: process for process in [root, *root.children(recursive=True)]}
+        return sum(process.memory_info().rss for process in processes.values())
+    except (psutil.Error, OSError):
+        raise P7C4B2CError("memory_sampler_failure") from None
+
+
+def _terminate_and_reap(processes: list[Any]) -> None:
+    """Terminate task processes and every descendant, then synchronously reap them."""
+    roots: list[psutil.Process] = []
+    tree: dict[int, psutil.Process] = {}
+    for item in processes:
+        pid = getattr(item, "pid", None)
+        if isinstance(pid, int):
+            try:
+                root = psutil.Process(pid)
+                root.suspend()
+                roots.append(root)
+                tree[root.pid] = root
+            except psutil.Error:
+                pass
+    while True:
+        discovered = 0
+        for root in roots:
+            try:
+                descendants = root.children(recursive=True)
+            except psutil.Error:
+                descendants = []
+            for descendant in descendants:
+                if descendant.pid in tree:
+                    continue
+                try:
+                    descendant.suspend()
+                except psutil.Error:
+                    continue
+                tree[descendant.pid] = descendant
+                discovered += 1
+        if discovered == 0:
+            break
+    for process in tree.values():
+        try:
+            process.terminate()
+        except psutil.Error:
+            pass
+    _, alive = psutil.wait_procs(list(tree.values()), timeout=2.0)
+    for process in alive:
+        try:
+            process.kill()
+        except psutil.Error:
+            pass
+    psutil.wait_procs(alive, timeout=2.0)
+    for item in processes:
+        if getattr(item, "is_alive", lambda: False)():
+            item.terminate()
+    for item in processes:
+        item.join(timeout=2.0)
+        if getattr(item, "is_alive", lambda: False)():
+            item.kill()
+            item.join(timeout=2.0)
+
+
+def _persist_supervisor_failure(
+    run_dir: Path,
+    manifest: dict[str, Any],
+    task: dict[str, Any],
+    reason_code: str,
+) -> None:
+    identity = {"sample_id": task["sample_id"], "attempt": 1, "run_id": manifest["run_id"]}
+    attempt_id = sha256_canonical(identity)
+    failure = {
+        **identity,
+        "attempt_id": attempt_id,
+        "execution_class": manifest["execution_class"],
+        "git_commit": manifest["authorization_provenance"]["git_commit"],
+        "plan_digest": manifest["plan_digest"],
+        "failed_utc": _utc(),
+        "exception_type": "SupervisionFailure",
+        "message": reason_code,
+        "reason_code": reason_code,
+    }
+    failure_path = run_dir / "failures" / f"{attempt_id}.json"
+    if failure_path.exists():
+        codes: list[str] = []
+        original = _read_json(failure_path, codes)
+        if isinstance(original, dict) and not codes:
+            failure = {**original, "supervisor_reason_code": reason_code}
+    _atomic_json(failure_path, failure)
+    for path in (
+        run_dir / "tmp" / attempt_id,
+        run_dir / "samples" / task["sample_id"],
+    ):
+        if path.exists():
+            _quarantine(path, run_dir, reason_code)
+
+
+def _run_supervised_projection_phase(
+    phase: list[dict[str, Any]],
+    *,
+    manifest: dict[str, Any],
+    environment: dict[str, Any],
+    run_dir: Path,
+    repo_root: Path,
+    provenance: dict[str, Any],
+    runtime_state: dict[str, Any],
+    target_task_gate: Callable[[], None],
+    authorization_deadline: Callable[[], float],
+    monotonic_clock: Callable[[], float],
+    rss_sampler: Callable[[int], int] = _aggregate_process_tree_rss,
+    context_provider: Callable[[str], Any] = get_context,
+    poll_interval_seconds: float = 0.05,
+) -> list[dict[str, Any]]:
+    policy = provenance.get("resource_policy")
+    if not isinstance(policy, dict):
+        raise P7C4B2CError("invalid_projection_resource_policy")
+    maximum_in_flight = policy.get("maximum_in_flight_tasks")
+    if (
+        provenance.get("execution_stage") != TARGET_PROJECTION_PREFLIGHT_STAGE
+        or policy.get("maximum_runtime_hours")
+        != PROJECTION_MAXIMUM_RUNTIME_HOURS
+        or policy.get("maximum_monetary_budget")
+        != PROJECTION_MAXIMUM_MONETARY_BUDGET
+        or maximum_in_flight != manifest.get("worker_count")
+        or not isinstance(maximum_in_flight, int)
+        or isinstance(maximum_in_flight, bool)
+        or maximum_in_flight < 1
+        or maximum_in_flight > 2
+        or policy.get("maximum_failed_task_count") != 0
+    ):
+        raise P7C4B2CError("invalid_projection_resource_policy")
+    timeout_seconds = policy.get("per_task_timeout_seconds")
+    rss_limit = policy.get("aggregate_process_tree_rss_limit_bytes")
+    if not isinstance(timeout_seconds, int) or not isinstance(rss_limit, int):
+        raise P7C4B2CError("invalid_projection_resource_policy")
+    ctx = context_provider("spawn")
+    pending = list(phase)
+    active: list[dict[str, Any]] = []
+    completed: list[dict[str, Any]] = []
+    supervisor_pid = os.getpid()
+
+    def abort(reason: str, failed_item: dict[str, Any] | None = None) -> None:
+        _terminate_and_reap([item["process"] for item in active])
+        for item in active:
+            close = getattr(item["queue"], "close", None)
+            if close is not None:
+                close()
+        affected = [item["task"] for item in active]
+        if failed_item is not None and failed_item["task"] not in affected:
+            affected.append(failed_item["task"])
+        if not affected and pending:
+            affected.append(pending[0])
+        for task in affected:
+            _persist_supervisor_failure(run_dir, manifest, task, reason)
+        runtime_state["failed_task_count"] = int(runtime_state["failed_task_count"]) + 1
+        now = _parse_utc(runtime_state["last_accounted_at"], "runtime_state_invalid")
+        _persist_runtime_state(
+            run_dir,
+            manifest,
+            runtime_state,
+            max(float(runtime_state["accumulated_elapsed_seconds"]), 0.0),
+            now,
+        )
+        raise P7C4B2CError(reason)
+
+    while pending or active:
+        if active and monotonic_clock() >= authorization_deadline():
+            try:
+                target_task_gate()
+            except P7C4B2CError as exc:
+                abort(str(exc))
+        if rss_sampler(supervisor_pid) > rss_limit:
+            abort("memory_limit_exceeded")
+        while pending and len(active) < maximum_in_flight:
+            target_task_gate()
+            if rss_sampler(supervisor_pid) > rss_limit:
+                abort("memory_limit_exceeded")
+            task = pending.pop(0)
+            result_queue = ctx.Queue()
+            kwargs = {
+                "task": task,
+                "manifest": manifest,
+                "environment": environment,
+                "run_dir": run_dir,
+                "repo_root": repo_root,
+                "attempt": 1,
+                "dispatch_started": monotonic_clock(),
+                "authorization_deadline_monotonic": authorization_deadline(),
+                "commit_artifact": False,
+            }
+            process = ctx.Process(target=_task_process_entry, args=(result_queue, kwargs))
+            process.start()
+            active.append(
+                {
+                    "task": task,
+                    "process": process,
+                    "queue": result_queue,
+                    "started": monotonic_clock(),
+                    "outcome": None,
+                }
+            )
+        progressed = False
+        for item in list(active):
+            now_monotonic = monotonic_clock()
+            if now_monotonic - item["started"] >= timeout_seconds:
+                abort("task_timeout_exceeded", item)
+            process = item["process"]
+            if item["outcome"] is None:
+                try:
+                    item["outcome"] = item["queue"].get_nowait()
+                except (Empty, AttributeError):
+                    pass
+            if process.is_alive():
+                continue
+            process.join(timeout=2.0)
+            outcome = item["outcome"]
+            if outcome is None:
+                try:
+                    outcome = item["queue"].get(timeout=1.0)
+                except Exception:
+                    outcome = {"status": "failed", "message": "child_result_missing"}
+            close = getattr(item["queue"], "close", None)
+            if close is not None:
+                close()
+            active.remove(item)
+            progressed = True
+            try:
+                target_task_gate()
+            except P7C4B2CError as exc:
+                abort(str(exc), item)
+            if outcome.get("status") != "completed" or process.exitcode != 0:
+                abort("failure_rate_threshold_exceeded", item)
+            record = outcome.get("record")
+            if not isinstance(record, dict):
+                abort("failure_rate_threshold_exceeded", item)
+            if rss_sampler(supervisor_pid) > rss_limit:
+                abort("memory_limit_exceeded", item)
+            attempt_id = record.get("attempt_id")
+            temporary = run_dir / "tmp" / str(attempt_id)
+            destination = run_dir / "samples" / item["task"]["sample_id"]
+            if (
+                not _lower_hex(attempt_id, 64)
+                or not temporary.is_dir()
+                or destination.exists()
+            ):
+                abort("artifact_validation_failure", item)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                os.replace(temporary, destination)
+            except OSError:
+                abort("artifact_validation_failure", item)
+            completed.append(record)
+        if active and not progressed:
+            time.sleep(poll_interval_seconds)
+    return completed
 
 
 def run(
@@ -987,9 +1403,15 @@ def _run_impl(
             "plan_digest": provenance["plan_digest"],
             "normalized_output_directory": normalized_output,
             "maximum_runtime_hours": provenance["maximum_runtime_hours"],
+            "maximum_monetary_budget": provenance["maximum_monetary_budget"],
+            "hourly_price": provenance["hourly_price"],
+            "vm_count": provenance["vm_count"],
+            "resource_policy": provenance["resource_policy"],
             "runtime_started_at": now.isoformat(),
             "last_accounted_at": now.isoformat(),
             "accumulated_elapsed_seconds": 0.0,
+            "consumed_monetary_budget": "0.0",
+            "failed_task_count": 0,
             "generation": 0,
         }
         runtime_state["state_digest"] = _runtime_state_digest(runtime_state)
@@ -1149,6 +1571,11 @@ def _resume_impl(
         )
         if runtime_codes or not runtime_state:
             raise P7C4B2CError("runtime_state_invalid")
+        if provenance.get("execution_stage") == TARGET_PROJECTION_PREFLIGHT_STAGE and (
+            int(runtime_state.get("failed_task_count", -1)) > 0
+            or any((run_dir / "failures").glob("*.json"))
+        ):
+            raise P7C4B2CError("failure_rate_threshold_exceeded")
         now = wall_clock().astimezone(timezone.utc)
         authorization_deadline_monotonic, session_started_elapsed = _deadline(
             provenance, runtime_state, manifest, now, session_started_monotonic
@@ -1183,6 +1610,9 @@ def _resume_impl(
             _validate_runtime_state(runtime_state, manifest, provenance, now),
             session_elapsed,
         )
+        violation = _elapsed_budget_violation(provenance, conservative_elapsed)
+        if violation is not None:
+            raise P7C4B2CError(violation)
         _persist_runtime_state(
             run_dir, manifest, runtime_state, conservative_elapsed, now
         )
@@ -1234,6 +1664,28 @@ def _resume_impl(
     for classification in ("warmup", "measured"):
         phase = [task for task in pending if task["classification"] == classification]
         if not phase:
+            continue
+        if (
+            provenance is not None
+            and provenance.get("execution_stage")
+            == TARGET_PROJECTION_PREFLIGHT_STAGE
+            and runtime_state is not None
+        ):
+            phase_records = _run_supervised_projection_phase(
+                phase,
+                manifest=manifest,
+                environment=environment,
+                run_dir=run_dir,
+                repo_root=root,
+                provenance=provenance,
+                runtime_state=runtime_state,
+                target_task_gate=target_task_gate,
+                authorization_deadline=lambda: authorization_deadline_monotonic,
+                monotonic_clock=monotonic_clock,
+            )
+            records.extend(phase_records)
+            executed += len(phase_records)
+            target_task_gate()
             continue
         with ProcessPoolExecutor(
             max_workers=manifest["worker_count"], mp_context=get_context("spawn")
@@ -1378,8 +1830,15 @@ def _validate_artifacts(
     codes.extend(_validate_target_source_identity(manifest, environment, records))
     coverage, summary = summarize(records, plan, expected_tasks=expected)
     scientific_coverage = _scientific_coverage_result(coverage)
-    is_target_canary = manifest.get("execution_class") == "target_preflight"
-    if not is_target_canary:
+    is_target = manifest.get("execution_class") == "target_preflight"
+    execution_stage = (manifest.get("authorization_provenance") or {}).get(
+        "execution_stage"
+    )
+    is_target_canary = is_target and execution_stage == TARGET_CANARY_STAGE
+    is_projection_preflight = is_target and execution_stage in (
+        TARGET_EXECUTION_STAGES - {TARGET_CANARY_STAGE}
+    )
+    if not is_target:
         codes.extend(scientific_coverage["reason_codes"])
     if not allow_missing_derived:
         stored_coverage = _read_json(run_dir / "coverage.json", codes)
@@ -1434,6 +1893,13 @@ def _validate_artifacts(
         "scientific_projection_eligible": False,
         "canonical_scientific_execution_authorized": False,
     }
+    target_projection_preflight_acceptance = {
+        "applicable": is_projection_preflight,
+        "accepted": is_projection_preflight and not codes,
+        "reason_codes": sorted(set(codes)) if is_projection_preflight else [],
+        "scientific_projection_eligible": False,
+        "canonical_scientific_execution_authorized": False,
+    }
     return {
         "schema_version": SCHEMA_VERSION,
         "valid": not codes,
@@ -1443,6 +1909,7 @@ def _validate_artifacts(
         "evidence_digest": evidence_digest,
         "execution_class": manifest.get("execution_class"),
         "target_canary_acceptance": target_canary_acceptance,
+        "target_projection_preflight_acceptance": target_projection_preflight_acceptance,
         "scientific_coverage": scientific_coverage,
     }
 
