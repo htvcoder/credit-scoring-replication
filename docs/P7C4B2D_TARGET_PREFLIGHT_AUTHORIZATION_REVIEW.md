@@ -50,6 +50,16 @@ GMC/heavy MLP-3 warmup, GMC/heavy measured-0. Bốn task/mode này là engineeri
 validation, `scientific_projection_eligible: false`; canary không phải scientific
 evidence và warmup không tham gia projection.
 
+Acceptance của four-task canary là operational: đúng bốn task đã authorization
+phải hoàn thành với identity, provenance, telemetry và completion marker hợp lệ.
+Việc mỗi representative stratum chỉ có một measured repetition không làm canary
+operational invalid; nó vẫn được ghi là `incomplete_required_stratum` và
+`insufficient_repetitions` ở lớp scientific coverage/projection, vì vậy
+`execution_plan_eligible` vẫn false và không mở canonical scientific execution.
+Normal validation luôn yêu cầu run-level completion marker và đối chiếu source
+commit đã authorization với captured environment cùng mọi sample record; một
+`validation.json` có hình dạng historical không tạo exemption.
+
 Proposal bind plan digest, environment digest, mode, bốn IDs, output namespace,
 runtime/budget, price/currency, timestamp/expiry. Validator chặn task thiếu/dư/trùng,
 sai mode, digest, budget, output hoặc expiry. Proposal không được biến thành approval.

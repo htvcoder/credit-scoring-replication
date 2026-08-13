@@ -9,6 +9,7 @@ import math
 from multiprocessing import get_context
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import time
@@ -35,6 +36,7 @@ from creditrep.protocols.p7c4b2c import (
     MODES,
     P7C4B2CError,
     SCHEMA_VERSION,
+    SCIENTIFIC_COVERAGE_REASON_CODES,
     canonical_digest,
     project_validated,
     summarize,
@@ -57,6 +59,12 @@ Workload = Callable[[dict[str, Any], Path], dict[str, Any]]
 PROVENANCE_SCHEMA_VERSION = 1
 RUNTIME_STATE_SCHEMA_VERSION = 2
 RUNTIME_CLOCK_SKEW_SECONDS = 5.0
+
+
+def _lower_hex(value: Any, length: int) -> bool:
+    return isinstance(value, str) and re.fullmatch(
+        rf"[0-9a-f]{{{length}}}", value
+    ) is not None
 
 
 def _utc() -> str:
@@ -422,6 +430,159 @@ def _runtime_checkpoint(state: dict[str, Any]) -> dict[str, Any]:
         "last_accounted_at": state["last_accounted_at"],
         "state_digest": state["state_digest"],
     }
+
+
+def _scientific_coverage_result(coverage: dict[str, Any]) -> dict[str, Any]:
+    reason_codes = (
+        list(SCIENTIFIC_COVERAGE_REASON_CODES)
+        if coverage.get("incomplete_strata")
+        else []
+    )
+    return {
+        "valid": not reason_codes,
+        "reason_codes": reason_codes,
+        "minimum_repetitions": coverage.get("minimum_repetitions"),
+        "incomplete_strata": coverage.get("incomplete_strata", []),
+    }
+
+
+def _validate_persisted_target_contract(
+    run_dir: Path,
+    manifest: dict[str, Any],
+    plan: dict[str, Any],
+    expected_tasks: list[dict[str, Any]],
+) -> list[str]:
+    """Validate immutable target-canary bindings without re-authorizing a run."""
+    if manifest.get("execution_class") != "target_preflight":
+        return []
+    codes: list[str] = []
+    provenance = manifest.get("authorization_provenance")
+    if not isinstance(provenance, dict) or provenance.get(
+        "schema_version"
+    ) != PROVENANCE_SCHEMA_VERSION:
+        return ["target_resume_provenance_missing"]
+    expected_ids = [task.get("sample_id") for task in expected_tasks]
+    if (
+        provenance.get("execution_stage") != "target_canary"
+        or provenance.get("execution_mode") != manifest.get("mode")
+        or provenance.get("plan_digest") != plan.get("plan_digest")
+        or provenance.get("task_ids") != expected_ids
+        or provenance.get("canonical_task_set_digest")
+        != _task_set_digest(expected_tasks)
+        or not isinstance(provenance.get("maximum_task_count"), int)
+        or isinstance(provenance.get("maximum_task_count"), bool)
+        or len(expected_tasks) > provenance.get("maximum_task_count", -1)
+        or manifest.get("run_id") != run_dir.name
+        or os.path.normcase(provenance.get("normalized_output_directory", ""))
+        != os.path.normcase(str(run_dir))
+        or not _lower_hex(provenance.get("authorization_digest"), 64)
+        or not _lower_hex(provenance.get("proposal_digest"), 64)
+        or not _lower_hex(provenance.get("target_environment_digest"), 64)
+        or not isinstance(provenance.get("locked_runtime_inputs_digest"), str)
+        or re.fullmatch(
+            r"[0-9a-fA-F]{64}", provenance.get("locked_runtime_inputs_digest", "")
+        )
+        is None
+    ):
+        codes.append("authorization_provenance_mismatch")
+    runtime_codes: list[str] = []
+    state = _read_json(run_dir / "authorization_runtime.json", runtime_codes)
+    if runtime_codes or not state:
+        codes.append("runtime_state_invalid")
+        return codes
+    required_state_fields = {
+        "schema_version",
+        "run_id",
+        "authorization_digest",
+        "proposal_digest",
+        "target_environment_digest",
+        "plan_digest",
+        "normalized_output_directory",
+        "maximum_runtime_hours",
+        "runtime_started_at",
+        "last_accounted_at",
+        "accumulated_elapsed_seconds",
+        "generation",
+        "state_digest",
+    }
+    if set(state) != required_state_fields or state.get(
+        "schema_version"
+    ) != RUNTIME_STATE_SCHEMA_VERSION:
+        codes.append("runtime_state_invalid")
+        return codes
+    expected_binding = {
+        "run_id": manifest.get("run_id"),
+        "authorization_digest": provenance.get("authorization_digest"),
+        "proposal_digest": provenance.get("proposal_digest"),
+        "target_environment_digest": provenance.get("target_environment_digest"),
+        "plan_digest": provenance.get("plan_digest"),
+        "normalized_output_directory": provenance.get(
+            "normalized_output_directory"
+        ),
+        "maximum_runtime_hours": provenance.get("maximum_runtime_hours"),
+        "runtime_started_at": (manifest.get("runtime_origin") or {}).get(
+            "runtime_started_at"
+        ),
+    }
+    if any(state.get(key) != value for key, value in expected_binding.items()):
+        codes.append("runtime_state_provenance_mismatch")
+    if state.get("state_digest") != _runtime_state_digest(state) or manifest.get(
+        "runtime_checkpoint"
+    ) != _runtime_checkpoint(state):
+        codes.append("runtime_state_rollback_or_integrity_failure")
+    elapsed = state.get("accumulated_elapsed_seconds")
+    generation = state.get("generation")
+    maximum_hours = state.get("maximum_runtime_hours")
+    if (
+        not isinstance(elapsed, (int, float))
+        or isinstance(elapsed, bool)
+        or not math.isfinite(elapsed)
+        or elapsed < 0
+        or not isinstance(generation, int)
+        or isinstance(generation, bool)
+        or generation < 0
+        or not isinstance(maximum_hours, (int, float))
+        or isinstance(maximum_hours, bool)
+        or not math.isfinite(maximum_hours)
+        or maximum_hours <= 0
+        or elapsed > maximum_hours * 3600.0
+    ):
+        codes.append("runtime_state_invalid")
+    try:
+        started = _parse_utc(state["runtime_started_at"], "runtime_state_invalid")
+        last = _parse_utc(state["last_accounted_at"], "runtime_state_invalid")
+        created = _parse_utc(
+            provenance["authorization_created_at"], "runtime_state_invalid"
+        )
+        manifest_created = _parse_utc(
+            manifest.get("created_utc"), "runtime_state_invalid"
+        )
+        if started < created or started > manifest_created or last < started:
+            codes.append("runtime_state_timestamp_invalid")
+    except (KeyError, P7C4B2CError):
+        codes.append("runtime_state_invalid")
+    return codes
+
+
+def _validate_target_source_identity(
+    manifest: dict[str, Any],
+    environment: dict[str, Any],
+    records: list[dict[str, Any]],
+) -> list[str]:
+    """Cross-bind persisted target artifacts to the authorized source commit."""
+    if manifest.get("execution_class") != "target_preflight":
+        return []
+    provenance = manifest.get("authorization_provenance")
+    if not isinstance(provenance, dict):
+        return []  # The persisted-contract validator reports the missing provenance.
+    authorized_commit = provenance.get("git_commit")
+    commits = [authorized_commit, environment.get("git_commit")]
+    commits.extend(record.get("git_commit") for record in records)
+    if not all(_lower_hex(commit, 40) for commit in commits) or any(
+        commit != authorized_commit for commit in commits
+    ):
+        return ["git_provenance_mismatch"]
+    return []
 
 
 def _validate_runtime_state(
@@ -997,7 +1158,14 @@ def _resume_impl(
             provenance["minimum_free_disk_bytes"],
             disk_usage_provider,
         )
-    _clean_stale_temps(run_dir)
+    if not initial_authorization_validated and (run_dir / "COMPLETED.json").exists():
+        final_report = validate_artifacts(run_dir)
+        return {
+            "run_id": manifest["run_id"],
+            "executed": 0,
+            "skipped": final_report.get("completed", 0),
+            "validation": final_report,
+        }
 
     def target_task_gate() -> None:
         nonlocal authorization_deadline_monotonic
@@ -1048,6 +1216,15 @@ def _resume_impl(
                 skipped += 1
                 continue
         pending.append(task)
+    if not initial_authorization_validated and not pending:
+        final_report = validate_artifacts(run_dir)
+        return {
+            "run_id": manifest["run_id"],
+            "executed": 0,
+            "skipped": skipped,
+            "validation": final_report,
+        }
+    _clean_stale_temps(run_dir)
     # Warmups finish before the measured pool starts. Authorization and live disk
     # are rechecked before every submission; already-running work is not hard-killed.
     for classification in ("warmup", "measured"):
@@ -1077,12 +1254,16 @@ def _resume_impl(
                 executed += 1
         target_task_gate()
     records.sort(key=lambda item: item["sample_id"])
+    if provenance is not None and runtime_state is not None:
+        target_task_gate()
     coverage, stratum_summary = summarize(
         records, plan, expected_tasks=manifest["expected_tasks"]
     )
     _atomic_json(run_dir / "coverage.json", coverage)
     _atomic_json(run_dir / "stratum_summary.json", stratum_summary)
-    preliminary = validate_artifacts(run_dir, allow_missing_derived=True)
+    preliminary = _validate_artifacts(
+        run_dir, allow_missing_derived=True, allow_missing_marker=True
+    )
     projection = project_validated(
         records,
         plan,
@@ -1098,7 +1279,7 @@ def _resume_impl(
             "reason_codes": projection["reason_codes"],
         },
     )
-    report = validate_artifacts(run_dir, allow_missing_marker=True)
+    report = _validate_artifacts(run_dir, allow_missing_marker=True)
     _atomic_json(run_dir / "validation.json", report)
     if report["valid"] and report["completed"] == report["expected"]:
         _atomic_json(
@@ -1108,8 +1289,7 @@ def _resume_impl(
                 "run_id": manifest["run_id"],
             },
         )
-    if provenance is not None and runtime_state is not None:
-        target_task_gate()
+        report = validate_artifacts(run_dir)
     return {
         "run_id": manifest["run_id"],
         "executed": executed,
@@ -1118,7 +1298,7 @@ def _resume_impl(
     }
 
 
-def validate_artifacts(
+def _validate_artifacts(
     run_dir: Path,
     *,
     allow_missing_derived: bool = False,
@@ -1153,6 +1333,10 @@ def validate_artifacts(
     ):
         codes.append("environment_hash_mismatch")
     expected = manifest.get("expected_tasks", [])
+    if not isinstance(expected, list):
+        codes.append("canonical_task_manifest_mismatch")
+        expected = []
+    codes.extend(_validate_persisted_target_contract(run_dir, manifest, plan, expected))
     expected_ids = [task.get("sample_id") for task in expected]
     if len(expected_ids) != len(set(expected_ids)):
         codes.append("duplicate_sample_identity")
@@ -1174,7 +1358,10 @@ def validate_artifacts(
         if not record:
             continue
         records.append(record)
-        if telemetry and telemetry.get("attempt_id") != record.get("attempt_id"):
+        if telemetry and (
+            telemetry.get("attempt_id") != record.get("attempt_id")
+            or telemetry != record
+        ):
             codes.append("telemetry_identity_mismatch")
         if not marker or marker.get("record_digest") != _safe_digest(record, codes):
             codes.append("complete_marker_integrity_failure")
@@ -1184,9 +1371,12 @@ def validate_artifacts(
     identities = [record.get("sample_id") for record in records]
     if len(identities) != len(set(identities)):
         codes.append("duplicate_sample_identity")
+    codes.extend(_validate_target_source_identity(manifest, environment, records))
     coverage, summary = summarize(records, plan, expected_tasks=expected)
-    if coverage["incomplete_strata"]:
-        codes.extend(["incomplete_required_stratum", "insufficient_repetitions"])
+    scientific_coverage = _scientific_coverage_result(coverage)
+    is_target_canary = manifest.get("execution_class") == "target_preflight"
+    if not is_target_canary:
+        codes.extend(scientific_coverage["reason_codes"])
     if not allow_missing_derived:
         stored_coverage = _read_json(run_dir / "coverage.json", codes)
         stored_summary = _read_json(run_dir / "stratum_summary.json", codes)
@@ -1212,6 +1402,10 @@ def validate_artifacts(
             codes.append("invalid_true_eligibility")
     if (run_dir / "failures").exists() and any((run_dir / "failures").glob("*.json")):
         codes.append("failed_attempt_present")
+    if is_target_canary and (run_dir / "quarantine").exists() and any(
+        (run_dir / "quarantine").iterdir()
+    ):
+        codes.append("quarantined_attempt_present")
     completion = (
         _read_json(run_dir / "COMPLETED.json", codes)
         if (run_dir / "COMPLETED.json").exists()
@@ -1222,12 +1416,20 @@ def validate_artifacts(
         if (
             not validation
             or completion.get("validation_digest") != sha256_canonical(validation)
+            or completion.get("run_id") != manifest.get("run_id")
             or len(records) != len(expected)
         ):
             codes.append("run_complete_marker_integrity_failure")
-    elif not allow_missing_marker and not codes and len(records) == len(expected):
+    elif not allow_missing_marker:
         codes.append("completed_run_missing_marker")
     evidence_digest = _safe_digest(records, codes)
+    target_canary_acceptance = {
+        "applicable": is_target_canary,
+        "accepted": is_target_canary and not codes,
+        "reason_codes": sorted(set(codes)) if is_target_canary else [],
+        "scientific_projection_eligible": False,
+        "canonical_scientific_execution_authorized": False,
+    }
     return {
         "schema_version": SCHEMA_VERSION,
         "valid": not codes,
@@ -1236,4 +1438,11 @@ def validate_artifacts(
         "completed": len(records),
         "evidence_digest": evidence_digest,
         "execution_class": manifest.get("execution_class"),
+        "target_canary_acceptance": target_canary_acceptance,
+        "scientific_coverage": scientific_coverage,
     }
+
+
+def validate_artifacts(run_dir: Path) -> dict[str, Any]:
+    """Validate a persisted run; completed runs always require their run marker."""
+    return _validate_artifacts(run_dir)

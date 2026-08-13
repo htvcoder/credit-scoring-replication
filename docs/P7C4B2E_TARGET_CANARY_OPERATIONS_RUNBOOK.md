@@ -5,6 +5,15 @@ authorize canonical scientific execution. Commands that create authorization or
 perform MLP fitting are explicit boundaries and must not be run without the
 operator approval required at that gate.
 
+Operational success means that the exact authorized four-task set completes with
+valid identity, provenance, telemetry and completion artifacts. The canary has
+only one measured repetition in each representative stratum, so scientific
+coverage continues to report `incomplete_required_stratum` and
+`insufficient_repetitions`; those findings do not by themselves reject the
+operational canary. Scientific projection and `execution_plan_eligible` remain
+false, and canary success neither creates scientific evidence nor authorizes
+canonical execution.
+
 ## Preconditions and immutable variables
 
 Run each gate in a fresh Bash shell on the official target server, not the old
@@ -277,5 +286,17 @@ Never call `run` for an interrupted output.
 "$PYTHON" -m creditrep.experiments.p7c4b2c_cli validate-artifacts --run-dir "$OUT"
 ```
 
-Expected exit is 0 with `valid: true` and `completed == expected`. STOP on every
-reason code, failure marker, missing completion marker, or incomplete task.
+Expected exit is 0 with `valid: true`, `target_canary_acceptance.accepted: true`
+and `completed == expected`. STOP on every top-level acceptance reason code,
+failure marker, missing completion marker, or incomplete task. Scientific
+coverage reason codes remain visible under `scientific_coverage` and in
+projection/eligibility while operational acceptance succeeds.
+
+After this remediation is merged, any fresh target rerun must use a new proposal,
+new target-environment evidence bound to the new source SHA, new effective
+authorization, a new output namespace, and a new single-use systemd unit. Normal
+validation always requires the run-level completion marker and never reclassifies
+the marker-less historical failure as a successful run. That output remains
+immutable diagnostic evidence: its four-task compute and task artifacts may be
+interpreted read-only, but it must not be rewritten or presented as successful
+evidence under the new source SHA.

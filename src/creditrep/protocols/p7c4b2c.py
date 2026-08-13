@@ -16,6 +16,10 @@ from creditrep.protocols.p7c4b2a import P7C4B2AError, load_manifest
 SCHEMA_VERSION = 1
 EXECUTION_CLASSES = {"synthetic_validation", "target_preflight"}
 MODES = {"cpu_parallel_1": 1, "cpu_parallel_2": 2}
+SCIENTIFIC_COVERAGE_REASON_CODES = (
+    "incomplete_required_stratum",
+    "insufficient_repetitions",
+)
 DATASET_OUTER_REPEATS = {"AC": 10, "GC": 10, "TH02": 10, "HMEQ": 5, "TC": 5, "GMC": 5}
 PROXIES = ("low_cost_proxy", "typical_proxy", "high_cost_proxy")
 ADDITIVE_COMPONENTS = (
@@ -819,6 +823,10 @@ def project_validated(
             total_elapsed=None,
             cost_complete=False,
         )
+        if not coverage_complete:
+            gate["reason_codes"] = sorted(
+                set([*gate["reason_codes"], *SCIENTIFIC_COVERAGE_REASON_CODES])
+            )
         return {
             "schema_version": SCHEMA_VERSION,
             "status": "incomplete",

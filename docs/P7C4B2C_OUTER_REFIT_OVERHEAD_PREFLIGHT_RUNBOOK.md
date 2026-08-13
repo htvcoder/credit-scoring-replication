@@ -32,9 +32,19 @@ plan contains 324 tasks: 108 warmups and 216 measured samples. Candidate proxies
 are workload representatives and never an observed canonical selection.
 
 Stop conditions are per-sample failure, wall-clock budget, artifact budget and
-incomplete required coverage. Missing strata or repetitions fail validation and
-eligibility. A target run cannot truncate the plan; synthetic validation may use
+incomplete required coverage. Missing strata or repetitions fail full-plan
+scientific coverage and projection eligibility. For the separately authorized
+four-task `target_canary`, operational acceptance instead requires the exact
+authorized task set and valid artifacts/telemetry; its single measured repetition
+per representative stratum remains explicitly scientifically insufficient. A
+target run cannot truncate its authorized task set; synthetic validation may use
 `--max-samples` to keep local work tiny.
+
+Operational canary acceptance never implies scientific projection eligibility,
+canonical evidence, or authorization for canonical scientific execution.
+Normal validation also requires the run-level completion marker and cross-binds
+the authorized source commit to the captured environment and every sample record;
+stored validation reason codes cannot waive either requirement.
 
 ## Timing contract
 
