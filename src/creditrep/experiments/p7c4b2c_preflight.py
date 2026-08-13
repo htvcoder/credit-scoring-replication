@@ -1158,7 +1158,11 @@ def _resume_impl(
             provenance["minimum_free_disk_bytes"],
             disk_usage_provider,
         )
-    if not initial_authorization_validated and (run_dir / "COMPLETED.json").exists():
+    if (
+        execution_class == "target_preflight"
+        and not initial_authorization_validated
+        and (run_dir / "COMPLETED.json").exists()
+    ):
         final_report = validate_artifacts(run_dir)
         return {
             "run_id": manifest["run_id"],
