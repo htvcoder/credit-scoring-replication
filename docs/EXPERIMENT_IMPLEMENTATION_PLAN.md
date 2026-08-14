@@ -431,7 +431,7 @@ Generated from website/content/progress.yaml. Do not edit manually.
 - Last completed phase: Phase 6
 - Current phase: Phase 7
 - Next phase: Phase 7 - Core replication run
-- Updated at: 2026-08-13
+- Updated at: 2026-08-14
 
 | Phase | Status | Milestone tag |
 | --- | --- | --- |
@@ -484,7 +484,7 @@ Phase 7 checkpoints:
 - P7C.4B.1d: Completed - Completed — independent operational readiness review, artifact read-back, full B1 regression, operator checklist and go/no-go policy completed.
 - P7C.4B.2: In Progress - Fresh target canary đã operationally accepted. Target projection-preflight implementation tiếp theo đã sẵn sàng review: hai self-contained full-mode scope 162 task, per-run 12h/USD5/20-minute-task/12GiB/zero-failure supervision, closed combined inner/outer identity và typed overhead/price projection. Canary khác source SHA không được dùng làm residual. Chưa chạy target workload; scientific projection và canonical execution vẫn pending/NO-GO.
 - P7C.4B.2a: Completed - Completed — balanced MLP-1/3/5 scientific scope 24/48/48 generated deterministically from seed 42, validated and digest-locked; workload 54,270 fits, execution guard and static multi-VM sharding readiness contract added. No execution occurred.
-- P7C.4B.2b: Completed - Executable bounded-preflight harness ready — deterministic plan/CLI, target guard, process-isolated fixture-validated runner, atomic artifacts, resume/retry, validator, telemetry reconstruction and fail-closed projection/RAM/cost contracts pass. Target-machine preflight remains pending.
+- P7C.4B.2b: Completed - Final-reviewed executable bounded-preflight harness ready — deterministic plan/CLI, distinct typed profile/environment → proposal → effective-authorization chain per P1/P2, append-only runtime generations, per-task attempt history, bounded process-tree cleanup, fail-closed RSS sampling, unique temporary attempts, pre-promotion/finalization guards, canonical control/path revalidation và typed launch/submission records pass controlled regression. Existing B2b safety limits remain unchanged; boolean-only authorization is rejected. No target workload ran; target preflight remains pending.
 - P7C.4B.2c: Completed - Implementation completed / target execution pending — process-isolated run/resume, canonical timing instrumentation, atomic artifact lifecycle, validator, stratified projection and fail-closed eligibility/CLI contracts pass controlled validation. Target outer-refit/overhead preflight has not run; canonical execution remains NO-GO.
 - P7C.4B.2d: Completed - Fresh target environment, proposal và effective authorization cho canary `p7c4b2d-target-rerun-01` đã cross-validate với Git/source, AC/GMC input identity, locked runtime inputs, mode, resource scope và bốn task. Authorization đã hết scope tại canary và không authorize canonical scientific execution; canonical execution vẫn NO-GO.
 - P7C.4B.2e: Completed - Fresh controlled target canary `p7c4b2d-target-rerun-01` completed and was operationally accepted: immutable launch record, one-time submission receipt, exact 4/4 authorized tasks, telemetry, completion marker và public validation đều hợp lệ. Đây không phải scientific execution/result và không làm scientific projection hay canonical execution eligible.

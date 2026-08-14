@@ -173,7 +173,9 @@ def main(argv: list[str] | None = None) -> int:
                 "environment": _read(path / "environment.json"),
                 "validation": report,
             }
-            for path, manifest, report in zip(args.run_dir, manifests, reports, strict=True)
+            for path, manifest, report in zip(
+                args.run_dir, manifests, reports, strict=True
+            )
         ]
         overhead_mapping = (
             _read(args.overhead_mapping) if args.overhead_mapping else None
@@ -193,41 +195,62 @@ def main(argv: list[str] | None = None) -> int:
                 for run_dir in args.inner_run
                 for path in sorted((run_dir / "fits").glob("*/result.json"))
             ]
-            inner_manifests = [_read(path / "run_manifest.json") for path in args.inner_run]
-            inner_profiles = [_read(path / "machine_profile.json") for path in args.inner_run]
+            inner_manifests = [
+                _read(path / "run_manifest.json") for path in args.inner_run
+            ]
+            inner_profiles = [
+                _read(path / "machine_profile.json") for path in args.inner_run
+            ]
             inner_plans = [_read(path / "plan.json") for path in args.inner_run]
+            inner_environments = [
+                _read(path / "target_environment.json") for path in args.inner_run
+            ]
+            inner_proposals = [
+                _read(path / "authorization_proposal.json") for path in args.inner_run
+            ]
+            inner_authorizations = [
+                _read(path / "effective_authorization.json") for path in args.inner_run
+            ]
             inner_entries = [
                 {
                     "run_directory": str(path.resolve()),
                     "manifest": manifest,
                     "profile": profile,
                     "plan": inner_plan,
+                    "environment": environment,
+                    "proposal": proposal,
+                    "authorization": authorization,
                     "validation": report,
                 }
-                for path, manifest, profile, inner_plan, report in zip(
+                for path, manifest, profile, inner_plan, environment, proposal, authorization, report in zip(
                     args.inner_run,
                     inner_manifests,
                     inner_profiles,
                     inner_plans,
+                    inner_environments,
+                    inner_proposals,
+                    inner_authorizations,
                     inner_reports,
                     strict=True,
                 )
             ]
-            if any(
-                manifest.get("evidence_scope") != "target_single_vm_measured"
-                for manifest in inner_manifests
-            ) or len(inner_manifests) != len(INNER_MODES) or {
-                manifest.get("mode") for manifest in inner_manifests
-            } != set(INNER_MODES):
+            if (
+                any(
+                    manifest.get("evidence_scope") != "target_single_vm_measured"
+                    for manifest in inner_manifests
+                )
+                or len(inner_manifests) != len(INNER_MODES)
+                or {manifest.get("mode") for manifest in inner_manifests}
+                != set(INNER_MODES)
+            ):
                 raise P7C4B2CError("inner_projection_not_target_evidence")
             raw_inner = project_inner(
                 inner_records, evidence_scope="target_single_vm_measured"
             )
             selected_mode = (overhead_mapping or {}).get("selected_mode")
             selected = raw_inner.get(selected_mode, {})
-            hours = (
-                selected.get("inner_fit_projection", {})
-                .get("conditional_work_conserving_elapsed_hours", {})
+            hours = selected.get("inner_fit_projection", {}).get(
+                "conditional_work_conserving_elapsed_hours", {}
             )
             bounds = hours.get("tc_gmc_range")
             if (
@@ -237,19 +260,21 @@ def main(argv: list[str] | None = None) -> int:
                 or not isinstance(hours.get("point"), (int, float))
             ):
                 raise P7C4B2CError("inner_projection_incomplete")
-            source_hashes = sorted([
-                sha256_canonical(
-                    {
-                        "manifest": manifest,
-                        "records": [
-                            record
-                            for record in inner_records
-                            if record.get("mode") == manifest.get("mode")
-                        ],
-                    }
-                )
-                for manifest in inner_manifests
-            ])
+            source_hashes = sorted(
+                [
+                    sha256_canonical(
+                        {
+                            "manifest": manifest,
+                            "records": [
+                                record
+                                for record in inner_records
+                                if record.get("mode") == manifest.get("mode")
+                            ],
+                        }
+                    )
+                    for manifest in inner_manifests
+                ]
+            )
             inner_projection = {
                 "schema_version": 1,
                 "artifact_type": "p7c4b2b_validated_inner_projection",

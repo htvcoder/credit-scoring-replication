@@ -280,6 +280,26 @@ cho phép chạy target canary.
 
 ## Post-canary projection-preflight scope
 
+P7C.4B.2b target inner-fit uses a separate typed contract with stage
+`target_inner_fit_projection_preflight` and approval phrase
+`APPROVE_P7C4B2B_TARGET_INNER_PREFLIGHT`. Its environment, proposal and effective
+authorization bind exactly 54 ordered tasks for one CPU mode, the B2b plan,
+scientific manifest, machine profile, output/run identity and unchanged B2b
+resource policy. The B2d canary/outer schemas and approval phrases are rejected
+by B2b; B2b authorization cannot authorize outer or canonical work.
+
+The old B2b `--bounded-preflight-authorized` option is a deprecated CLI surface
+and never authorizes a fresh target run. Historical B2b artifacts remain
+read-only validator-compatible, but artifacts without the typed chain cannot be
+fresh combined-projection constituents.
+
+Operator launch evidence uses the closed operations-helper stage name
+`target-inner-preflight`; this maps only to the B2b launch/receipt artifact
+types and does not replace the authorization stage above. The launch record
+binds all four canonical control paths/hashes/digests and the exact runner argv,
+working directory, Python, output and systemd unit. Its one-time receipt proves
+submission/invocation state only; it never proves compute or scientific success.
+
 Sau closeout canary, cùng contract P7C.4B.2d hỗ trợ scope engineering
 `target_projection_preflight`, chọn deterministic toàn bộ 162 task của một CPU
 mode. Accepted canary dùng source SHA cũ nên không được ghép với post-merge
