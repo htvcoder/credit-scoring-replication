@@ -234,10 +234,11 @@ test ! -e "$LAUNCH_P1"
 test ! -e "$CLAIM_P1"
 test ! -e "$RECEIPT_P1"
 systemctl --user is-active --quiet "$UNIT_P1" && exit 4 || true
-ARGV_P1=$(jq -cn --args "$PYTHON" -m creditrep.experiments.p7c4b2b_cli run \
+ARGV_P1=$(jq -cn --args '$ARGS.positional' -- \
+  "$PYTHON" -m creditrep.experiments.p7c4b2b_cli run \
   --mode cpu_parallel_1 --profile "$PROFILE_P1" --target-machine-asserted \
   --target-environment "$ENV_P1" --authorization-proposal "$PROPOSAL_P1" \
-  --effective-authorization "$AUTH_P1" --output-dir "$OUT_P1" '$ARGS.positional')
+  --effective-authorization "$AUTH_P1" --output-dir "$OUT_P1")
 "$PYTHON" -m creditrep.experiments.p7c4b2e_operations_cli create-launch-record \
   --execution-stage target-inner-preflight --record "$LAUNCH_P1" \
   --git-commit "$EXPECTED_HEAD" --operator-identity "$OPERATOR_IDENTITY" \
@@ -353,10 +354,11 @@ test ! -e "$RESUME_CLAIM_P1"
 test ! -e "$RESUME_RECEIPT_P1"
 test ! -e "$RESUME_SNAPSHOT_P1"
 systemctl --user is-active --quiet "$RESUME_UNIT_P1" && exit 4 || true
-RESUME_ARGV_P1=$(jq -cn --args "$PYTHON" -m creditrep.experiments.p7c4b2b_cli resume \
+RESUME_ARGV_P1=$(jq -cn --args '$ARGS.positional' -- \
+  "$PYTHON" -m creditrep.experiments.p7c4b2b_cli resume \
   --mode cpu_parallel_1 --profile "$PROFILE_P1" --target-machine-asserted \
   --target-environment "$ENV_P1" --authorization-proposal "$PROPOSAL_P1" \
-  --effective-authorization "$AUTH_P1" --output-dir "$OUT_P1" '$ARGS.positional')
+  --effective-authorization "$AUTH_P1" --output-dir "$OUT_P1")
 "$PYTHON" -m creditrep.experiments.p7c4b2e_operations_cli create-launch-record \
   --execution-stage target-inner-preflight --record "$RESUME_LAUNCH_P1" \
   --git-commit "$EXPECTED_HEAD" --operator-identity "$OPERATOR_IDENTITY" \
