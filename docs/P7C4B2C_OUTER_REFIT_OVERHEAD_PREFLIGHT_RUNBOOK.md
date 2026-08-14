@@ -162,6 +162,173 @@ digests; it does not provide cryptographic authenticity against an attacker able
 to rewrite every locked input, authorization and provenance artifact together.
 Digests and checksums are not signatures.
 
+## Typed target outer operations flow
+
+The target outer stage is `target-outer-projection-preflight`; it maps only to
+the authorization protocol stage `target_projection_preflight`. Never substitute
+`target-inner-preflight`, invoke the runner directly, or hand-write operational
+JSON. The following is the executable P1 flow. P2 uses a separately reviewed
+`ENV_P2`/`PROPOSAL_P2`/`AUTH_P2`/`OUT_P2` chain, mode `cpu_parallel_2`, a `p2`
+unit prefix, and may be submitted only after P1 closeout passes.
+
+```bash
+set -euo pipefail
+REPO=/srv/credit-scoring-replication
+PYTHON="$REPO/.venv/bin/python"
+MODE_P1=cpu_parallel_1
+OUT_P1="$REPO/artifacts/p7c4b2c-outer/$RUN_ID_P1"
+UNIT_P1="p7c4b2c-outer-p1-$RUN_ID_P1"
+LOG_P1="$REPO/artifacts/p7c4b2c-operations/$UNIT_P1.log"
+LAUNCH_P1="$REPO/artifacts/p7c4b2c-operations/$UNIT_P1.launch.json"
+CLAIM_P1="${LAUNCH_P1%/*}/.${LAUNCH_P1##*/}.submission-claim.json"
+RECEIPT_P1="$REPO/artifacts/p7c4b2c-operations/$UNIT_P1.receipt.json"
+SNAPSHOT_P1="$REPO/artifacts/p7c4b2c-operations/$UNIT_P1.unit.json"
+cd "$REPO"
+test ! -e "$OUT_P1"
+test ! -e "$LAUNCH_P1" && test ! -e "$CLAIM_P1" && test ! -e "$RECEIPT_P1"
+```
+
+Validate the existing controls read-only. This does not create or refresh an
+authorization.
+
+```bash
+"$PYTHON" -m creditrep.experiments.p7c4b2d_cli \
+  validate-authorization-proposal --environment "$ENV_P1" \
+  --proposal "$PROPOSAL_P1"
+"$PYTHON" -m creditrep.experiments.p7c4b2d_cli \
+  validate-effective-authorization --environment "$ENV_P1" \
+  --proposal "$PROPOSAL_P1" --authorization "$AUTH_P1"
+ARGV_P1=$(jq -cn --args '$ARGS.positional' -- \
+  "$PYTHON" -m creditrep.experiments.p7c4b2c_cli run \
+  --execution-class target_preflight --mode "$MODE_P1" --output "$OUT_P1" \
+  --target-environment "$ENV_P1" --authorization-proposal "$PROPOSAL_P1" \
+  --effective-authorization "$AUTH_P1")
+```
+
+Create the immutable launch record, then stop for the explicit compute boundary.
+
+```bash
+"$PYTHON" -m creditrep.experiments.p7c4b2e_operations_cli \
+  create-launch-record --execution-stage target-outer-projection-preflight \
+  --record "$LAUNCH_P1" --git-commit "$(git rev-parse HEAD)" \
+  --operator-identity "$OPERATOR_ID" --authorization "$AUTH_P1" \
+  --environment "$ENV_P1" --proposal "$PROPOSAL_P1" --unit "$UNIT_P1" \
+  --argv-json "$ARGV_P1" --working-directory "$REPO" \
+  --python-executable "$PYTHON" --output-directory "$OUT_P1" --log-path "$LOG_P1"
+```
+
+```text
+TARGET_OUTER_PROJECTION_PREFLIGHT_COMPUTE_BOUNDARY
+```
+
+Claim exactly once immediately before submission. After this command succeeds,
+or after any `Running as unit` response, **never submit again**, including after
+an SSH disconnect. Recover the same unit and write its one-time receipt.
+
+```bash
+"$PYTHON" -m creditrep.experiments.p7c4b2e_operations_cli \
+  create-submission-claim --launch-record "$LAUNCH_P1" --receipt "$RECEIPT_P1"
+set +e
+systemd-run --user --unit="$UNIT_P1" --working-directory="$REPO" \
+  --property="StandardOutput=append:$LOG_P1" \
+  --property="StandardError=append:$LOG_P1" \
+  "$PYTHON" -m creditrep.experiments.p7c4b2c_cli run \
+  --execution-class target_preflight --mode "$MODE_P1" --output "$OUT_P1" \
+  --target-environment "$ENV_P1" --authorization-proposal "$PROPOSAL_P1" \
+  --effective-authorization "$AUTH_P1"
+SYSTEMD_RUN_RC=$?
+set -e
+```
+
+Parse `systemctl show` key/value output; do not request JSON from systemctl.
+The parser supplies every closed snapshot field even when submission failed.
+
+```bash
+{ systemctl --user show "$UNIT_P1" \
+  --property=LoadState,ActiveState,SubState,MainPID,ExecMainCode,ExecMainStatus,Result,InvocationID,ExecMainStartTimestamp,ExecMainExitTimestamp || true; } \
+  | "$PYTHON" -c 'import json,sys; keys="LoadState ActiveState SubState MainPID ExecMainCode ExecMainStatus Result InvocationID ExecMainStartTimestamp ExecMainExitTimestamp".split(); got=dict(line.rstrip("\n").split("=",1) for line in sys.stdin if "=" in line); print(json.dumps({k:got.get(k,"") for k in keys},sort_keys=True))' \
+  > "$SNAPSHOT_P1"
+"$PYTHON" -m creditrep.experiments.p7c4b2e_operations_cli \
+  create-submission-receipt --receipt "$RECEIPT_P1" \
+  --launch-record "$LAUNCH_P1" --unit "$UNIT_P1" \
+  --unit-snapshot-json "$(cat "$SNAPSHOT_P1")" \
+  --systemd-run-exit-code "$SYSTEMD_RUN_RC"
+```
+
+The receipt proves only the submission outcome and InvocationID binding; it does
+not prove compute success. Monitor read-only, then close out P1 before preparing
+or claiming P2.
+
+```bash
+systemctl --user show "$UNIT_P1" \
+  --property=LoadState,ActiveState,SubState,MainPID,Result,InvocationID
+journalctl --user -u "$UNIT_P1" --no-pager --lines=100
+"$PYTHON" -m creditrep.experiments.p7c4b2c_cli \
+  validate-artifacts --run-dir "$OUT_P1"
+test -f "$OUT_P1/COMPLETED.json"
+```
+
+For recovery, first rebuild `SNAPSHOT_P1` with the proven key/value parser above.
+Resume only a validator-recognized incomplete run with inactive unit/process and
+the original controls. A corrupt, completed, mismatched, or active run is NO-GO.
+
+```bash
+"$PYTHON" -m creditrep.experiments.p7c4b2e_operations_cli resume-precheck \
+  --run-dir "$OUT_P1" --launch-record "$LAUNCH_P1" \
+  --unit-snapshot-json "$(cat "$SNAPSHOT_P1")" \
+  --environment "$ENV_P1" --proposal "$PROPOSAL_P1" --authorization "$AUTH_P1"
+RESUME_UNIT_P1="p7c4b2c-outer-p1-$RUN_ID_P1-resume-$RESUME_ID"
+RESUME_LAUNCH_P1="$REPO/artifacts/p7c4b2c-operations/$RESUME_UNIT_P1.launch.json"
+RESUME_RECEIPT_P1="$REPO/artifacts/p7c4b2c-operations/$RESUME_UNIT_P1.receipt.json"
+RESUME_LOG_P1="$REPO/artifacts/p7c4b2c-operations/$RESUME_UNIT_P1.log"
+RESUME_ARGV_P1=$(jq -cn --args '$ARGS.positional' -- \
+  "$PYTHON" -m creditrep.experiments.p7c4b2c_cli resume --run-dir "$OUT_P1" \
+  --target-environment "$ENV_P1" --authorization-proposal "$PROPOSAL_P1" \
+  --effective-authorization "$AUTH_P1")
+```
+
+Create the fresh resume launch with `RESUME_ARGV_P1`, fresh unit/log paths, then
+record and claim it as follows.
+
+```bash
+"$PYTHON" -m creditrep.experiments.p7c4b2e_operations_cli \
+  create-launch-record --execution-stage target-outer-projection-preflight \
+  --record "$RESUME_LAUNCH_P1" --git-commit "$(git rev-parse HEAD)" \
+  --launch-record "$LAUNCH_P1" \
+  --operator-identity "$OPERATOR_ID" --authorization "$AUTH_P1" \
+  --environment "$ENV_P1" --proposal "$PROPOSAL_P1" --unit "$RESUME_UNIT_P1" \
+  --argv-json "$RESUME_ARGV_P1" --working-directory "$REPO" \
+  --python-executable "$PYTHON" --output-directory "$OUT_P1" \
+  --log-path "$RESUME_LOG_P1"
+```
+
+```text
+TARGET_OUTER_PROJECTION_PREFLIGHT_RESUME_COMPUTE_BOUNDARY
+```
+
+```bash
+"$PYTHON" -m creditrep.experiments.p7c4b2e_operations_cli \
+  create-submission-claim --launch-record "$RESUME_LAUNCH_P1" \
+  --receipt "$RESUME_RECEIPT_P1"
+set +e
+systemd-run --user --unit="$RESUME_UNIT_P1" --working-directory="$REPO" \
+  --property="StandardOutput=append:$RESUME_LOG_P1" \
+  --property="StandardError=append:$RESUME_LOG_P1" \
+  "$PYTHON" -m creditrep.experiments.p7c4b2c_cli resume --run-dir "$OUT_P1" \
+  --target-environment "$ENV_P1" --authorization-proposal "$PROPOSAL_P1" \
+  --effective-authorization "$AUTH_P1"
+RESUME_SYSTEMD_RUN_RC=$?
+set -e
+```
+
+After the claim or any `Running as unit` response, never submit again. Snapshot
+`RESUME_UNIT_P1` with the same key/value Python parser, then create the receipt
+with `RESUME_LAUNCH_P1`, `RESUME_RECEIPT_P1`, the fresh unit snapshot and
+`RESUME_SYSTEMD_RUN_RC`. Repeat read-only monitoring and public validation.
+Never reuse the initial launch, unit, claim or receipt. Resume does not replace
+authorization, reset runtime/budget, widen task scope, or turn completed/invalid
+evidence into PASS.
+
 Target plans also declare the closed `runtime_input_binding` contract. Its
 `locked_runtime_inputs_digest` is a canonical semantic projection of the complete
 Protocol A typed config; the AC/GMC active file, target mapping, identifier,
