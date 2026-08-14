@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+import shlex
 
 import pytest
 
@@ -13,6 +15,73 @@ from creditrep.experiments.p7c4b2e_operations_cli import (
     create_submission_receipt,
     resume_precheck,
 )
+
+
+RUNBOOK = Path(__file__).parents[1] / "docs" / "P7C4B2B_SINGLE_VM_PREFLIGHT_RUNBOOK.md"
+
+
+def _logical_shell_commands(text):
+    command = ""
+    for line in text.splitlines():
+        stripped = line.strip()
+        command += stripped[:-1] + " " if stripped.endswith("\\") else stripped
+        if not stripped.endswith("\\"):
+            if command:
+                yield command
+            command = ""
+
+
+def _runbook_argv(command):
+    jq_command = command[command.index("$(") + 2 : -1]
+    tokens = shlex.split(jq_command)
+    assert tokens[:5] == ["jq", "-cn", "--args", "$ARGS.positional", "--"]
+    return tokens[5:]
+
+
+def test_b2b_runbook_jq_argv_matches_exact_submitted_commands():
+    commands = list(_logical_shell_commands(RUNBOOK.read_text(encoding="utf-8")))
+    constructions = {
+        command.split("=", 1)[0]: _runbook_argv(command)
+        for command in commands
+        if "jq -cn --args" in command
+    }
+    assert set(constructions) == {"ARGV_P1", "RESUME_ARGV_P1"}
+
+    expected_run = [
+        "$PYTHON",
+        "-m",
+        "creditrep.experiments.p7c4b2b_cli",
+        "run",
+        "--mode",
+        "cpu_parallel_1",
+        "--profile",
+        "$PROFILE_P1",
+        "--target-machine-asserted",
+        "--target-environment",
+        "$ENV_P1",
+        "--authorization-proposal",
+        "$PROPOSAL_P1",
+        "--effective-authorization",
+        "$AUTH_P1",
+        "--output-dir",
+        "$OUT_P1",
+    ]
+    expected_resume = [*expected_run[:3], "resume", *expected_run[4:]]
+    assert constructions == {
+        "ARGV_P1": expected_run,
+        "RESUME_ARGV_P1": expected_resume,
+    }
+
+    submitted = {}
+    for command in commands:
+        if command.startswith("systemd-run ") and "p7c4b2b_cli" in command:
+            tokens = shlex.split(command)
+            argv = tokens[tokens.index("$PYTHON") :]
+            submitted[argv[3]] = argv
+    assert submitted == {"run": expected_run, "resume": expected_resume}
+    assert not {"--fixture", "--max-tasks", "--timeout-seconds"}.intersection(
+        token for argv in constructions.values() for token in argv
+    )
 
 
 def _input(path, value):
