@@ -80,6 +80,34 @@ def _nonempty(value: Any) -> str:
     return value.strip()
 
 
+def _resolve_operational_path(path: Path) -> Path:
+    try:
+        return path.resolve(strict=False)
+    except (OSError, RuntimeError) as exc:
+        raise OperationsError("operational_identity_mismatch") from exc
+
+
+def _resolved_operational_paths(paths: dict[str, Path]) -> dict[str, Path]:
+    resolved = {name: _resolve_operational_path(path) for name, path in paths.items()}
+    if any(
+        _resolve_operational_path(paths[name]) != identity
+        for name, identity in resolved.items()
+    ):
+        raise OperationsError("operational_identity_mismatch")
+    return resolved
+
+
+def _revalidate_operational_paths(
+    paths: dict[str, Path], identities: dict[str, Path]
+) -> None:
+    if _resolved_operational_paths(paths) != identities:
+        raise OperationsError("operational_identity_mismatch")
+
+
+def _is_absolute_operational_path(value: str) -> bool:
+    return Path(value).is_absolute() or PurePosixPath(value).is_absolute()
+
+
 def _utc_now() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
@@ -176,6 +204,7 @@ def create_launch_record(
         if machine_profile_path is None:
             raise OperationsError("machine_profile_missing")
         profile, _profile_hash = _json_input(machine_profile_path)
+        authorized_output = authorization.get("normalized_output_directory")
         if (
             authorization.get("execution_stage")
             != AUTHORIZATION_STAGE_BY_OPERATION_STAGE[execution_stage]
@@ -185,25 +214,59 @@ def create_launch_record(
             != AUTHORIZATION_STAGE_BY_OPERATION_STAGE[execution_stage]
             or authorization.get("source_git_commit") != git_commit
             or environment.get("source_git_commit") != git_commit
-            or authorization.get("normalized_output_directory") != output_directory
+            or not isinstance(authorized_output, str)
+            or not authorized_output
             or profile.get("git_commit") != git_commit
             or profile.get("profile_digest")
             != authorization.get("machine_profile_digest")
         ):
             raise OperationsError("operational_identity_mismatch")
-        working_path = PurePosixPath(working_directory)
-        python_path = PurePosixPath(python_executable)
-        output_path = PurePosixPath(output_directory)
+        working_path = Path(working_directory)
+        python_path = Path(python_executable)
+        output_path = Path(output_directory)
+        authorized_output_path = Path(authorized_output)
+        expected_python = working_path / ".venv" / "bin" / "python"
         expected_output_root = working_path / "artifacts" / "p7c4b2b-compute-preflight"
+        if (
+            not all(
+                _is_absolute_operational_path(value)
+                for value in (
+                    working_directory,
+                    python_executable,
+                    output_directory,
+                    authorized_output,
+                )
+            )
+            or any(
+                ".." in path.parts
+                for path in (
+                    working_path,
+                    python_path,
+                    output_path,
+                    authorized_output_path,
+                )
+            )
+            or output_path.is_symlink()
+        ):
+            raise OperationsError("operational_working_directory_mismatch")
+        operational_paths = {
+            "working": working_path,
+            "python": python_path,
+            "expected_python": expected_python,
+            "output": output_path,
+            "authorized_output": authorized_output_path,
+            "output_root": expected_output_root,
+        }
+        resolved_paths = _resolved_operational_paths(operational_paths)
+        if resolved_paths["output"] != resolved_paths["authorized_output"]:
+            raise OperationsError("operational_identity_mismatch")
         try:
-            output_path.relative_to(expected_output_root)
+            resolved_paths["output"].relative_to(resolved_paths["output_root"])
         except ValueError as exc:
             raise OperationsError("operational_working_directory_mismatch") from exc
-        if (
-            not working_path.is_absolute()
-            or python_path != working_path / ".venv" / "bin" / "python"
-            or output_path.name != authorization.get("run_id")
-        ):
+        if resolved_paths["python"] != resolved_paths[
+            "expected_python"
+        ] or output_path.name != authorization.get("run_id"):
             raise OperationsError("operational_working_directory_mismatch")
         if (
             not unit.startswith("p7c4b2b-inner-")
@@ -232,6 +295,7 @@ def create_launch_record(
         ]
         if runner_command not in {"run", "resume"} or argv != expected_argv:
             raise OperationsError("operational_argv_mismatch")
+        _revalidate_operational_paths(operational_paths, resolved_paths)
     value = {
         "schema_version": LAUNCH_RECORD_SCHEMA_VERSION,
         "artifact_type": artifact_type,
