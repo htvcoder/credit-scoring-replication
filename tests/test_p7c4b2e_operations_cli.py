@@ -3,12 +3,16 @@ from __future__ import annotations
 import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor
+import os
 from pathlib import Path
 import shlex
+import subprocess
 
 import pytest
 
+from creditrep.experiments import p7c4b2e_operations_cli as operations
 from creditrep.experiments.p7c4b2e_operations_cli import (
+    OperationsError,
     UNIT_SNAPSHOT_FIELDS,
     create_launch_record,
     create_submission_claim,
@@ -255,9 +259,19 @@ def test_resume_precheck_fails_closed_when_required_run_artifacts_are_absent(tmp
     assert "resume_precheck_missing_required_artifact" in value["reason_codes"]
 
 
-def _typed_inner_launch(tmp_path, *, runner_command="run", extra_argv=()):
+def _typed_inner_launch(
+    tmp_path,
+    *,
+    runner_command="run",
+    extra_argv=(),
+    working_directory="/srv/repo",
+    python_executable="/srv/repo/.venv/bin/python",
+    output_directory="/srv/repo/artifacts/p7c4b2b-compute-preflight/run-01",
+    authorized_output_directory=None,
+    run_id="run-01",
+):
     commit = "b" * 40
-    output = "/srv/repo/artifacts/p7c4b2b-compute-preflight/run-01"
+    authorized_output_directory = authorized_output_directory or output_directory
 
     def typed(value, field):
         encoded = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
@@ -284,9 +298,9 @@ def _typed_inner_launch(tmp_path, *, runner_command="run", extra_argv=()):
         {
             "execution_stage": "target_inner_fit_projection_preflight",
             "source_git_commit": commit,
-            "normalized_output_directory": output,
+            "normalized_output_directory": authorized_output_directory,
             "machine_profile_digest": profile_value["profile_digest"],
-            "run_id": "run-01",
+            "run_id": run_id,
             "mode": "cpu_parallel_1",
         },
         "authorization_digest",
@@ -307,9 +321,8 @@ def _typed_inner_launch(tmp_path, *, runner_command="run", extra_argv=()):
         tmp_path / "authorization.json",
         json.dumps(authorization_value),
     )
-    python = "/srv/repo/.venv/bin/python"
     argv = [
-        python,
+        python_executable,
         "-m",
         "creditrep.experiments.p7c4b2b_cli",
         runner_command,
@@ -325,7 +338,7 @@ def _typed_inner_launch(tmp_path, *, runner_command="run", extra_argv=()):
         "--effective-authorization",
         str(authorization),
         "--output-dir",
-        output,
+        output_directory,
     ]
     argv.extend(extra_argv)
     launch_path = tmp_path / "inner-launch.json"
@@ -337,15 +350,191 @@ def _typed_inner_launch(tmp_path, *, runner_command="run", extra_argv=()):
         environment_path=environment,
         proposal_path=proposal,
         machine_profile_path=profile,
-        unit="p7c4b2b-inner-p1-run-01",
+        unit=f"p7c4b2b-inner-p1-{run_id}",
         argv=argv,
-        working_directory="/srv/repo",
-        python_executable=python,
-        output_directory=output,
+        working_directory=working_directory,
+        python_executable=python_executable,
+        output_directory=output_directory,
         log_path="/secure/run-01.log",
         execution_stage="target-inner-preflight",
     )
     return launch_path, tmp_path / "inner-receipt.json", launch, profile_value
+
+
+def _directory_alias(alias, target):
+    try:
+        alias.symlink_to(target, target_is_directory=True)
+    except OSError:
+        if os.name != "nt":
+            pytest.skip("platform cannot create directory symlinks")
+        completed = subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(alias), str(target)],
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+        if completed.returncode:
+            pytest.skip("platform cannot create a directory alias")
+
+
+def test_typed_launch_accepts_canonical_repository_alias(tmp_path):
+    physical_repo = tmp_path / "physical-repo"
+    physical_repo.mkdir()
+    (physical_repo / ".venv" / "bin").mkdir(parents=True)
+    (physical_repo / "artifacts" / "p7c4b2b-compute-preflight").mkdir(parents=True)
+    canonical_repo = tmp_path / "canonical-repo"
+    _directory_alias(canonical_repo, physical_repo)
+    logical_output = (
+        canonical_repo / "artifacts" / "p7c4b2b-compute-preflight" / "run-01"
+    )
+    physical_output = (
+        physical_repo / "artifacts" / "p7c4b2b-compute-preflight" / "run-01"
+    )
+
+    _path, _receipt, launch, _profile = _typed_inner_launch(
+        tmp_path,
+        working_directory=str(canonical_repo),
+        python_executable=str(canonical_repo / ".venv" / "bin" / "python"),
+        output_directory=str(logical_output),
+        authorized_output_directory=str(physical_output),
+    )
+    assert launch["working_directory"] == str(canonical_repo)
+    assert launch["output_directory"] == str(logical_output)
+
+
+def test_operational_path_resolution_equivalence_is_platform_independent(
+    monkeypatch,
+):
+    logical = Path("logical-repository/output")
+    physical = Path("physical-repository/output")
+
+    def equivalent(path):
+        return physical if path in {logical, physical} else path
+
+    monkeypatch.setattr(operations, "_resolve_operational_path", equivalent)
+    resolved = operations._resolved_operational_paths(
+        {"logical": logical, "physical": physical}
+    )
+    assert resolved == {"logical": physical, "physical": physical}
+
+
+def test_operational_path_resolution_rejects_injected_parent_retarget(monkeypatch):
+    logical = Path("logical-repository/output")
+    physical_one = Path("physical-one/output")
+    physical_two = Path("physical-two/output")
+    target = physical_one
+
+    def retargeting(path):
+        if path == logical:
+            return target
+        return physical_one
+
+    monkeypatch.setattr(operations, "_resolve_operational_path", retargeting)
+    paths = {"logical": logical, "physical": physical_one}
+    identities = operations._resolved_operational_paths(paths)
+    target = physical_two
+    with pytest.raises(OperationsError, match="^operational_identity_mismatch$"):
+        operations._revalidate_operational_paths(paths, identities)
+
+
+@pytest.mark.parametrize(
+    "case,reason",
+    [
+        ("different-physical-output", "operational_identity_mismatch"),
+        ("python-outside-venv", "operational_working_directory_mismatch"),
+        ("output-outside-root", "operational_working_directory_mismatch"),
+        ("output-traversal", "operational_working_directory_mismatch"),
+        ("run-id-mismatch", "operational_working_directory_mismatch"),
+    ],
+)
+def test_typed_launch_rejects_invalid_operational_path_identity(tmp_path, case, reason):
+    repo = tmp_path / "repo"
+    (repo / ".venv" / "bin").mkdir(parents=True)
+    output_root = repo / "artifacts" / "p7c4b2b-compute-preflight"
+    output_root.mkdir(parents=True)
+    output = output_root / "run-01"
+    authorized_output = output
+    python = repo / ".venv" / "bin" / "python"
+    run_id = "run-01"
+    if case == "different-physical-output":
+        authorized_output = tmp_path / "different-repo" / "run-01"
+    elif case == "python-outside-venv":
+        python = tmp_path / "different-python"
+    elif case == "output-outside-root":
+        output = repo / "outside" / "run-01"
+        authorized_output = output
+    elif case == "output-traversal":
+        output = output_root / ".." / "outside" / "run-01"
+        authorized_output = output
+    elif case == "run-id-mismatch":
+        run_id = "different-run-id"
+
+    with pytest.raises(OperationsError, match=f"^{reason}$"):
+        _typed_inner_launch(
+            tmp_path,
+            working_directory=str(repo),
+            python_executable=str(python),
+            output_directory=str(output),
+            authorized_output_directory=str(authorized_output),
+            run_id=run_id,
+        )
+
+
+def test_typed_launch_rejects_output_symlink_escape(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / ".venv" / "bin").mkdir(parents=True)
+    output_root = repo / "artifacts" / "p7c4b2b-compute-preflight"
+    output_root.mkdir(parents=True)
+    outside = tmp_path / "outside" / "run-01"
+    outside.mkdir(parents=True)
+    logical_output = output_root / "run-01"
+    _directory_alias(logical_output, outside)
+
+    with pytest.raises(
+        OperationsError, match="^operational_working_directory_mismatch$"
+    ):
+        _typed_inner_launch(
+            tmp_path,
+            working_directory=str(repo),
+            python_executable=str(repo / ".venv" / "bin" / "python"),
+            output_directory=str(logical_output),
+            authorized_output_directory=str(outside),
+        )
+
+
+def test_typed_launch_rejects_real_parent_symlink_retarget(tmp_path, monkeypatch):
+    physical_one = tmp_path / "physical-one"
+    physical_two = tmp_path / "physical-two"
+    for repo in (physical_one, physical_two):
+        (repo / ".venv" / "bin").mkdir(parents=True)
+        (repo / "artifacts" / "p7c4b2b-compute-preflight").mkdir(parents=True)
+    canonical = tmp_path / "canonical-repo"
+    try:
+        canonical.symlink_to(physical_one, target_is_directory=True)
+    except OSError:
+        pytest.skip("platform cannot create directory symlinks")
+    real_revalidator = operations._revalidate_operational_paths
+
+    def retarget_after_binding(paths, identities):
+        canonical.unlink()
+        canonical.symlink_to(physical_two, target_is_directory=True)
+        real_revalidator(paths, identities)
+
+    monkeypatch.setattr(
+        operations, "_revalidate_operational_paths", retarget_after_binding
+    )
+    logical_output = canonical / "artifacts" / "p7c4b2b-compute-preflight" / "run-01"
+    authorized_output = (
+        physical_one / "artifacts" / "p7c4b2b-compute-preflight" / "run-01"
+    )
+    with pytest.raises(OperationsError, match="^operational_identity_mismatch$"):
+        _typed_inner_launch(
+            tmp_path,
+            working_directory=str(canonical),
+            python_executable=str(canonical / ".venv" / "bin" / "python"),
+            output_directory=str(logical_output),
+            authorized_output_directory=str(authorized_output),
+        )
 
 
 def test_typed_inner_preflight_launch_and_receipt(tmp_path):
