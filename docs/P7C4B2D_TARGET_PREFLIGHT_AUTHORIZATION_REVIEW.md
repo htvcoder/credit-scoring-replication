@@ -310,6 +310,14 @@ Scope này dùng approval phrase riêng
 Authorization chỉ mở đúng engineering preflight task IDs; nó không làm scientific
 projection eligible và không authorize canonical scientific execution.
 
+Outer operator evidence uses the distinct closed operations stage
+`target-outer-projection-preflight`, mapped exactly to protocol stage
+`target_projection_preflight`. Its typed launch/claim/receipt chain binds the
+source, mode, 162-task digest, logical/resolved output, all three control
+artifacts, exact run or resume argv, unit and InvocationID. It cannot be replaced
+by the inner stage, direct runner submission or loose operator JSON. A receipt
+proves submission outcome only; P1 closeout is required before P2 submission.
+
 Mỗi projection-preflight authorization bind riêng đúng 12 giờ, USD 5, timeout
 20 phút/task, aggregate process-tree RSS 12884901888 byte, zero tolerated task
 failure và in-flight count bằng worker count với hard cap 2. Environment phải có

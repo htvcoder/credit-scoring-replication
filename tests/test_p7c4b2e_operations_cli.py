@@ -22,6 +22,11 @@ from creditrep.experiments.p7c4b2e_operations_cli import (
 
 
 RUNBOOK = Path(__file__).parents[1] / "docs" / "P7C4B2B_SINGLE_VM_PREFLIGHT_RUNBOOK.md"
+OUTER_RUNBOOK = (
+    Path(__file__).parents[1]
+    / "docs"
+    / "P7C4B2C_OUTER_REFIT_OVERHEAD_PREFLIGHT_RUNBOOK.md"
+)
 
 
 def _logical_shell_commands(text):
@@ -86,6 +91,52 @@ def test_b2b_runbook_jq_argv_matches_exact_submitted_commands():
     assert not {"--fixture", "--max-tasks", "--timeout-seconds"}.intersection(
         token for argv in constructions.values() for token in argv
     )
+
+
+def test_outer_runbook_jq_argv_matches_exact_submitted_commands():
+    commands = list(_logical_shell_commands(OUTER_RUNBOOK.read_text(encoding="utf-8")))
+    constructions = {
+        command.split("=", 1)[0]: _runbook_argv(command)
+        for command in commands
+        if "jq -cn --args" in command
+    }
+    expected_run = [
+        "$PYTHON",
+        "-m",
+        "creditrep.experiments.p7c4b2c_cli",
+        "run",
+        "--execution-class",
+        "target_preflight",
+        "--mode",
+        "$MODE_P1",
+        "--output",
+        "$OUT_P1",
+        "--target-environment",
+        "$ENV_P1",
+        "--authorization-proposal",
+        "$PROPOSAL_P1",
+        "--effective-authorization",
+        "$AUTH_P1",
+    ]
+    expected_resume = [
+        *expected_run[:3],
+        "resume",
+        "--run-dir",
+        "$OUT_P1",
+        *expected_run[10:],
+    ]
+    assert constructions == {
+        "ARGV_P1": expected_run,
+        "RESUME_ARGV_P1": expected_resume,
+    }
+    submitted = {}
+    for command in commands:
+        if command.startswith("systemd-run ") and "p7c4b2c_cli" in command:
+            tokens = shlex.split(command)
+            runner = tokens[tokens.index("$PYTHON") :]
+            submitted[runner[3]] = runner
+    assert submitted == {"run": expected_run, "resume": expected_resume}
+    assert "systemctl --output=json" not in OUTER_RUNBOOK.read_text(encoding="utf-8")
 
 
 def _input(path, value):
@@ -644,3 +695,350 @@ def test_unknown_typed_execution_stage_is_rejected(tmp_path):
             log_path="/secure/log",
             execution_stage="unknown",
         )
+
+
+def _typed_outer_launch(
+    tmp_path,
+    *,
+    mode="cpu_parallel_1",
+    runner_command="run",
+    argv_mutation=None,
+    output_directory=None,
+    authorized_output_directory=None,
+    working_directory=None,
+    unit=None,
+):
+    commit = "c" * 40
+    repo = Path(working_directory) if working_directory else tmp_path / "repo"
+    (repo / ".venv" / "bin").mkdir(parents=True, exist_ok=True)
+    (repo / "artifacts").mkdir(exist_ok=True)
+    output = (
+        Path(output_directory) if output_directory else repo / "artifacts" / "outer-run"
+    )
+    authorized_output = (
+        Path(authorized_output_directory) if authorized_output_directory else output
+    )
+    if runner_command == "resume":
+        output.mkdir(parents=True, exist_ok=True)
+    python = repo / ".venv" / "bin" / "python"
+    task_ids = [f"task-{index:03d}" for index in range(162)]
+
+    def typed(value, field):
+        value[field] = operations._record_digest(value, field)
+        return value
+
+    environment_value = typed(
+        {
+            "git_commit": commit,
+            "execution_mode": mode,
+            "output_directory": str(authorized_output),
+        },
+        "environment_digest",
+    )
+    proposal_value = typed(
+        {
+            "execution_stage": "target_projection_preflight",
+            "git_commit": commit,
+            "execution_mode": mode,
+            "output_directory": str(authorized_output),
+            "target_environment_digest": environment_value["environment_digest"],
+            "task_ids": task_ids,
+            "maximum_task_count": 162,
+        },
+        "proposal_digest",
+    )
+    authorization_value = typed(
+        {
+            "execution_stage": "target_projection_preflight",
+            "git_commit": commit,
+            "execution_mode": mode,
+            "output_directory": str(authorized_output),
+            "target_environment_digest": environment_value["environment_digest"],
+            "proposal_digest": proposal_value["proposal_digest"],
+            "task_ids": task_ids,
+            "maximum_task_count": 162,
+        },
+        "authorization_digest",
+    )
+    environment = _input(
+        tmp_path / f"environment-{mode}.json", json.dumps(environment_value)
+    )
+    proposal = _input(tmp_path / f"proposal-{mode}.json", json.dumps(proposal_value))
+    authorization = _input(
+        tmp_path / f"authorization-{mode}.json", json.dumps(authorization_value)
+    )
+    controls = [
+        "--target-environment",
+        str(environment),
+        "--authorization-proposal",
+        str(proposal),
+        "--effective-authorization",
+        str(authorization),
+    ]
+    prefix = [str(python), "-m", "creditrep.experiments.p7c4b2c_cli", runner_command]
+    argv = (
+        [
+            *prefix,
+            "--execution-class",
+            "target_preflight",
+            "--mode",
+            mode,
+            "--output",
+            str(output),
+            *controls,
+        ]
+        if runner_command == "run"
+        else [*prefix, "--run-dir", str(output), *controls]
+    )
+    if argv_mutation:
+        argv_mutation(argv)
+    mode_token = "p1" if mode == "cpu_parallel_1" else "p2"
+    original_launch_path = None
+    if runner_command == "resume":
+        original_launch_path = tmp_path / f"outer-{mode_token}-original-launch.json"
+        original_launch = {
+            "schema_version": 1,
+            "artifact_type": "p7c4b2c_target_outer_projection_preflight_launch_record",
+            "execution_stage": "target-outer-projection-preflight",
+            "runner_command": "run",
+            "mode": mode,
+            "source_git_commit": commit,
+            "resolved_output_directory": str(output.resolve()),
+            "systemd_unit": f"p7c4b2c-outer-{mode_token}-outer-run-initial",
+            "environment": {"artifact_digest": environment_value["environment_digest"]},
+            "proposal": {"artifact_digest": proposal_value["proposal_digest"]},
+            "authorization": {
+                "artifact_digest": authorization_value["authorization_digest"]
+            },
+        }
+        original_launch["record_digest"] = operations._record_digest(
+            original_launch, "record_digest"
+        )
+        _input(original_launch_path, json.dumps(original_launch))
+    launch_path = tmp_path / f"outer-{mode_token}-{runner_command}-launch.json"
+    launch = create_launch_record(
+        record_path=launch_path,
+        git_commit=commit,
+        operator_identity="operator",
+        authorization_path=authorization,
+        environment_path=environment,
+        proposal_path=proposal,
+        unit=unit or f"p7c4b2c-outer-{mode_token}-outer-run-{runner_command}",
+        argv=argv,
+        working_directory=str(repo),
+        python_executable=str(python),
+        output_directory=str(output),
+        log_path=str(tmp_path / f"outer-{mode_token}.log"),
+        execution_stage="target-outer-projection-preflight",
+        resume_of_launch_record_path=original_launch_path,
+    )
+    return (
+        launch_path,
+        tmp_path / f"outer-{mode_token}-{runner_command}-receipt.json",
+        launch,
+        argv,
+    )
+
+
+@pytest.mark.parametrize("mode", ["cpu_parallel_1", "cpu_parallel_2"])
+def test_typed_outer_projection_run_launch_is_exact_and_bound(tmp_path, mode):
+    _path, _receipt, launch, argv = _typed_outer_launch(tmp_path, mode=mode)
+    assert launch["protocol_stage"] == "target_projection_preflight"
+    assert launch["mode"] == mode
+    assert launch["argv"] == argv
+    assert launch["task_set_digest"] == operations._canonical_digest(launch["task_ids"])
+    assert launch["resolved_output_directory"] == str(
+        Path(launch["output_directory"]).resolve()
+    )
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda argv: argv.__setitem__(2, "creditrep.experiments.p7c4b2b_cli"),
+        lambda argv: argv.__setitem__(3, "resume"),
+        lambda argv: argv.__setitem__(5, "synthetic_validation"),
+        lambda argv: argv.extend(["--max-samples", "1"]),
+        lambda argv: argv.extend(["--unknown", "value"]),
+        lambda argv: argv.__setitem__(6, "--output"),
+    ],
+)
+def test_typed_outer_projection_rejects_nonexact_argv(tmp_path, mutation):
+    with pytest.raises(OperationsError, match="^operational_argv_mismatch$"):
+        _typed_outer_launch(tmp_path, argv_mutation=mutation)
+
+
+def test_typed_outer_projection_resume_has_fresh_operational_identity(tmp_path):
+    launch_path, receipt_path, launch, argv = _typed_outer_launch(
+        tmp_path, runner_command="resume"
+    )
+    assert launch["runner_command"] == "resume"
+    assert launch["resume_of_launch_record"]["systemd_unit"].endswith("-initial")
+    assert argv[4:6] == ["--run-dir", launch["output_directory"]]
+    claim = create_submission_claim(
+        launch_record_path=launch_path, receipt_path=receipt_path
+    )
+    snapshot = {field: "" for field in UNIT_SNAPSHOT_FIELDS}
+    snapshot["InvocationID"] = "fresh-resume-invocation"
+    receipt = create_submission_receipt(
+        receipt_path=receipt_path,
+        launch_record_path=launch_path,
+        unit_snapshot=snapshot,
+        systemd_run_exit_code=0,
+        observed_unit=launch["systemd_unit"],
+    )
+    assert receipt["submission_claim_digest"] == claim["claim_digest"]
+    assert receipt["launch_record_digest"] == launch["record_digest"]
+
+
+def test_typed_outer_projection_resume_rejects_reused_unit(tmp_path):
+    with pytest.raises(OperationsError, match="^resume_launch_identity_mismatch$"):
+        _typed_outer_launch(
+            tmp_path,
+            runner_command="resume",
+            unit="p7c4b2c-outer-p1-outer-run-initial",
+        )
+
+
+def test_typed_outer_projection_claim_is_atomic_and_receipt_path_bound(tmp_path):
+    launch_path, receipt_path, launch, _argv = _typed_outer_launch(tmp_path)
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = [
+            executor.submit(
+                create_submission_claim,
+                launch_record_path=launch_path,
+                receipt_path=receipt_path,
+            )
+            for _ in range(8)
+        ]
+    outcomes = []
+    for future in futures:
+        try:
+            outcomes.append(future.result()["submission_state"])
+        except OperationsError as exc:
+            outcomes.append(str(exc))
+    assert outcomes.count("claimed_not_submitted") == 1
+    assert outcomes.count("duplicate_submission") == 7
+    snapshot = {field: "" for field in UNIT_SNAPSHOT_FIELDS}
+    with pytest.raises(OperationsError, match="^duplicate_submission$"):
+        create_submission_receipt(
+            receipt_path=tmp_path / "alternate-receipt.json",
+            launch_record_path=launch_path,
+            unit_snapshot=snapshot,
+            systemd_run_exit_code=1,
+            observed_unit=launch["systemd_unit"],
+        )
+
+
+def test_typed_outer_projection_failed_submission_is_evidence_and_success_requires_invocation(
+    tmp_path,
+):
+    launch_path, receipt_path, launch, _argv = _typed_outer_launch(tmp_path)
+    create_submission_claim(launch_record_path=launch_path, receipt_path=receipt_path)
+    snapshot = {field: "" for field in UNIT_SNAPSHOT_FIELDS}
+    failed = create_submission_receipt(
+        receipt_path=receipt_path,
+        launch_record_path=launch_path,
+        unit_snapshot=snapshot,
+        systemd_run_exit_code=1,
+        observed_unit=launch["systemd_unit"],
+    )
+    assert failed["submission_state"] == "submission_failed"
+    assert failed["invocation_id"] == ""
+
+    second_path, second_receipt, second, _argv = _typed_outer_launch(
+        tmp_path / "second"
+    )
+    create_submission_claim(launch_record_path=second_path, receipt_path=second_receipt)
+    with pytest.raises(OperationsError, match="^invocation_id_missing$"):
+        create_submission_receipt(
+            receipt_path=second_receipt,
+            launch_record_path=second_path,
+            unit_snapshot=snapshot,
+            systemd_run_exit_code=0,
+            observed_unit=second["systemd_unit"],
+        )
+
+
+def test_typed_outer_projection_run_rejects_existing_output_and_mode_unit_cross_use(
+    tmp_path,
+):
+    repo = tmp_path / "repo"
+    output = repo / "artifacts" / "outer-run"
+    output.mkdir(parents=True)
+    with pytest.raises(OperationsError, match="^output_collision$"):
+        _typed_outer_launch(
+            tmp_path,
+            working_directory=str(repo),
+            output_directory=str(output),
+        )
+    with pytest.raises(OperationsError, match="^systemd_unit_mismatch$"):
+        _typed_outer_launch(tmp_path / "cross", unit="p7c4b2c-outer-p2-wrong")
+
+
+def test_typed_outer_projection_accepts_logical_repository_alias(tmp_path):
+    physical = tmp_path / "physical"
+    (physical / ".venv" / "bin").mkdir(parents=True)
+    (physical / "artifacts").mkdir()
+    logical = tmp_path / "logical"
+    _directory_alias(logical, physical)
+    logical_output = logical / "artifacts" / "outer-run"
+    physical_output = physical / "artifacts" / "outer-run"
+    _path, _receipt, launch, _argv = _typed_outer_launch(
+        tmp_path,
+        working_directory=str(logical),
+        output_directory=str(logical_output),
+        authorized_output_directory=str(physical_output),
+    )
+    assert launch["output_directory"] == str(logical_output)
+    assert launch["resolved_output_directory"] == str(physical_output.resolve())
+
+
+@pytest.mark.parametrize("case", ["different-physical", "traversal", "escape"])
+def test_typed_outer_projection_rejects_invalid_output_identity(tmp_path, case):
+    repo = tmp_path / "repo"
+    (repo / ".venv" / "bin").mkdir(parents=True)
+    (repo / "artifacts").mkdir()
+    output = repo / "artifacts" / "outer-run"
+    authorized = output
+    if case == "different-physical":
+        authorized = tmp_path / "other" / "outer-run"
+    elif case == "traversal":
+        output = repo / "artifacts" / ".." / "outside" / "outer-run"
+        authorized = output
+    else:
+        outside = tmp_path / "outside" / "outer-run"
+        outside.mkdir(parents=True)
+        _directory_alias(output, outside)
+        authorized = outside
+    with pytest.raises(
+        OperationsError,
+        match="^(operational_identity_mismatch|operational_working_directory_mismatch)$",
+    ):
+        _typed_outer_launch(
+            tmp_path,
+            working_directory=str(repo),
+            output_directory=str(output),
+            authorized_output_directory=str(authorized),
+        )
+
+
+def test_outer_resume_precheck_rejects_active_unit_before_mutation(
+    tmp_path, monkeypatch
+):
+    for name in (
+        "plan.json",
+        "manifest.json",
+        "environment.json",
+        "authorization_runtime.json",
+    ):
+        _input(tmp_path / name, "{}")
+    monkeypatch.setattr(
+        "creditrep.experiments.p7c4b2c_preflight.validate_artifacts",
+        lambda _path: {"completed": 1, "expected": 2, "reason_codes": []},
+    )
+    snapshot = {field: "" for field in UNIT_SNAPSHOT_FIELDS}
+    snapshot["ActiveState"] = "active"
+    result = resume_precheck(tmp_path, unit_snapshot=snapshot)
+    assert result["valid"] is False
+    assert "resume_precheck_unit_active" in result["reason_codes"]

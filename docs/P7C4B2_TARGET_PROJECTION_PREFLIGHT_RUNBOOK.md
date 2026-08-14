@@ -123,24 +123,28 @@ review; this runbook does not perform it automatically.
 TARGET_OUTER_REFIT_PREFLIGHT_BOUNDARY
 ```
 
-```bash
-"$PYTHON" -m creditrep.experiments.p7c4b2c_cli run \
-  --execution-class target_preflight --mode cpu_parallel_1 --output "$OUT_P1" \
-  --target-environment "$ENV_P1" --authorization-proposal "$PROPOSAL_P1" \
-  --effective-authorization "$AUTH_P1"
-"$PYTHON" -m creditrep.experiments.p7c4b2c_cli run \
-  --execution-class target_preflight --mode cpu_parallel_2 --output "$OUT_P2" \
-  --target-environment "$ENV_P2" --authorization-proposal "$PROPOSAL_P2" \
-  --effective-authorization "$AUTH_P2"
-```
+Use only the typed `target-outer-projection-preflight` operations flow in
+`P7C4B2C_OUTER_REFIT_OVERHEAD_PREFLIGHT_RUNBOOK.md`. That flow records the exact
+argv before the compute boundary, atomically claims submission, submits that
+same argv with `systemd-run --user`, snapshots the unit through key/value
+`systemctl show`, and writes a one-time receipt. The external operations stage
+maps exactly to protocol stage `target_projection_preflight`; substituting
+`target-inner-preflight`, directly invoking the runner, or constructing loose
+JSON is forbidden.
 
-Use the reviewed long-running operations wrapper where required. Never repeat
-`run` for an existing output. Use `resume --run-dir` with the original bound
-environment, proposal and authorization only after process-state checks.
-P1 and P2 require distinct environment, proposal, effective authorization,
-output, run, launch and unit identities. Treat every output as single-use and
-stop on collision, policy mismatch, timeout, expiry, memory, failure, runtime
-or monetary violation.
+P1 must pass closeout/public validation before P2 may be claimed or submitted.
+Each mode has distinct environment, proposal, authorization, output, run ID,
+unit, log, launch, claim and receipt. After a claim exists or `Running as unit`
+was observed, never submit again: recover the recorded unit after SSH loss or
+persist a failed-submission receipt. A receipt is submission evidence, not
+compute-success evidence.
+
+Resume requires the typed read-only `resume-precheck`, the original run directory
+and controls, an inactive unit/process, and a fresh resume unit/log/launch/claim/
+receipt chain. It cannot replace authorization, reset budget/runtime, widen task
+scope, resubmit `run`, or convert completed/corrupt evidence into success. Stop
+on collision, policy mismatch, timeout, expiry, memory, failure, runtime or
+monetary violation.
 
 ## Gate 6 — validation and projection
 
