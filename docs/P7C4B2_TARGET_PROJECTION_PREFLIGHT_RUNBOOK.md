@@ -58,21 +58,25 @@ STOP on any nonzero exit. Do not repair the server from this runbook.
 TARGET_INNER_FIT_PREFLIGHT_BOUNDARY
 ```
 
-```bash
-"$PYTHON" -m creditrep.experiments.p7c4b2b_cli run \
-  --mode cpu_parallel_1 --profile "$PROFILE" --target-machine-asserted \
-  --bounded-preflight-authorized --output-dir "$INNER_P1"
-"$PYTHON" -m creditrep.experiments.p7c4b2b_cli run \
-  --mode cpu_parallel_2 --profile "$PROFILE" --target-machine-asserted \
-  --bounded-preflight-authorized --output-dir "$INNER_P2"
-"$PYTHON" -m creditrep.experiments.p7c4b2b_cli validate-artifacts \
-  --output-dir "$INNER_P1"
-"$PYTHON" -m creditrep.experiments.p7c4b2b_cli validate-artifacts \
-  --output-dir "$INNER_P2"
-```
+Follow `P7C4B2B_SINGLE_VM_PREFLIGHT_RUNBOOK.md` to create two independent typed
+chains. Each chain has a distinct validated target profile/environment,
+non-effective proposal, effective authorization, output, run, launch and unit.
+Only `APPROVE_P7C4B2B_TARGET_INNER_PREFLIGHT` is accepted. The legacy boolean
+flag alone cannot authorize target execution, and no B2d artifact may substitute.
 
-The two outputs must be fresh, immutable namespaces. Resume uses the existing
-P7C.4B.2b `resume` command and never replaces a completed artifact.
+Do not invoke either runner in the foreground from this projection runbook.
+For each mode, use Blocks 1–9 of the B2b runbook: create the typed
+`target-inner-preflight` launch record, cross the explicit compute boundary,
+submit that exact recorded argv with its prechecked `systemd-run --user` unit,
+and persist the one-time receipt. P1 must close out before the separately
+reviewed P2 chain is submitted. A stopped run may use only an explicit `resume`
+argv in a fresh unit/launch/receipt; never resubmit `run`.
+
+The two outputs require explicit no-clobber and single-submit checks. Resume
+uses the same persisted typed chain and never replaces authorization or a
+completed artifact. B2b retains its locked 1,800-second fit timeout, 12-hour
+global wall-clock accounting, disk/RSS/RAM/artifact/retry limits and worker/thread
+caps. It does not inherit the outer 12-hour/USD 5/20-minute/12-GiB policy.
 New B2b manifests bind their normalized output directory; combined projection
 requires that binding, so a relocated export or summary cannot substitute for
 the original validator-pass run root. Legacy B2b validation remains compatible,

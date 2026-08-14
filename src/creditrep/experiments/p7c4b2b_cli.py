@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import argparse
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 
@@ -27,10 +28,34 @@ from creditrep.protocols.p7c4b2b import (
     validate_machine,
     validate_plan,
 )
+from creditrep.protocols.p7c4b2b_authorization import (
+    create_effective_authorization,
+    render_authorization_proposal,
+    render_target_environment,
+    validate_authorization_proposal,
+    validate_effective_authorization,
+    validate_target_environment,
+)
 
 
 def _print(value):
     print(json.dumps(value, ensure_ascii=False, sort_keys=True))
+
+
+def _read(path: Path | None, reason: str) -> dict:
+    if path is None:
+        raise PreflightError(reason)
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        raise PreflightError(reason) from exc
+    if not isinstance(value, dict):
+        raise PreflightError(reason)
+    return value
+
+
+def _utc() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -41,6 +66,13 @@ def main(argv: list[str] | None = None) -> int:
             "plan",
             "validate-plan",
             "profile-machine",
+            "collect-target-environment",
+            "inspect-target-requirements",
+            "review-target-plan",
+            "render-authorization-proposal",
+            "validate-authorization-proposal",
+            "create-effective-authorization",
+            "validate-effective-authorization",
             "run",
             "resume",
             "validate-artifacts",
@@ -61,7 +93,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--provider", default="operator_unspecified")
     parser.add_argument("--instance-type", default="operator_unspecified")
     parser.add_argument("--target-machine-asserted", action="store_true")
-    parser.add_argument("--bounded-preflight-authorized", action="store_true")
+    parser.add_argument(
+        "--bounded-preflight-authorized",
+        action="store_true",
+        help="deprecated; never authorizes fresh target execution",
+    )
+    parser.add_argument("--target-environment", type=Path)
+    parser.add_argument("--authorization-proposal", type=Path)
+    parser.add_argument("--effective-authorization", type=Path)
+    parser.add_argument("--run-id")
+    parser.add_argument("--operator-identity")
+    parser.add_argument("--operator-approval")
+    parser.add_argument("--expires-at")
     parser.add_argument(
         "--fixture",
         action="store_true",
@@ -95,6 +138,94 @@ def main(argv: list[str] | None = None) -> int:
                 )
             _print(profile)
             return EXIT_OK
+        if args.command in {
+            "collect-target-environment",
+            "inspect-target-requirements",
+            "review-target-plan",
+            "render-authorization-proposal",
+            "validate-authorization-proposal",
+            "create-effective-authorization",
+            "validate-effective-authorization",
+        }:
+            profile = _read(args.profile, "validated_machine_profile_missing")
+            if args.command == "collect-target-environment":
+                if args.output_dir is None:
+                    raise PreflightError("output_identity_missing")
+                if args.output_dir.exists():
+                    raise PreflightError("artifact_namespace_already_exists")
+                _print(
+                    render_target_environment(
+                        plan,
+                        profile,
+                        mode=args.mode,
+                        output_directory=args.output_dir,
+                        captured_at=_utc(),
+                    )
+                )
+                return EXIT_OK
+            environment = _read(args.target_environment, "target_environment_missing")
+            environment_report = validate_target_environment(environment, plan, profile)
+            if args.command in {"inspect-target-requirements", "review-target-plan"}:
+                value = {
+                    **environment_report,
+                    "authorization_effective": False,
+                    "task_count": environment.get("task_count"),
+                    "mode": environment.get("mode"),
+                    "resource_policy": environment.get("resource_policy"),
+                    "review_status": "ready_for_proposal"
+                    if environment_report["valid"]
+                    else "blocked",
+                }
+                _print(value)
+                return EXIT_OK if environment_report["valid"] else EXIT_VALIDATION
+            if not environment_report["valid"]:
+                _print(environment_report)
+                return EXIT_VALIDATION
+            if args.command == "render-authorization-proposal":
+                _print(
+                    render_authorization_proposal(
+                        environment,
+                        plan,
+                        profile,
+                        run_id=args.run_id or "",
+                        created_at=_utc(),
+                    )
+                )
+                return EXIT_OK
+            proposal = _read(
+                args.authorization_proposal, "authorization_proposal_missing"
+            )
+            proposal_report = validate_authorization_proposal(
+                proposal, environment, plan, profile
+            )
+            if args.command == "validate-authorization-proposal":
+                _print(proposal_report)
+                return EXIT_OK if proposal_report["valid"] else EXIT_VALIDATION
+            if not proposal_report["valid"]:
+                _print(proposal_report)
+                return EXIT_VALIDATION
+            if args.command == "create-effective-authorization":
+                _print(
+                    create_effective_authorization(
+                        proposal,
+                        environment,
+                        plan,
+                        profile,
+                        operator_identity=args.operator_identity or "",
+                        operator_approval=args.operator_approval or "",
+                        created_at=_utc(),
+                        expires_at=args.expires_at or "",
+                    )
+                )
+                return EXIT_OK
+            authorization = _read(
+                args.effective_authorization, "effective_authorization_missing"
+            )
+            authorization_report = validate_effective_authorization(
+                authorization, proposal, environment, plan, profile
+            )
+            _print(authorization_report)
+            return EXIT_OK if authorization_report["valid"] else EXIT_VALIDATION
         if args.command == "validate-artifacts":
             if not args.output_dir or not args.output_dir.exists():
                 _print({"reason_codes": ["missing_provenance"]})
@@ -190,8 +321,23 @@ def main(argv: list[str] | None = None) -> int:
                 raise PreflightError("target_machine_assertion_missing")
             if not args.profile:
                 raise PreflightError("validated_machine_profile_missing")
-            profile = json.loads(args.profile.read_text(encoding="utf-8"))
+            profile = _read(args.profile, "validated_machine_profile_missing")
             validate_machine(profile, plan)
+        target_environment = (
+            _read(args.target_environment, "target_environment_missing")
+            if not args.fixture
+            else None
+        )
+        authorization_proposal = (
+            _read(args.authorization_proposal, "authorization_proposal_missing")
+            if not args.fixture
+            else None
+        )
+        effective_authorization = (
+            _read(args.effective_authorization, "effective_authorization_missing")
+            if not args.fixture
+            else None
+        )
         function = run if args.command == "run" else resume
         result = function(
             plan,
@@ -201,6 +347,19 @@ def main(argv: list[str] | None = None) -> int:
             repo_root=root,
             fixture=args.fixture,
             bounded_authorized=args.bounded_preflight_authorized,
+            target_environment=target_environment,
+            authorization_proposal=authorization_proposal,
+            effective_authorization=effective_authorization,
+            machine_profile_path=args.profile if not args.fixture else None,
+            target_environment_path=args.target_environment
+            if not args.fixture
+            else None,
+            authorization_proposal_path=args.authorization_proposal
+            if not args.fixture
+            else None,
+            effective_authorization_path=args.effective_authorization
+            if not args.fixture
+            else None,
             max_tasks=args.max_tasks,
             timeout_seconds=args.timeout_seconds,
             fail_fast=args.fail_fast,

@@ -27,7 +27,7 @@ Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái 
 
 ## Bước tiếp theo
 
-- P7C.4B.2a đã ghi nhận DR-P7C-03/04 approved và digest-locked proposed MLP scientific scope; đây là reduced deterministic subset, không phải exhaustive replication. P7C.4B.2b đã cung cấp CLI/guards, process-isolated runner, atomic artifact/resume/retry validator, telemetry reconstruction và fail-closed projection/RAM/cost/execution-plan contracts. Target single-VM preflight vẫn là bước tiếp theo. Fixture validation chỉ là engineering evidence non-publishable; không dùng predictive metric/ranking để giảm grid.
+- P7C.4B.2a đã ghi nhận DR-P7C-03/04 approved và digest-locked proposed MLP scientific scope; đây là reduced deterministic subset, không phải exhaustive replication. P7C.4B.2b đã cung cấp CLI/guards, process-isolated runner, atomic artifact/resume/retry validator, telemetry reconstruction và fail-closed projection/RAM/cost/execution-plan contracts. Fresh target P1/P2 mỗi run cần typed profile/environment, proposal và effective authorization riêng; boolean flag không authorize target execution. Target single-VM preflight vẫn pending. Fixture validation chỉ là engineering evidence non-publishable; không dùng predictive metric/ranking để giảm grid.
 - Core replication chỉ được bắt đầu cho scope đã khóa sau P7C.7 readiness gate. Không có pilot metric nào được dùng để chọn CART candidate.
 
 ## P7C.4B.2c outer-refit/overhead preflight
@@ -46,6 +46,13 @@ Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái 
 
 - Runbook và CLI vận hành đã hoàn tất và qua fixture tests: launch record bất biến, submission receipt một lần qua systemd, monitor-only, resume precheck và final artifact validation.
 - Fresh run đã có target operation, effective authorization và submission receipt trong scope canary; 4/4 authorized task completed và `target_canary_acceptance.accepted` là true.
+
+## P7C.4B.2b target inner-preflight execution integrity
+
+- B2b giữ nguyên policy riêng: 1.800 giây/fit, 12 giờ accumulated runtime, 16 GiB free disk, 11,5 GiB aggregate process-tree RSS, 2 GiB available-RAM reserve, 2 GiB artifact ceiling, một transient retry và worker P1/P2 = 1/2 với hai thread mỗi worker; không áp USD 5 hoặc zero-failure policy của outer preflight.
+- Target runtime dùng append-only generation ledger có manifest head mirror và per-task attempt-event chain. Resume kiểm tra toàn chain, khôi phục attempt count và không reset runtime/expiry/resource accounting.
+- Worker artifact chỉ được promotion từ unique temporary attempt namespace sau khi parent recheck authorization, runtime, timeout, RSS/RAM, disk, projected size, control-file hash, attempt identity, ledger và physical output identity. Failed attempt vẫn audit được nhưng không làm successful retry trở thành active failed canonical task.
+- Operations helper dùng closed typed mapping cho canary và `target-inner-preflight`; launch record/receipt chỉ chứng minh preparation/submission, không chứng minh workload hoặc scientific result. Target inner workload chưa chạy và canonical scientific execution vẫn NO-GO.
 - Đây vẫn chỉ là canary vận hành, không phải full scientific execution: `scientific_coverage.valid` là false với `incomplete_required_stratum` và `insufficient_repetitions`; scientific projection và canonical execution vẫn không eligible/chưa authorized.
 - Bước kỹ thuật kế tiếp trong P7C.4B.2 là target projection preflight: target inner-fit B2b cho cả hai CPU mode và hai self-contained outer-refit scope 162 task. Mỗi outer run bind riêng 12 giờ/USD 5, timeout task 20 phút, aggregate RSS 12 GiB, zero failure và tối đa hai task in-flight; các giới hạn này không áp dụng cho B2b hoặc canonical execution. Canary cũ không được dùng làm residual vì khác source SHA. Combined projection yêu cầu exact 324 task, closed inner/outer identity, reviewed typed overhead/price và luôn giữ canonical scientific authorization là false.
 

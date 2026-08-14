@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
 from creditrep.experiments.p7c4b2e_operations_cli import (
     UNIT_SNAPSHOT_FIELDS,
     create_launch_record,
+    create_submission_claim,
     create_submission_receipt,
     resume_precheck,
 )
@@ -24,9 +26,14 @@ def _launch(tmp_path):
     proposal = _input(tmp_path / "proposal.json", "{}")
     record = tmp_path / "launch.json"
     return record, create_launch_record(
-        record_path=record, git_commit="a" * 40, operator_identity="operator",
-        authorization_path=auth, environment_path=environment, proposal_path=proposal,
-        unit="p7c4b2d-target", argv=["python", "-m", "creditrep"],
+        record_path=record,
+        git_commit="a" * 40,
+        operator_identity="operator",
+        authorization_path=auth,
+        environment_path=environment,
+        proposal_path=proposal,
+        unit="p7c4b2d-target",
+        argv=["python", "-m", "creditrep"],
         working_directory="/srv/credit-scoring-replication",
         python_executable="/srv/credit-scoring-replication/.venv/bin/python",
         output_directory="/srv/credit-scoring-replication/artifacts/p7c4b2d-target",
@@ -53,14 +60,20 @@ def test_submission_receipt_requires_complete_snapshot_and_is_immutable(tmp_path
     snapshot = {field: "" for field in UNIT_SNAPSHOT_FIELDS}
     receipt = tmp_path / "receipt.json"
     value = create_submission_receipt(
-        receipt_path=receipt, launch_record_path=record, unit_snapshot=snapshot,
+        receipt_path=receipt,
+        launch_record_path=record,
+        unit_snapshot=snapshot,
         systemd_run_exit_code=0,
     )
-    assert value["launch_record_sha256"] == hashlib.sha256(record.read_bytes()).hexdigest()
+    assert (
+        value["launch_record_sha256"] == hashlib.sha256(record.read_bytes()).hexdigest()
+    )
     assert value["unit_snapshot"] == snapshot
     try:
         create_submission_receipt(
-            receipt_path=receipt, launch_record_path=record, unit_snapshot=snapshot,
+            receipt_path=receipt,
+            launch_record_path=record,
+            unit_snapshot=snapshot,
             systemd_run_exit_code=0,
         )
     except Exception as exc:
@@ -69,21 +82,74 @@ def test_submission_receipt_requires_complete_snapshot_and_is_immutable(tmp_path
         raise AssertionError("receipt was overwritten")
 
 
+def test_canary_evidence_contract_is_exactly_backward_compatible(tmp_path):
+    record, launch = _launch(tmp_path)
+    assert launch["artifact_type"] == "p7c4b2e_target_canary_launch_record"
+    assert launch["schema_version"] == 1
+    assert set(launch) == {
+        "schema_version",
+        "artifact_type",
+        "source_git_commit",
+        "created_at",
+        "operator_identity",
+        "authorization",
+        "environment",
+        "proposal",
+        "systemd_unit",
+        "argv",
+        "working_directory",
+        "python_executable",
+        "output_directory",
+        "log_path",
+        "execution_class",
+        "submission_state",
+    }
+    snapshot = {field: "" for field in UNIT_SNAPSHOT_FIELDS}
+    receipt = create_submission_receipt(
+        receipt_path=tmp_path / "receipt.json",
+        launch_record_path=record,
+        unit_snapshot=snapshot,
+        systemd_run_exit_code=1,
+    )
+    assert receipt["artifact_type"] == "p7c4b2e_target_canary_submission_receipt"
+    assert receipt["schema_version"] == 1
+    assert set(receipt) == {
+        "schema_version",
+        "artifact_type",
+        "created_at",
+        "launch_record_path",
+        "launch_record_sha256",
+        "systemd_unit",
+        "systemd_run_exit_code",
+        "unit_snapshot",
+        "submission_state",
+    }
+
+
 def test_helper_rejects_malformed_inputs_and_snapshot_schema(tmp_path):
     record, _value = _launch(tmp_path)
     bad = _input(tmp_path / "bad.json", "not json")
     with pytest.raises(Exception, match="evidence_input_invalid"):
         create_launch_record(
-            record_path=tmp_path / "other.json", git_commit="a" * 40,
-            operator_identity="operator", authorization_path=bad,
-            environment_path=bad, proposal_path=bad, unit="unit", argv=["python"],
-            working_directory="/srv", python_executable="/srv/python",
-            output_directory="/srv/artifacts/out", log_path="/secure/log",
+            record_path=tmp_path / "other.json",
+            git_commit="a" * 40,
+            operator_identity="operator",
+            authorization_path=bad,
+            environment_path=bad,
+            proposal_path=bad,
+            unit="unit",
+            argv=["python"],
+            working_directory="/srv",
+            python_executable="/srv/python",
+            output_directory="/srv/artifacts/out",
+            log_path="/secure/log",
         )
     with pytest.raises(Exception, match="unit_snapshot_schema_mismatch"):
         create_submission_receipt(
-            receipt_path=tmp_path / "bad-receipt.json", launch_record_path=record,
-            unit_snapshot={}, systemd_run_exit_code=0,
+            receipt_path=tmp_path / "bad-receipt.json",
+            launch_record_path=record,
+            unit_snapshot={},
+            systemd_run_exit_code=0,
         )
 
 
@@ -97,11 +163,18 @@ def test_atomic_write_failure_leaves_no_final_record(tmp_path, monkeypatch):
     auth = _input(tmp_path / "authorization.json", "{}")
     with pytest.raises(Exception, match="operational_evidence_write_failed"):
         create_launch_record(
-            record_path=tmp_path / "launch.json", git_commit="a" * 40,
-            operator_identity="operator", authorization_path=auth,
-            environment_path=auth, proposal_path=auth, unit="unit", argv=["python"],
-            working_directory="/srv", python_executable="/srv/python",
-            output_directory="/srv/artifacts/out", log_path="/secure/log",
+            record_path=tmp_path / "launch.json",
+            git_commit="a" * 40,
+            operator_identity="operator",
+            authorization_path=auth,
+            environment_path=auth,
+            proposal_path=auth,
+            unit="unit",
+            argv=["python"],
+            working_directory="/srv",
+            python_executable="/srv/python",
+            output_directory="/srv/artifacts/out",
+            log_path="/secure/log",
         )
     assert not (tmp_path / "launch.json").exists()
     assert not list(tmp_path.glob(".launch.json.*.tmp"))
@@ -111,3 +184,205 @@ def test_resume_precheck_fails_closed_when_required_run_artifacts_are_absent(tmp
     value = resume_precheck(tmp_path)
     assert value["valid"] is False
     assert "resume_precheck_missing_required_artifact" in value["reason_codes"]
+
+
+def _typed_inner_launch(tmp_path, *, runner_command="run", extra_argv=()):
+    commit = "b" * 40
+    output = "/srv/repo/artifacts/p7c4b2b-compute-preflight/run-01"
+
+    def typed(value, field):
+        encoded = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+        value[field] = hashlib.sha256(encoded).hexdigest()
+        return value
+
+    profile_value = typed({"git_commit": commit}, "profile_digest")
+    environment_value = typed(
+        {
+            "execution_stage": "target_inner_fit_projection_preflight",
+            "source_git_commit": commit,
+            "mode": "cpu_parallel_1",
+        },
+        "environment_digest",
+    )
+    proposal_value = typed(
+        {
+            "execution_stage": "target_inner_fit_projection_preflight",
+            "mode": "cpu_parallel_1",
+        },
+        "proposal_digest",
+    )
+    authorization_value = typed(
+        {
+            "execution_stage": "target_inner_fit_projection_preflight",
+            "source_git_commit": commit,
+            "normalized_output_directory": output,
+            "machine_profile_digest": profile_value["profile_digest"],
+            "run_id": "run-01",
+            "mode": "cpu_parallel_1",
+        },
+        "authorization_digest",
+    )
+    profile = _input(
+        tmp_path / "profile.json",
+        json.dumps(profile_value),
+    )
+    environment = _input(
+        tmp_path / "environment.json",
+        json.dumps(environment_value),
+    )
+    proposal = _input(
+        tmp_path / "proposal.json",
+        json.dumps(proposal_value),
+    )
+    authorization = _input(
+        tmp_path / "authorization.json",
+        json.dumps(authorization_value),
+    )
+    python = "/srv/repo/.venv/bin/python"
+    argv = [
+        python,
+        "-m",
+        "creditrep.experiments.p7c4b2b_cli",
+        runner_command,
+        "--mode",
+        "cpu_parallel_1",
+        "--profile",
+        str(profile),
+        "--target-machine-asserted",
+        "--target-environment",
+        str(environment),
+        "--authorization-proposal",
+        str(proposal),
+        "--effective-authorization",
+        str(authorization),
+        "--output-dir",
+        output,
+    ]
+    argv.extend(extra_argv)
+    launch_path = tmp_path / "inner-launch.json"
+    launch = create_launch_record(
+        record_path=launch_path,
+        git_commit=commit,
+        operator_identity="operator",
+        authorization_path=authorization,
+        environment_path=environment,
+        proposal_path=proposal,
+        machine_profile_path=profile,
+        unit="p7c4b2b-inner-p1-run-01",
+        argv=argv,
+        working_directory="/srv/repo",
+        python_executable=python,
+        output_directory=output,
+        log_path="/secure/run-01.log",
+        execution_stage="target-inner-preflight",
+    )
+    return launch_path, tmp_path / "inner-receipt.json", launch, profile_value
+
+
+def test_typed_inner_preflight_launch_and_receipt(tmp_path):
+    launch_path, receipt_path, launch, profile_value = _typed_inner_launch(tmp_path)
+    assert launch["record_digest"]
+    assert (
+        launch["machine_profile"]["artifact_digest"] == profile_value["profile_digest"]
+    )
+    snapshot = {field: "" for field in UNIT_SNAPSHOT_FIELDS}
+    snapshot["InvocationID"] = "invocation-01"
+    claim = create_submission_claim(
+        launch_record_path=launch_path,
+        receipt_path=receipt_path,
+    )
+    assert claim["submission_state"] == "claimed_not_submitted"
+    receipt = create_submission_receipt(
+        receipt_path=receipt_path,
+        launch_record_path=launch_path,
+        unit_snapshot=snapshot,
+        systemd_run_exit_code=0,
+        observed_unit="p7c4b2b-inner-p1-run-01",
+    )
+    assert receipt["submission_state"] == "submitted"
+    assert receipt["invocation_id"] == "invocation-01"
+    assert receipt["receipt_digest"]
+    assert receipt["submission_claim_digest"] == claim["claim_digest"]
+    with pytest.raises(Exception, match="duplicate_submission"):
+        create_submission_receipt(
+            receipt_path=tmp_path / "second-inner-receipt.json",
+            launch_record_path=launch_path,
+            unit_snapshot=snapshot,
+            systemd_run_exit_code=0,
+            observed_unit="p7c4b2b-inner-p1-run-01",
+        )
+
+
+def test_typed_submission_claim_has_one_concurrent_winner(tmp_path):
+    launch_path, receipt_path, _launch, _profile = _typed_inner_launch(tmp_path)
+
+    def claim():
+        try:
+            create_submission_claim(
+                launch_record_path=launch_path,
+                receipt_path=receipt_path,
+            )
+        except Exception as exc:
+            return str(exc)
+        return "won"
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(lambda _index: claim(), range(2)))
+    assert sorted(results) == ["duplicate_submission", "won"]
+    with pytest.raises(Exception, match="duplicate_submission"):
+        create_submission_claim(
+            launch_record_path=launch_path,
+            receipt_path=tmp_path / "different-receipt.json",
+        )
+
+
+def test_typed_failed_submission_receipt_is_deterministic(tmp_path):
+    launch_path, receipt_path, _launch, _profile = _typed_inner_launch(tmp_path)
+    claim = create_submission_claim(
+        launch_record_path=launch_path,
+        receipt_path=receipt_path,
+    )
+    snapshot = {field: "" for field in UNIT_SNAPSHOT_FIELDS}
+    receipt = create_submission_receipt(
+        receipt_path=receipt_path,
+        launch_record_path=launch_path,
+        unit_snapshot=snapshot,
+        systemd_run_exit_code=1,
+        observed_unit="p7c4b2b-inner-p1-run-01",
+    )
+    assert receipt["submission_state"] == "submission_failed"
+    assert receipt["invocation_id"] == ""
+    assert receipt["submission_claim_digest"] == claim["claim_digest"]
+
+
+def test_typed_resume_launch_is_bound_to_resume_command(tmp_path):
+    _path, _receipt, launch, _profile = _typed_inner_launch(
+        tmp_path, runner_command="resume"
+    )
+    assert launch["runner_command"] == "resume"
+    assert launch["argv"][3] == "resume"
+
+
+def test_typed_launch_rejects_unrecorded_scope_flags(tmp_path):
+    with pytest.raises(Exception, match="operational_argv_mismatch"):
+        _typed_inner_launch(tmp_path, extra_argv=("--fixture",))
+
+
+def test_unknown_typed_execution_stage_is_rejected(tmp_path):
+    record, _value = _launch(tmp_path)
+    with pytest.raises(Exception, match="unknown_execution_stage"):
+        create_launch_record(
+            record_path=record.with_name("unknown.json"),
+            git_commit="a" * 40,
+            operator_identity="operator",
+            authorization_path=tmp_path / "authorization.json",
+            environment_path=tmp_path / "environment.json",
+            proposal_path=tmp_path / "proposal.json",
+            unit="unit",
+            argv=["python"],
+            working_directory="/srv",
+            python_executable="python",
+            output_directory="/srv/out",
+            log_path="/secure/log",
+            execution_stage="unknown",
+        )

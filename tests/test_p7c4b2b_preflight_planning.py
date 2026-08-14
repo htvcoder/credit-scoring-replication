@@ -294,7 +294,9 @@ def test_timeout_crash_retry_and_corrupt_resume_are_fail_closed(tmp_path):
     path = next(ok.glob("fits/*/result.json"))
     path.write_text("{bad", encoding="utf-8")
     assert "corrupt_json" in runner.validate_artifacts(ok)["reason_codes"]
-    with pytest.raises(PreflightError, match="corrupt_completed_artifact"):
+    with pytest.raises(
+        PreflightError, match="completed_run_invalid|corrupt_completed_artifact"
+    ):
         runner.resume(
             plan(),
             prof,
@@ -504,7 +506,7 @@ def test_stratified_projection_requires_complete_target_evidence_and_nonperfect_
         )
 
 
-def test_worker_crash_isolated_and_target_requires_bounded_authorization(tmp_path):
+def test_worker_crash_isolated_and_target_requires_typed_authorization(tmp_path):
     repo = root(tmp_path)
     crashed = plan()
     next(x for x in crashed["tasks"] if x["mode"] == "cpu_parallel_2")[
@@ -532,11 +534,12 @@ def test_worker_crash_isolated_and_target_requires_bounded_authorization(tmp_pat
         plan=plan(),
         profile=target,
         output_dir=repo / runner.ARTIFACT_ROOT / "target",
+        mode="cpu_parallel_1",
         fixture=False,
         bounded_authorized=False,
         repo_root=repo,
     )
     assert (
         not guard["authorized"]
-        and "bounded_preflight_authorization_missing" in guard["reason_codes"]
+        and "typed_target_authorization_missing" in guard["reason_codes"]
     )

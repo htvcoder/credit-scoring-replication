@@ -13,6 +13,12 @@ from typing import Any
 
 from creditrep.config.loader import sha256_canonical
 from creditrep.protocols.p7c4b2a import P7C4B2AError, load_manifest
+from creditrep.protocols.p7c4b2b_authorization import (
+    EXECUTION_STAGE as INNER_TARGET_EXECUTION_STAGE,
+    validate_authorization_proposal as validate_inner_proposal,
+    validate_effective_authorization as validate_inner_authorization,
+    validate_target_environment as validate_inner_environment,
+)
 
 SCHEMA_VERSION = 1
 EXECUTION_CLASSES = {"synthetic_validation", "target_preflight"}
@@ -800,7 +806,9 @@ def validate_combined_projection_sources(
     expected_ids = [task["sample_id"] for task in plan["tasks"]]
     actual_ids = [record.get("sample_id") for record in records]
     codes: list[str] = []
-    if not artifact_reports or any(report.get("valid") is not True for report in artifact_reports):
+    if not artifact_reports or any(
+        report.get("valid") is not True for report in artifact_reports
+    ):
         codes.append("invalid_artifact_evidence")
     if len(actual_ids) != len(set(actual_ids)):
         codes.append("duplicate_projection_sample")
@@ -833,6 +841,9 @@ def validate_combined_projection_identity(
         "manifest",
         "profile",
         "plan",
+        "environment",
+        "proposal",
+        "authorization",
         "validation",
     }
     if len(outer_runs) != 2 or any(
@@ -859,7 +870,11 @@ def validate_combined_projection_identity(
         manifest = run["manifest"]
         environment = run["environment"]
         validation = run["validation"]
-        provenance = manifest.get("authorization_provenance") if isinstance(manifest, dict) else None
+        provenance = (
+            manifest.get("authorization_provenance")
+            if isinstance(manifest, dict)
+            else None
+        )
         if validation.get("valid") is not True:
             codes.append("invalid_artifact_evidence")
         if (
@@ -881,7 +896,9 @@ def validate_combined_projection_identity(
             or provenance.get("normalized_output_directory") != run_directory
         ):
             codes.append("projection_output_identity_mismatch")
-        source_shas.extend([provenance.get("git_commit"), environment.get("git_commit")])
+        source_shas.extend(
+            [provenance.get("git_commit"), environment.get("git_commit")]
+        )
         outer_plan_digests.append(manifest.get("plan_digest"))
         scientific_digests.append(manifest.get("scientific_manifest_digest"))
         run_ids.append(manifest.get("run_id"))
@@ -899,13 +916,38 @@ def validate_combined_projection_identity(
     inner_run_ids: list[Any] = []
     inner_paths: list[Any] = []
     inner_profile_digests: list[Any] = []
+    inner_environment_digests: list[Any] = []
+    inner_proposal_digests: list[Any] = []
+    inner_authorization_digests: list[Any] = []
     for run in inner_runs:
         manifest = run["manifest"]
         profile = run["profile"]
         plan = run["plan"]
+        environment = run["environment"]
+        proposal = run["proposal"]
+        authorization = run["authorization"]
         validation = run["validation"]
         if validation.get("valid") is not True:
             codes.append("invalid_inner_artifact_evidence")
+        try:
+            inner_reports = (
+                validate_inner_environment(environment, plan, profile),
+                validate_inner_proposal(proposal, environment, plan, profile),
+                validate_inner_authorization(
+                    authorization,
+                    proposal,
+                    environment,
+                    plan,
+                    profile,
+                    enforce_current_expiry=False,
+                ),
+            )
+        except (TypeError, KeyError, ValueError):
+            inner_reports = ()
+        if len(inner_reports) != 3 or any(
+            report.get("valid") is not True for report in inner_reports
+        ):
+            codes.append("invalid_inner_authorization")
         mode = manifest.get("mode")
         inner_modes.append(mode)
         run_directory = run["run_directory"]
@@ -918,23 +960,38 @@ def validate_combined_projection_identity(
             or manifest.get("normalized_output_directory") != run_directory
             or manifest.get("machine_profile_digest") != profile.get("profile_digest")
             or manifest.get("plan_digest") != plan.get("plan_digest")
+            or manifest.get("execution_stage") != INNER_TARGET_EXECUTION_STAGE
+            or manifest.get("target_environment_digest")
+            != environment.get("environment_digest")
+            or manifest.get("proposal_digest") != proposal.get("proposal_digest")
+            or manifest.get("authorization_digest")
+            != authorization.get("authorization_digest")
         ):
             codes.append("inner_run_identity_mismatch")
         source_shas.append(profile.get("git_commit"))
         scientific_digests.extend(
-            [manifest.get("scientific_manifest_digest"), profile.get("scientific_manifest_digest")]
+            [
+                manifest.get("scientific_manifest_digest"),
+                profile.get("scientific_manifest_digest"),
+            ]
         )
         inner_plan_digests.append(manifest.get("plan_digest"))
         inner_run_ids.append(manifest.get("run_id"))
         inner_paths.append(run_directory)
         inner_profile_digests.append(profile.get("profile_digest"))
+        inner_environment_digests.append(environment.get("environment_digest"))
+        inner_proposal_digests.append(proposal.get("proposal_digest"))
+        inner_authorization_digests.append(authorization.get("authorization_digest"))
     if set(inner_modes) != set(MODES) or len(inner_modes) != len(set(inner_modes)):
         codes.append("inner_mode_scope_mismatch")
     if len(set(inner_plan_digests)) != 1:
         codes.append("inner_plan_hash_mismatch")
     if len(set(scientific_digests)) != 1 or None in scientific_digests:
         codes.append("scientific_manifest_digest_mismatch")
-    if any(not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{40}", value) is None for value in source_shas):
+    if any(
+        not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{40}", value) is None
+        for value in source_shas
+    ):
         codes.append("git_provenance_mismatch")
     elif len(set(source_shas)) != 1:
         codes.append("mixed_source_git_commit")
@@ -947,8 +1004,13 @@ def validate_combined_projection_identity(
         (inner_run_ids, "inner_run_identity_collision"),
         (inner_paths, "inner_output_identity_collision"),
         (inner_profile_digests, "inner_environment_identity_collision"),
+        (inner_environment_digests, "inner_environment_identity_collision"),
+        (inner_proposal_digests, "inner_proposal_identity_collision"),
+        (inner_authorization_digests, "inner_authorization_identity_collision"),
     ):
-        if any(not isinstance(value, str) or not value for value in values) or len(set(values)) != len(values):
+        if any(not isinstance(value, str) or not value for value in values) or len(
+            set(values)
+        ) != len(values):
             codes.append(code)
     return {
         "valid": not codes,
@@ -1001,7 +1063,9 @@ OVERHEAD_METHOD_IDENTITY = "operator_reviewed_additive_canonical_orchestration_v
 
 
 def overhead_artifact_digest(value: dict[str, Any]) -> str:
-    return sha256_canonical({key: item for key, item in value.items() if key != "artifact_digest"})
+    return sha256_canonical(
+        {key: item for key, item in value.items() if key != "artifact_digest"}
+    )
 
 
 def _validated_overhead_mapping(
@@ -1028,10 +1092,12 @@ def _validated_overhead_mapping(
     }
     if not isinstance(value, dict) or set(value) != required:
         return None
-    references = sorted([
-        *artifact_validation.get("source_artifact_hashes", []),
-        *((inner_projection or {}).get("source_artifact_hashes", [])),
-    ])
+    references = sorted(
+        [
+            *artifact_validation.get("source_artifact_hashes", []),
+            *((inner_projection or {}).get("source_artifact_hashes", [])),
+        ]
+    )
     timestamp = None
     try:
         timestamp = datetime.fromisoformat(
@@ -1045,7 +1111,8 @@ def _validated_overhead_mapping(
         or value.get("artifact_type") != "p7c4b2_outer_projection_overhead"
         or not isinstance(value.get("source_git_commit"), str)
         or re.fullmatch(r"[0-9a-f]{40}", value["source_git_commit"]) is None
-        or value.get("source_git_commit") != artifact_validation.get("source_git_commit")
+        or value.get("source_git_commit")
+        != artifact_validation.get("source_git_commit")
         or value.get("locked_plan_digest") != plan.get("plan_digest")
         or value.get("selected_mode") not in MODES
         or value.get("method_identity") != OVERHEAD_METHOD_IDENTITY
@@ -1178,9 +1245,7 @@ def project_validated(
             point += weight * row["median_outer_refit_seconds"]
             lower += weight * row["minimum_outer_refit_seconds"]
             upper += weight * row["maximum_outer_refit_seconds"]
-        scheduler_parallel = bool(
-            (mapping or {}).get("outer_refits_parallel", False)
-        )
+        scheduler_parallel = bool((mapping or {}).get("outer_refits_parallel", False))
         divisor = workers if scheduler_parallel else 1
         by_mode[mode] = {
             "aggregate_work_seconds": point,
@@ -1219,9 +1284,7 @@ def project_validated(
     cost_projection = None
     if total is not None and strict_price is not None:
         multiplier = (
-            float(strict_price["price_per_hour"])
-            * int(strict_price["vm_count"])
-            / 3600
+            float(strict_price["price_per_hour"]) * int(strict_price["vm_count"]) / 3600
         )
         cost_projection = {
             "currency": strict_price["currency"],
@@ -1243,9 +1306,9 @@ def project_validated(
         "outer_refit_projection_by_mode": by_mode,
         "total_canonical_elapsed_seconds": total,
         "cost_projection": cost_projection,
-        "inner_projection_source_evidence_digest": (
-            inner_projection or {}
-        ).get("source_evidence_digest"),
+        "inner_projection_source_evidence_digest": (inner_projection or {}).get(
+            "source_evidence_digest"
+        ),
         "extrapolation_ratio": 270
         / max(len([x for x in records if x.get("classification") == "measured"]), 1),
         "warnings": warnings,

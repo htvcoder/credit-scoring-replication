@@ -15,6 +15,18 @@ from creditrep.experiments.p7c4b2c_preflight import (
 )
 from creditrep.experiments.p7c4b2c_cli import main as cli_main
 from creditrep.protocols.p7c4b2a import load_manifest
+from creditrep.protocols.p7c4b2b import (
+    DATASET_FINGERPRINTS as INNER_DATASET_FINGERPRINTS,
+    SCIENTIFIC_DIGEST as INNER_SCIENTIFIC_DIGEST,
+    build_plan as build_inner_plan,
+    machine_profile_digest,
+)
+from creditrep.protocols.p7c4b2b_authorization import (
+    APPROVAL_PHRASE as INNER_APPROVAL_PHRASE,
+    create_effective_authorization as create_inner_authorization,
+    render_authorization_proposal as render_inner_proposal,
+    render_target_environment as render_inner_environment,
+)
 from creditrep.protocols.p7c4b2c import (
     ADDITIVE_COMPONENTS,
     OVERHEAD_EVENT_COUNTS,
@@ -531,8 +543,11 @@ def test_combined_projection_requires_exact_duplicate_free_canonical_scope():
 
 def _combined_identity_fixture():
     source = "a" * 40
-    scientific = "b" * 64
+    scientific = INNER_SCIENTIFIC_DIGEST
     outer_plan = {"plan_digest": "c" * 64}
+    inner_plan = build_inner_plan(
+        load_manifest("configs/protocols/p7c/p7c4b2a_mlp_scientific_manifest.yaml")
+    )
     outer = []
     inner = []
     for index, mode in enumerate(("cpu_parallel_1", "cpu_parallel_2"), start=1):
@@ -561,7 +576,58 @@ def _combined_identity_fixture():
             }
         )
         inner_path = str((Path.cwd() / f"inner-p{index}").resolve())
-        profile_digest = f"{index + 6}" * 64
+        profile = {
+            "schema_version": 1,
+            "machine_role": "intended_single_vm_target",
+            "machine_id": f"machine-{index}",
+            "cloud_provider": "fixture-provider",
+            "instance_type": f"fixture-p{index}",
+            "os": "fixture-linux",
+            "cpu_model": "fixture-cpu",
+            "physical_cores": 8,
+            "logical_cores": 16,
+            "ram_total_bytes": 32 * 1024**3,
+            "system_used_ram_bytes": 1024**3,
+            "swap_total_bytes": 0,
+            "swap_used_bytes": 0,
+            "disk_free_bytes": 64 * 1024**3,
+            "python_executable": ".venv/bin/python",
+            "python_version": "3.11",
+            "dependency_fingerprint": "e" * 64,
+            "git_commit": source,
+            "scientific_manifest_digest": scientific,
+            "dataset_fingerprints": INNER_DATASET_FINGERPRINTS,
+            "worker_limit": 2,
+            "threads_per_worker": 2,
+            "virtualization_power": "unknown",
+            "utc_captured": "2026-08-14T00:00:00Z",
+        }
+        profile["profile_digest"] = machine_profile_digest(profile)
+        environment = render_inner_environment(
+            inner_plan,
+            profile,
+            mode=mode,
+            output_directory=Path(inner_path),
+            captured_at="2026-08-14T00:00:00Z",
+        )
+        proposal = render_inner_proposal(
+            environment,
+            inner_plan,
+            profile,
+            run_id=Path(inner_path).name,
+            created_at="2026-08-14T00:00:00Z",
+        )
+        authorization = create_inner_authorization(
+            proposal,
+            environment,
+            inner_plan,
+            profile,
+            operator_identity=f"operator-{index}",
+            operator_approval=INNER_APPROVAL_PHRASE,
+            created_at="2026-08-14T00:00:00Z",
+            expires_at="2099-08-14T00:00:00Z",
+        )
+        profile_digest = profile["profile_digest"]
         inner.append(
             {
                 "run_directory": inner_path,
@@ -571,16 +637,18 @@ def _combined_identity_fixture():
                     "mode": mode,
                     "evidence_scope": "target_single_vm_measured",
                     "scientific_manifest_digest": scientific,
-                    "plan_digest": "d" * 64,
+                    "plan_digest": inner_plan["plan_digest"],
                     "machine_profile_digest": profile_digest,
+                    "execution_stage": "target_inner_fit_projection_preflight",
+                    "target_environment_digest": environment["environment_digest"],
+                    "proposal_digest": proposal["proposal_digest"],
+                    "authorization_digest": authorization["authorization_digest"],
                 },
-                "profile": {
-                    "machine_role": "intended_single_vm_target",
-                    "profile_digest": profile_digest,
-                    "git_commit": source,
-                    "scientific_manifest_digest": scientific,
-                },
-                "plan": {"plan_digest": "d" * 64},
+                "profile": profile,
+                "plan": inner_plan,
+                "environment": environment,
+                "proposal": proposal,
+                "authorization": authorization,
                 "validation": {"valid": True},
             }
         )
@@ -590,13 +658,56 @@ def _combined_identity_fixture():
 @pytest.mark.parametrize(
     "mutation,reason",
     [
-        (lambda o, _i: o[1]["manifest"]["authorization_provenance"].__setitem__("git_commit", "e" * 40), "mixed_source_git_commit"),
-        (lambda o, _i: o[1]["manifest"].__setitem__("mode", "cpu_parallel_1"), "outer_mode_scope_mismatch"),
-        (lambda o, _i: o[1]["manifest"]["authorization_provenance"].__setitem__("execution_stage", "target_canary"), "projection_execution_stage_mismatch"),
-        (lambda o, _i: o[1].__setitem__("run_directory", o[0]["run_directory"]), "projection_output_identity_mismatch"),
-        (lambda _o, i: i[1]["manifest"].__setitem__("mode", "cpu_parallel_1"), "inner_mode_scope_mismatch"),
-        (lambda _o, i: i[1].__setitem__("run_directory", str((Path.cwd() / "relocated" / "inner-p2").resolve())), "inner_run_identity_mismatch"),
-        (lambda o, _i: o[1].__setitem__("validation", {"valid": False}), "invalid_artifact_evidence"),
+        (
+            lambda o, _i: o[1]["manifest"]["authorization_provenance"].__setitem__(
+                "git_commit", "e" * 40
+            ),
+            "mixed_source_git_commit",
+        ),
+        (
+            lambda o, _i: o[1]["manifest"].__setitem__("mode", "cpu_parallel_1"),
+            "outer_mode_scope_mismatch",
+        ),
+        (
+            lambda o, _i: o[1]["manifest"]["authorization_provenance"].__setitem__(
+                "execution_stage", "target_canary"
+            ),
+            "projection_execution_stage_mismatch",
+        ),
+        (
+            lambda o, _i: o[1].__setitem__("run_directory", o[0]["run_directory"]),
+            "projection_output_identity_mismatch",
+        ),
+        (
+            lambda _o, i: i[1]["manifest"].__setitem__("mode", "cpu_parallel_1"),
+            "inner_mode_scope_mismatch",
+        ),
+        (
+            lambda _o, i: i[1].__setitem__(
+                "run_directory", str((Path.cwd() / "relocated" / "inner-p2").resolve())
+            ),
+            "inner_run_identity_mismatch",
+        ),
+        (
+            lambda _o, i: i[1].__setitem__(
+                "authorization", deepcopy(i[0]["authorization"])
+            ),
+            "invalid_inner_authorization",
+        ),
+        (
+            lambda _o, i: i[1].__setitem__(
+                "environment", deepcopy(i[0]["environment"])
+            ),
+            "invalid_inner_authorization",
+        ),
+        (
+            lambda _o, i: i[1].__setitem__("profile", deepcopy(i[0]["profile"])),
+            "invalid_inner_authorization",
+        ),
+        (
+            lambda o, _i: o[1].__setitem__("validation", {"valid": False}),
+            "invalid_artifact_evidence",
+        ),
     ],
 )
 def test_combined_projection_identity_is_closed_world(mutation, reason):
