@@ -333,6 +333,33 @@ def test_output_traversal_and_different_physical_target_are_rejected(tmp_path):
         runner._resolved_output_identity(tmp_path / "different" / "run", repo)
 
 
+@pytest.mark.parametrize(
+    "resolution_reason",
+    [
+        "invalid_artifact_namespace",
+        "output_symlink_escape",
+        "output_symlink_collision",
+    ],
+)
+def test_output_revalidation_maps_resolution_failure_to_identity_mismatch(
+    tmp_path, monkeypatch, resolution_reason
+):
+    repo = tmp_path / "repo"
+    output = repo / runner.ARTIFACT_ROOT / "run"
+    output.parent.mkdir(parents=True)
+    identity = runner._resolved_output_identity(output, repo)
+    runner._revalidate_output_identity(output, identity, repo)
+
+    def fail_resolution(_output, _repo_root):
+        raise PreflightError(resolution_reason)
+
+    monkeypatch.setattr(runner, "_resolved_output_identity", fail_resolution)
+    with pytest.raises(PreflightError, match="^output_identity_mismatch$") as exc_info:
+        runner._revalidate_output_identity(output, identity, repo)
+    assert isinstance(exc_info.value.__cause__, PreflightError)
+    assert str(exc_info.value.__cause__) == resolution_reason
+
+
 def test_output_symlink_collision_and_parent_retarget_fail_closed(tmp_path):
     repo = tmp_path / "repo"
     artifact_parent = repo / "artifacts"

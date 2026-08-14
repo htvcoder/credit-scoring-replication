@@ -271,7 +271,10 @@ def _resolved_output_identity(output: Path, repo_root: Path) -> dict[str, str]:
 def _revalidate_output_identity(
     output: Path, identity: dict[str, Any], repo_root: Path
 ) -> None:
-    current = _resolved_output_identity(output, repo_root)
+    try:
+        current = _resolved_output_identity(output, repo_root)
+    except PreflightError as exc:
+        raise PreflightError("output_identity_mismatch") from exc
     for key in (
         "physical_output_directory",
         "physical_artifact_root",
