@@ -34,6 +34,11 @@ from creditrep.locked_runtime_inputs import (
     ValidatedRuntimeInputs,
     validate_locked_runtime_inputs,
 )
+from creditrep.process_tree import (
+    close_process_queue,
+    isolate_process_group,
+    terminate_and_reap,
+)
 from creditrep.protocols.p7c4b2c import (
     ADDITIVE_COMPONENTS,
     EXECUTION_CLASSES,
@@ -1075,6 +1080,7 @@ def _execute_task(
 def _task_process_entry(result_queue: Any, kwargs: dict[str, Any]) -> None:
     """Spawn-safe boundary for one killable projection-preflight task."""
     try:
+        isolate_process_group()
         result_queue.put({"status": "completed", "record": _execute_task(**kwargs)})
     except BaseException as exc:  # child must report stable failure to its supervisor
         result_queue.put(
@@ -1097,58 +1103,8 @@ def _aggregate_process_tree_rss(root_pid: int) -> int:
         raise P7C4B2CError("memory_sampler_failure") from None
 
 
-def _terminate_and_reap(processes: list[Any]) -> None:
-    """Terminate task processes and every descendant, then synchronously reap them."""
-    roots: list[psutil.Process] = []
-    tree: dict[int, psutil.Process] = {}
-    for item in processes:
-        pid = getattr(item, "pid", None)
-        if isinstance(pid, int):
-            try:
-                root = psutil.Process(pid)
-                root.suspend()
-                roots.append(root)
-                tree[root.pid] = root
-            except psutil.Error:
-                pass
-    while True:
-        discovered = 0
-        for root in roots:
-            try:
-                descendants = root.children(recursive=True)
-            except psutil.Error:
-                descendants = []
-            for descendant in descendants:
-                if descendant.pid in tree:
-                    continue
-                try:
-                    descendant.suspend()
-                except psutil.Error:
-                    continue
-                tree[descendant.pid] = descendant
-                discovered += 1
-        if discovered == 0:
-            break
-    for process in tree.values():
-        try:
-            process.terminate()
-        except psutil.Error:
-            pass
-    _, alive = psutil.wait_procs(list(tree.values()), timeout=2.0)
-    for process in alive:
-        try:
-            process.kill()
-        except psutil.Error:
-            pass
-    psutil.wait_procs(alive, timeout=2.0)
-    for item in processes:
-        if getattr(item, "is_alive", lambda: False)():
-            item.terminate()
-    for item in processes:
-        item.join(timeout=2.0)
-        if getattr(item, "is_alive", lambda: False)():
-            item.kill()
-            item.join(timeout=2.0)
+def _terminate_and_reap(processes: list[Any]) -> bool:
+    return terminate_and_reap(processes)
 
 
 def _persist_supervisor_failure(
@@ -1232,11 +1188,10 @@ def _run_supervised_projection_phase(
     supervisor_pid = os.getpid()
 
     def abort(reason: str, failed_item: dict[str, Any] | None = None) -> None:
-        _terminate_and_reap([item["process"] for item in active])
-        for item in active:
-            close = getattr(item["queue"], "close", None)
-            if close is not None:
-                close()
+        cleanup_ok = _terminate_and_reap([item["process"] for item in active])
+        queue_results = [close_process_queue(item["queue"]) for item in active]
+        queues_ok = all(queue_results)
+        cleanup_reason = None if cleanup_ok and queues_ok else "process_cleanup_failure"
         affected = [item["task"] for item in active]
         if failed_item is not None and failed_item["task"] not in affected:
             affected.append(failed_item["task"])
@@ -1244,6 +1199,8 @@ def _run_supervised_projection_phase(
             affected.append(pending[0])
         for task in affected:
             _persist_supervisor_failure(run_dir, manifest, task, reason)
+            if cleanup_reason is not None:
+                _persist_supervisor_failure(run_dir, manifest, task, cleanup_reason)
         runtime_state["failed_task_count"] = int(runtime_state["failed_task_count"]) + 1
         now = _parse_utc(runtime_state["last_accounted_at"], "runtime_state_invalid")
         _persist_runtime_state(
@@ -1253,6 +1210,8 @@ def _run_supervised_projection_phase(
             max(float(runtime_state["accumulated_elapsed_seconds"]), 0.0),
             now,
         )
+        if cleanup_reason is not None:
+            raise P7C4B2CError(f"{reason};{cleanup_reason}")
         raise P7C4B2CError(reason)
 
     while pending or active:

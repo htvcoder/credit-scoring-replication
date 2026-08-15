@@ -23,6 +23,11 @@ import psutil
 
 from creditrep.config.loader import sha256_canonical
 from creditrep.datasets.registry import find_repo_root
+from creditrep.process_tree import (
+    close_process_queue,
+    isolate_process_group,
+    terminate_and_reap,
+)
 from creditrep.protocols.p7c4b2a import load_manifest
 from creditrep.protocols.p7c4b2b import (
     DATASET_FINGERPRINTS,
@@ -848,6 +853,7 @@ def _thread_env() -> dict[str, str]:
 
 
 def _worker(queue, task: dict[str, Any], root_text: str, fixture: bool) -> None:
+    isolate_process_group()
     env = _thread_env()
     started_cpu = time.process_time()
     rss = psutil.Process().memory_info().rss
@@ -1017,82 +1023,7 @@ def _tasks(
 
 
 def _terminate_and_reap(processes: list[Any]) -> bool:
-    """Bounded suspend/discover/terminate/kill/reap for supervised trees only."""
-    roots: list[psutil.Process] = []
-    tree: dict[int, psutil.Process] = {}
-    for item in processes:
-        pid = getattr(item, "pid", None)
-        if not isinstance(pid, int):
-            continue
-        try:
-            root = psutil.Process(pid)
-            root.suspend()
-            roots.append(root)
-            tree[pid] = root
-        except psutil.NoSuchProcess:
-            continue
-        except psutil.Error:
-            return False
-    # Roots are suspended first, but a child may have forked immediately before
-    # suspension. Repeat bounded discovery until two consecutive stable scans.
-    stable = 0
-    for _ in range(16):
-        discovered = 0
-        for root in roots:
-            try:
-                descendants = root.children(recursive=True)
-            except psutil.NoSuchProcess:
-                descendants = []
-            except psutil.Error:
-                return False
-            for descendant in descendants:
-                if descendant.pid in tree:
-                    continue
-                try:
-                    descendant.suspend()
-                except psutil.NoSuchProcess:
-                    continue
-                except psutil.Error:
-                    return False
-                tree[descendant.pid] = descendant
-                discovered += 1
-        stable = stable + 1 if discovered == 0 else 0
-        if stable >= 2:
-            break
-    else:
-        return False
-    # Descendants first, root last.
-    ordered = [
-        process
-        for pid, process in tree.items()
-        if pid not in {root.pid for root in roots}
-    ]
-    ordered.extend(roots)
-    for process in ordered:
-        try:
-            process.terminate()
-        except psutil.NoSuchProcess:
-            pass
-        except psutil.Error:
-            return False
-    _, alive = psutil.wait_procs(ordered, timeout=2.0)
-    for process in alive:
-        try:
-            process.kill()
-        except psutil.NoSuchProcess:
-            pass
-        except psutil.Error:
-            return False
-    _, alive = psutil.wait_procs(alive, timeout=2.0)
-    for item in processes:
-        try:
-            item.join(timeout=2.0)
-            if item.is_alive():
-                item.kill()
-                item.join(timeout=2.0)
-        except (AttributeError, OSError):
-            return False
-    return not alive and all(not psutil.pid_exists(pid) for pid in tree)
+    return terminate_and_reap(processes)
 
 
 def _terminate_tree(process) -> bool:
@@ -1730,8 +1661,9 @@ def resume(
         nonlocal runtime_state
         items = list(active.values())
         cleanup_ok = _terminate_and_reap([item[0] for item in items])
-        if not cleanup_ok:
-            reason_code = "process_cleanup_failure"
+        queue_results = [close_process_queue(item[1]) for item in items]
+        queues_ok = all(queue_results)
+        cleanup_reason = None if cleanup_ok and queues_ok else "process_cleanup_failure"
         if not fixture:
             for _process, _queue, task, _started, started_utc, temporary in items:
                 attempt = attempts[task["task_id"]]
@@ -1742,6 +1674,8 @@ def resume(
                     "reason_code": reason_code,
                     "completed_utc": _utc(),
                 }
+                if cleanup_reason is not None:
+                    failure["supervisor_cleanup_reason_code"] = cleanup_reason
                 if temporary is not None and temporary.exists():
                     runner_telemetry = temporary / "telemetry.json"
                     if not runner_telemetry.exists():
@@ -1762,6 +1696,8 @@ def resume(
                     if quarantine is not None
                     else None,
                 }
+                if cleanup_reason is not None:
+                    evidence["supervisor_cleanup_reason_code"] = cleanup_reason
                 _atomic_create_json(
                     run_dir
                     / "attempt-failures"
@@ -1786,6 +1722,8 @@ def resume(
             )
             account_runtime()
         active.clear()
+        if cleanup_reason is not None:
+            raise PreflightError(f"{reason_code};{cleanup_reason}")
         raise PreflightError(reason_code)
 
     peak_aggregate = 0
