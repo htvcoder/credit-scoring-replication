@@ -681,6 +681,7 @@ def test_killable_process_tree_terminates_and_reaps_descendant():
 
 def test_supervisor_timeout_caps_inflight_and_stops_dispatch(tmp_path, monkeypatch):
     state = {"started": 0, "active": 0, "maximum": 0, "clock": 0.0}
+    persisted_reasons = []
 
     class FakeQueue:
         pass
@@ -724,7 +725,11 @@ def test_supervisor_timeout_caps_inflight_and_stops_dispatch(tmp_path, monkeypat
         return state["clock"]
 
     monkeypatch.setattr(runner, "_persist_runtime_state", lambda *_a, **_k: None)
-    monkeypatch.setattr(runner, "_persist_supervisor_failure", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        runner,
+        "_persist_supervisor_failure",
+        lambda _run, _manifest, _task, reason: persisted_reasons.append(reason),
+    )
     policy = projection_preflight_resource_policy("cpu_parallel_2")
     manifest = {
         "run_id": "fixture-run",
@@ -759,6 +764,12 @@ def test_supervisor_timeout_caps_inflight_and_stops_dispatch(tmp_path, monkeypat
         )
     assert state["started"] == state["maximum"] == 2
     assert state["active"] == 0
+    assert persisted_reasons == [
+        "task_timeout_exceeded",
+        "process_cleanup_failure",
+        "task_timeout_exceeded",
+        "process_cleanup_failure",
+    ]
 
 
 def test_supervisor_memory_violation_stops_before_dispatch(tmp_path, monkeypatch):
