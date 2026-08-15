@@ -17,6 +17,7 @@ from creditrep.experiments.p7c4b2e_operations_cli import (
     create_launch_record,
     create_submission_claim,
     create_submission_receipt,
+    create_submission_result,
     resume_precheck,
 )
 
@@ -129,13 +130,9 @@ def test_outer_runbook_jq_argv_matches_exact_submitted_commands():
         "ARGV_P1": expected_run,
         "RESUME_ARGV_P1": expected_resume,
     }
-    submitted = {}
-    for command in commands:
-        if command.startswith("systemd-run ") and "p7c4b2c_cli" in command:
-            tokens = shlex.split(command)
-            runner = tokens[tokens.index("$PYTHON") :]
-            submitted[runner[3]] = runner
-    assert submitted == {"run": expected_run, "resume": expected_resume}
+    runbook_text = OUTER_RUNBOOK.read_text(encoding="utf-8")
+    assert runbook_text.count("submit-systemd-run --submission-result") == 2
+    assert "\nsystemd-run --user" not in runbook_text
     assert "systemctl --output=json" not in OUTER_RUNBOOK.read_text(encoding="utf-8")
 
 
@@ -707,11 +704,34 @@ def _typed_outer_launch(
     authorized_output_directory=None,
     working_directory=None,
     unit=None,
+    advance_git_head=False,
 ):
-    commit = "c" * 40
     repo = Path(working_directory) if working_directory else tmp_path / "repo"
     (repo / ".venv" / "bin").mkdir(parents=True, exist_ok=True)
     (repo / "artifacts").mkdir(exist_ok=True)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "-c",
+            "user.name=test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "--allow-empty",
+            "-qm",
+            "fixture",
+        ],
+        check=True,
+    )
+    commit = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
     output = (
         Path(output_directory) if output_directory else repo / "artifacts" / "outer-run"
     )
@@ -722,6 +742,11 @@ def _typed_outer_launch(
         output.mkdir(parents=True, exist_ok=True)
     python = repo / ".venv" / "bin" / "python"
     task_ids = [f"task-{index:03d}" for index in range(162)]
+    dataset_ids = ["AC", "GC", "TH02", "HMEQ", "TC", "GMC"]
+    dataset_hashes = {
+        dataset_id: f"{index + 1:064x}" for index, dataset_id in enumerate(dataset_ids)
+    }
+    dataset_binding = "d" * 64
 
     def typed(value, field):
         value[field] = operations._record_digest(value, field)
@@ -732,6 +757,9 @@ def _typed_outer_launch(
             "git_commit": commit,
             "execution_mode": mode,
             "output_directory": str(authorized_output),
+            "dataset_ids": dataset_ids,
+            "dataset_hashes": dataset_hashes,
+            "dataset_binding_digest": dataset_binding,
         },
         "environment_digest",
     )
@@ -744,6 +772,9 @@ def _typed_outer_launch(
             "target_environment_digest": environment_value["environment_digest"],
             "task_ids": task_ids,
             "maximum_task_count": 162,
+            "dataset_ids": dataset_ids,
+            "dataset_hashes": dataset_hashes,
+            "dataset_binding_digest": dataset_binding,
         },
         "proposal_digest",
     )
@@ -757,6 +788,9 @@ def _typed_outer_launch(
             "proposal_digest": proposal_value["proposal_digest"],
             "task_ids": task_ids,
             "maximum_task_count": 162,
+            "dataset_ids": dataset_ids,
+            "dataset_hashes": dataset_hashes,
+            "dataset_binding_digest": dataset_binding,
         },
         "authorization_digest",
     )
@@ -804,7 +838,7 @@ def _typed_outer_launch(
             "mode": mode,
             "source_git_commit": commit,
             "resolved_output_directory": str(output.resolve()),
-            "systemd_unit": f"p7c4b2c-outer-{mode_token}-outer-run-initial",
+            "systemd_unit": f"p7c4b2c-outer-{mode_token}-outer-run-initial.service",
             "environment": {"artifact_digest": environment_value["environment_digest"]},
             "proposal": {"artifact_digest": proposal_value["proposal_digest"]},
             "authorization": {
@@ -816,6 +850,26 @@ def _typed_outer_launch(
         )
         _input(original_launch_path, json.dumps(original_launch))
     launch_path = tmp_path / f"outer-{mode_token}-{runner_command}-launch.json"
+    if advance_git_head:
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repo),
+                "-c",
+                "user.name=test",
+                "-c",
+                "user.email=test@example.invalid",
+                "commit",
+                "--allow-empty",
+                "-qm",
+                "advance",
+            ],
+            check=True,
+        )
+    selected_unit = unit or (
+        f"p7c4b2c-outer-{mode_token}-{output.name}-{runner_command}.service"
+    )
     launch = create_launch_record(
         record_path=launch_path,
         git_commit=commit,
@@ -823,12 +877,14 @@ def _typed_outer_launch(
         authorization_path=authorization,
         environment_path=environment,
         proposal_path=proposal,
-        unit=unit or f"p7c4b2c-outer-{mode_token}-outer-run-{runner_command}",
+        unit=selected_unit,
         argv=argv,
         working_directory=str(repo),
         python_executable=str(python),
         output_directory=str(output),
-        log_path=str(tmp_path / f"outer-{mode_token}.log"),
+        log_path=str(
+            repo / "artifacts" / "p7c4b2c-operations" / f"{selected_unit}.log"
+        ),
         execution_stage="target-outer-projection-preflight",
         resume_of_launch_record_path=original_launch_path,
     )
@@ -838,6 +894,40 @@ def _typed_outer_launch(
         launch,
         argv,
     )
+
+
+def _outer_submission_result(
+    tmp_path, launch_path, launch, *, exit_code=0, stdout=None
+):
+    operations._create_submission_attempt(launch_path)
+    invocation_id = "09c753f133ac4a3fae89ba13ec21b3fe"
+    stdout_path = tmp_path / "systemd-run.stdout"
+    stderr_path = tmp_path / "systemd-run.stderr"
+    stdout_path.parent.mkdir(parents=True, exist_ok=True)
+    stdout_path.write_text(
+        stdout
+        if stdout is not None
+        else (
+            f"Running as unit: {launch['systemd_unit']}; invocation ID: "
+            f"{invocation_id}\n"
+            if exit_code == 0
+            else "Failed to start transient unit\n"
+        ),
+        encoding="utf-8",
+    )
+    stderr_path.write_text("", encoding="utf-8")
+    exit_code_path = tmp_path / "systemd-run.exit-code"
+    exit_code_path.write_bytes(f"{exit_code}\n".encode("ascii"))
+    result_path = tmp_path / "submission-result.json"
+    result = create_submission_result(
+        result_path=result_path,
+        launch_record_path=launch_path,
+        stdout_path=stdout_path,
+        stderr_path=stderr_path,
+        exit_code_path=exit_code_path,
+        systemd_run_exit_code=exit_code,
+    )
+    return result_path, result
 
 
 @pytest.mark.parametrize("mode", ["cpu_parallel_1", "cpu_parallel_2"])
@@ -850,6 +940,33 @@ def test_typed_outer_projection_run_launch_is_exact_and_bound(tmp_path, mode):
     assert launch["resolved_output_directory"] == str(
         Path(launch["output_directory"]).resolve()
     )
+
+
+def test_typed_outer_projection_rejects_stale_control_source_sha(tmp_path):
+    with pytest.raises(OperationsError, match="^operational_git_provenance_mismatch$"):
+        _typed_outer_launch(tmp_path, advance_git_head=True)
+
+
+def test_historical_outer_schema_v1_launch_claim_receipt_remains_compatible(tmp_path):
+    launch_path, receipt_path, launch, _argv = _typed_outer_launch(tmp_path)
+    launch["schema_version"] = 1
+    launch["record_digest"] = operations._record_digest(launch, "record_digest")
+    launch_path.write_text(json.dumps(launch), encoding="utf-8")
+    claim = create_submission_claim(
+        launch_record_path=launch_path, receipt_path=receipt_path
+    )
+    assert claim["schema_version"] == 1
+    snapshot = {field: "" for field in UNIT_SNAPSHOT_FIELDS}
+    snapshot["InvocationID"] = "historical-valid-invocation"
+    receipt = create_submission_receipt(
+        receipt_path=receipt_path,
+        launch_record_path=launch_path,
+        unit_snapshot=snapshot,
+        systemd_run_exit_code=0,
+        observed_unit=launch["systemd_unit"],
+    )
+    assert receipt["schema_version"] == 1
+    assert receipt["invocation_id"] == "historical-valid-invocation"
 
 
 @pytest.mark.parametrize(
@@ -873,19 +990,23 @@ def test_typed_outer_projection_resume_has_fresh_operational_identity(tmp_path):
         tmp_path, runner_command="resume"
     )
     assert launch["runner_command"] == "resume"
-    assert launch["resume_of_launch_record"]["systemd_unit"].endswith("-initial")
+    assert launch["resume_of_launch_record"]["systemd_unit"].endswith(
+        "-initial.service"
+    )
     assert argv[4:6] == ["--run-dir", launch["output_directory"]]
     claim = create_submission_claim(
         launch_record_path=launch_path, receipt_path=receipt_path
     )
     snapshot = {field: "" for field in UNIT_SNAPSHOT_FIELDS}
-    snapshot["InvocationID"] = "fresh-resume-invocation"
+    result_path, result = _outer_submission_result(tmp_path, launch_path, launch)
+    snapshot["InvocationID"] = result["invocation_id"]
     receipt = create_submission_receipt(
         receipt_path=receipt_path,
         launch_record_path=launch_path,
         unit_snapshot=snapshot,
         systemd_run_exit_code=0,
         observed_unit=launch["systemd_unit"],
+        submission_result_path=result_path,
     )
     assert receipt["submission_claim_digest"] == claim["claim_digest"]
     assert receipt["launch_record_digest"] == launch["record_digest"]
@@ -896,7 +1017,7 @@ def test_typed_outer_projection_resume_rejects_reused_unit(tmp_path):
         _typed_outer_launch(
             tmp_path,
             runner_command="resume",
-            unit="p7c4b2c-outer-p1-outer-run-initial",
+            unit="p7c4b2c-outer-p1-outer-run-initial.service",
         )
 
 
@@ -920,6 +1041,9 @@ def test_typed_outer_projection_claim_is_atomic_and_receipt_path_bound(tmp_path)
     assert outcomes.count("claimed_not_submitted") == 1
     assert outcomes.count("duplicate_submission") == 7
     snapshot = {field: "" for field in UNIT_SNAPSHOT_FIELDS}
+    result_path, _result = _outer_submission_result(
+        tmp_path, launch_path, launch, exit_code=1
+    )
     with pytest.raises(OperationsError, match="^duplicate_submission$"):
         create_submission_receipt(
             receipt_path=tmp_path / "alternate-receipt.json",
@@ -927,6 +1051,7 @@ def test_typed_outer_projection_claim_is_atomic_and_receipt_path_bound(tmp_path)
             unit_snapshot=snapshot,
             systemd_run_exit_code=1,
             observed_unit=launch["systemd_unit"],
+            submission_result_path=result_path,
         )
 
 
@@ -936,27 +1061,520 @@ def test_typed_outer_projection_failed_submission_is_evidence_and_success_requir
     launch_path, receipt_path, launch, _argv = _typed_outer_launch(tmp_path)
     create_submission_claim(launch_record_path=launch_path, receipt_path=receipt_path)
     snapshot = {field: "" for field in UNIT_SNAPSHOT_FIELDS}
+    result_path, _result = _outer_submission_result(
+        tmp_path, launch_path, launch, exit_code=1
+    )
     failed = create_submission_receipt(
         receipt_path=receipt_path,
         launch_record_path=launch_path,
         unit_snapshot=snapshot,
         systemd_run_exit_code=1,
         observed_unit=launch["systemd_unit"],
+        submission_result_path=result_path,
     )
     assert failed["submission_state"] == "submission_failed"
-    assert failed["invocation_id"] == ""
+    assert failed["invocation_id"] is None
 
     second_path, second_receipt, second, _argv = _typed_outer_launch(
         tmp_path / "second"
     )
     create_submission_claim(launch_record_path=second_path, receipt_path=second_receipt)
-    with pytest.raises(OperationsError, match="^invocation_id_missing$"):
+    with pytest.raises(
+        OperationsError, match="^systemd_run_invocation_id_count_invalid$"
+    ):
+        _outer_submission_result(
+            tmp_path / "second",
+            second_path,
+            second,
+            stdout=f"Running as unit: {second['systemd_unit']};\n",
+        )
+
+
+def test_outer_receipt_live_and_collected_recovery_are_submission_only(tmp_path):
+    launch_path, receipt_path, launch, _argv = _typed_outer_launch(tmp_path)
+    create_submission_claim(launch_record_path=launch_path, receipt_path=receipt_path)
+    result_path, result = _outer_submission_result(tmp_path, launch_path, launch)
+    snapshot = {field: "" for field in UNIT_SNAPSHOT_FIELDS}
+    snapshot.update(
+        {
+            "LoadState": "loaded",
+            "ActiveState": "active",
+            "InvocationID": result["invocation_id"],
+        }
+    )
+    receipt = create_submission_receipt(
+        receipt_path=receipt_path,
+        launch_record_path=launch_path,
+        unit_snapshot=snapshot,
+        systemd_run_exit_code=0,
+        observed_unit=launch["systemd_unit"],
+        submission_result_path=result_path,
+    )
+    assert receipt["unit_snapshot_status"] == "live_verified"
+    assert receipt["evidence_scope"] == "submission_outcome_only_not_compute_success"
+    assert "compute_success" not in receipt
+
+    second_path, second_receipt, second, _argv = _typed_outer_launch(
+        tmp_path / "collected"
+    )
+    create_submission_claim(launch_record_path=second_path, receipt_path=second_receipt)
+    second_result_path, _result = _outer_submission_result(
+        tmp_path / "collected", second_path, second
+    )
+    collected = {field: "" for field in UNIT_SNAPSHOT_FIELDS}
+    collected["LoadState"] = "not-found"
+    recovered = create_submission_receipt(
+        receipt_path=second_receipt,
+        launch_record_path=second_path,
+        unit_snapshot=collected,
+        systemd_run_exit_code=0,
+        observed_unit=second["systemd_unit"],
+        submission_result_path=second_result_path,
+    )
+    assert recovered["unit_snapshot_status"] == "unavailable_unit_collected"
+    assert recovered["invocation_id"] == "09c753f133ac4a3fae89ba13ec21b3fe"
+
+
+def test_exact_incident_systemd_output_with_service_suffix_parses():
+    unit = "p7c4b2c-outer-p1-target-outer-p1-20260815-01.service"
+    output = (
+        f"Running as unit: {unit}; invocation ID: 09c753f133ac4a3fae89ba13ec21b3fe\n"
+    )
+    assert (
+        operations._parse_systemd_run_output(output, unit)
+        == "09c753f133ac4a3fae89ba13ec21b3fe"
+    )
+
+
+def test_outer_submit_wrapper_atomically_captures_exact_systemd_result(
+    tmp_path, monkeypatch
+):
+    launch_path, receipt_path, launch, _argv = _typed_outer_launch(tmp_path)
+    create_submission_claim(launch_record_path=launch_path, receipt_path=receipt_path)
+    original_run = subprocess.run
+    observed = {}
+
+    def fake_run(command, **kwargs):
+        if command[0] == "git":
+            return original_run(command, **kwargs)
+        observed["command"] = command
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=(
+                f"Running as unit: {launch['systemd_unit']}; invocation ID: "
+                "09c753f133ac4a3fae89ba13ec21b3fe\n"
+            ).encode(),
+            stderr=b"",
+        )
+
+    monkeypatch.setattr(operations.subprocess, "run", fake_run)
+    result = operations.submit_systemd_run(
+        result_path=tmp_path / "submission-result.json",
+        launch_record_path=launch_path,
+        stdout_path=tmp_path / "systemd-run.stdout",
+        stderr_path=tmp_path / "systemd-run.stderr",
+        exit_code_path=tmp_path / "systemd-run.exit-code",
+    )
+    assert observed["command"] == [
+        "systemd-run",
+        "--user",
+        "--collect",
+        f"--unit={launch['systemd_unit']}",
+        f"--working-directory={launch['working_directory']}",
+        f"--property=StandardOutput=append:{launch['log_path']}",
+        f"--property=StandardError=append:{launch['log_path']}",
+        *launch["argv"],
+    ]
+    assert result["submission_state"] == "submitted"
+    assert Path(result["exit_code_path"]).read_text(encoding="ascii") == "0\n"
+
+
+def test_outer_submit_attempt_is_one_winner_and_blocks_retry_after_capture_crash(
+    tmp_path, monkeypatch
+):
+    launch_path, receipt_path, _launch, _argv = _typed_outer_launch(tmp_path)
+    create_submission_claim(launch_record_path=launch_path, receipt_path=receipt_path)
+    original_run = subprocess.run
+    systemd_calls = 0
+
+    def failed_run(command, **kwargs):
+        nonlocal systemd_calls
+        if command[0] == "git":
+            return original_run(command, **kwargs)
+        systemd_calls += 1
+        raise OSError("simulated capture crash")
+
+    monkeypatch.setattr(operations.subprocess, "run", failed_run)
+    call = {
+        "result_path": tmp_path / "submission-result.json",
+        "launch_record_path": launch_path,
+        "stdout_path": tmp_path / "systemd-run.stdout",
+        "stderr_path": tmp_path / "systemd-run.stderr",
+        "exit_code_path": tmp_path / "systemd-run.exit-code",
+    }
+    with pytest.raises(OperationsError, match="^systemd_run_capture_failed$"):
+        operations.submit_systemd_run(**call)
+    with pytest.raises(OperationsError, match="^submission_already_attempted$"):
+        operations.submit_systemd_run(**call)
+    assert systemd_calls == 1
+
+    second_path, second_receipt, _second, _argv = _typed_outer_launch(
+        tmp_path / "concurrent"
+    )
+    create_submission_claim(launch_record_path=second_path, receipt_path=second_receipt)
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        attempts = [
+            executor.submit(operations._create_submission_attempt, second_path)
+            for _ in range(8)
+        ]
+    outcomes = []
+    for attempt in attempts:
+        try:
+            outcomes.append(attempt.result()["attempt_state"])
+        except OperationsError as exc:
+            outcomes.append(str(exc))
+    assert outcomes.count("submission_invocation_committed") == 1
+    assert outcomes.count("submission_already_attempted") == 7
+
+
+def test_outer_resume_submit_rechecks_original_unit_inactive(tmp_path, monkeypatch):
+    launch_path, receipt_path, _launch, _argv = _typed_outer_launch(
+        tmp_path, runner_command="resume"
+    )
+    create_submission_claim(launch_record_path=launch_path, receipt_path=receipt_path)
+    original_run = subprocess.run
+    observed = []
+
+    def active_unit(command, **kwargs):
+        if command[0] == "git":
+            return original_run(command, **kwargs)
+        observed.append(command)
+        if command[0] == "systemctl":
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=b"LoadState=loaded\nActiveState=active\nMainPID=4242\n",
+                stderr=b"",
+            )
+        raise AssertionError("systemd-run must not be invoked for an active original")
+
+    monkeypatch.setattr(operations.subprocess, "run", active_unit)
+    with pytest.raises(OperationsError, match="^resume_precheck_unit_active$"):
+        operations.submit_systemd_run(
+            result_path=tmp_path / "submission-result.json",
+            launch_record_path=launch_path,
+            stdout_path=tmp_path / "systemd-run.stdout",
+            stderr_path=tmp_path / "systemd-run.stderr",
+            exit_code_path=tmp_path / "systemd-run.exit-code",
+        )
+    assert len(observed) == 1
+    assert observed[0][0] == "systemctl"
+    assert not operations._submission_attempt_path(launch_path).exists()
+
+    launch = json.loads(launch_path.read_text(encoding="utf-8"))
+
+    def inactive_unit(command, **kwargs):
+        if command[0] == "git":
+            return original_run(command, **kwargs)
+        if command[0] == "systemctl":
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=b"LoadState=loaded\nActiveState=inactive\nMainPID=0\n",
+                stderr=b"",
+            )
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=(
+                f"Running as unit: {launch['systemd_unit']}; invocation ID: "
+                "09c753f133ac4a3fae89ba13ec21b3fe\n"
+            ).encode(),
+            stderr=b"",
+        )
+
+    monkeypatch.setattr(operations.subprocess, "run", inactive_unit)
+    result = operations.submit_systemd_run(
+        result_path=tmp_path / "submission-result.json",
+        launch_record_path=launch_path,
+        stdout_path=tmp_path / "systemd-run.stdout",
+        stderr_path=tmp_path / "systemd-run.stderr",
+        exit_code_path=tmp_path / "systemd-run.exit-code",
+    )
+    assert result["submission_state"] == "submitted"
+
+
+@pytest.mark.parametrize("mutation", ["argv", "unit", "working", "log"])
+def test_outer_claim_revalidates_self_redigested_launch_semantics(tmp_path, mutation):
+    launch_path, receipt_path, launch, _argv = _typed_outer_launch(tmp_path)
+    if mutation == "argv":
+        launch["argv"].append("--unreviewed-scope")
+    elif mutation == "unit":
+        launch["systemd_unit"] = "unbound.service"
+    elif mutation == "working":
+        launch["working_directory"] = str(tmp_path / "different-repo")
+        launch["resolved_working_directory"] = str(
+            (tmp_path / "different-repo").resolve()
+        )
+    else:
+        launch["log_path"] = str(tmp_path / "unbound.log")
+        launch["resolved_log_path"] = str((tmp_path / "unbound.log").resolve())
+    launch["record_digest"] = operations._record_digest(launch, "record_digest")
+    launch_path.write_text(json.dumps(launch), encoding="utf-8")
+    with pytest.raises(OperationsError):
+        create_submission_claim(
+            launch_record_path=launch_path, receipt_path=receipt_path
+        )
+    assert not operations._submission_claim_path(launch_path).exists()
+
+
+def test_outer_receipt_revalidates_self_redigested_attempt_semantics(tmp_path):
+    launch_path, receipt_path, launch, _argv = _typed_outer_launch(tmp_path)
+    create_submission_claim(launch_record_path=launch_path, receipt_path=receipt_path)
+    result_path, result = _outer_submission_result(tmp_path, launch_path, launch)
+    attempt_path = Path(result["submission_attempt_path"])
+    attempt = json.loads(attempt_path.read_text(encoding="utf-8"))
+    attempt["artifact_type"] = "wrong_submission_attempt"
+    attempt["attempt_digest"] = operations._record_digest(attempt, "attempt_digest")
+    attempt_path.write_text(json.dumps(attempt), encoding="utf-8")
+    result["submission_attempt_sha256"] = hashlib.sha256(
+        attempt_path.read_bytes()
+    ).hexdigest()
+    result["submission_attempt_digest"] = attempt["attempt_digest"]
+    result["result_digest"] = operations._record_digest(result, "result_digest")
+    result_path.write_text(json.dumps(result), encoding="utf-8")
+    snapshot = {field: "" for field in UNIT_SNAPSHOT_FIELDS}
+    snapshot["LoadState"] = "not-found"
+    with pytest.raises(OperationsError, match="^submission_result_mismatch$"):
+        create_submission_receipt(
+            receipt_path=receipt_path,
+            launch_record_path=launch_path,
+            unit_snapshot=snapshot,
+            systemd_run_exit_code=0,
+            observed_unit=launch["systemd_unit"],
+            submission_result_path=result_path,
+        )
+
+
+@pytest.mark.parametrize(
+    "stdout,code",
+    [
+        ("Running as unit: UNIT;\n", "systemd_run_invocation_id_count_invalid"),
+        (
+            "Running as unit: UNIT; invocation ID: NOT-HEX\n",
+            "invocation_id_malformed",
+        ),
+        (
+            "Running as unit: UNIT; invocation ID: 09c753f133ac4a3fae89ba13ec21b3fe\n"
+            "Running as unit: UNIT; invocation ID: 19c753f133ac4a3fae89ba13ec21b3fe\n",
+            "systemd_run_invocation_id_count_invalid",
+        ),
+        (
+            "Running as unit: WRONG; invocation ID: 09c753f133ac4a3fae89ba13ec21b3fe\n",
+            "systemd_unit_mismatch",
+        ),
+    ],
+)
+def test_outer_submission_output_parser_is_closed(tmp_path, stdout, code):
+    launch_path, receipt_path, launch, _argv = _typed_outer_launch(tmp_path)
+    create_submission_claim(launch_record_path=launch_path, receipt_path=receipt_path)
+    rendered = stdout.replace("UNIT", launch["systemd_unit"])
+    with pytest.raises(OperationsError, match=f"^{code}$"):
+        _outer_submission_result(tmp_path, launch_path, launch, stdout=rendered)
+
+
+def test_outer_nonzero_exit_rejects_created_unit_or_invocation_evidence(tmp_path):
+    launch_path, receipt_path, launch, _argv = _typed_outer_launch(tmp_path)
+    create_submission_claim(launch_record_path=launch_path, receipt_path=receipt_path)
+    successful_output = (
+        f"Running as unit: {launch['systemd_unit']}; invocation ID: "
+        "09c753f133ac4a3fae89ba13ec21b3fe\n"
+    )
+    with pytest.raises(OperationsError, match="^systemd_run_exit_code_mismatch$"):
+        _outer_submission_result(
+            tmp_path,
+            launch_path,
+            launch,
+            exit_code=1,
+            stdout=successful_output,
+        )
+
+    second_path, second_receipt, second, _argv = _typed_outer_launch(tmp_path / "live")
+    create_submission_claim(launch_record_path=second_path, receipt_path=second_receipt)
+    result_path, _result = _outer_submission_result(
+        tmp_path / "live", second_path, second, exit_code=1
+    )
+    snapshot = {field: "" for field in UNIT_SNAPSHOT_FIELDS}
+    snapshot["LoadState"] = "loaded"
+    snapshot["InvocationID"] = "09c753f133ac4a3fae89ba13ec21b3fe"
+    with pytest.raises(OperationsError, match="^systemd_run_exit_code_mismatch$"):
         create_submission_receipt(
             receipt_path=second_receipt,
             launch_record_path=second_path,
             unit_snapshot=snapshot,
+            systemd_run_exit_code=1,
+            observed_unit=second["systemd_unit"],
+            submission_result_path=result_path,
+        )
+
+
+def test_outer_receipt_rejects_altered_output_exit_and_live_identity(tmp_path):
+    launch_path, receipt_path, launch, _argv = _typed_outer_launch(tmp_path)
+    create_submission_claim(launch_record_path=launch_path, receipt_path=receipt_path)
+    result_path, result = _outer_submission_result(tmp_path, launch_path, launch)
+    Path(result["stdout_path"]).write_text("altered\n", encoding="utf-8")
+    with pytest.raises(OperationsError, match="^submission_result_mismatch$"):
+        create_submission_receipt(
+            receipt_path=receipt_path,
+            launch_record_path=launch_path,
+            unit_snapshot=None,
+            systemd_run_exit_code=0,
+            observed_unit=launch["systemd_unit"],
+            submission_result_path=result_path,
+        )
+
+    exit_path, exit_receipt, exit_launch, _argv = _typed_outer_launch(
+        tmp_path / "exit-file"
+    )
+    create_submission_claim(launch_record_path=exit_path, receipt_path=exit_receipt)
+    exit_result_path, exit_result = _outer_submission_result(
+        tmp_path / "exit-file", exit_path, exit_launch
+    )
+    Path(exit_result["exit_code_path"]).write_bytes(b"1\n")
+    with pytest.raises(OperationsError, match="^submission_result_mismatch$"):
+        create_submission_receipt(
+            receipt_path=exit_receipt,
+            launch_record_path=exit_path,
+            unit_snapshot=None,
+            systemd_run_exit_code=0,
+            observed_unit=exit_launch["systemd_unit"],
+            submission_result_path=exit_result_path,
+        )
+
+    second_path, second_receipt, second, _argv = _typed_outer_launch(tmp_path / "exit")
+    create_submission_claim(launch_record_path=second_path, receipt_path=second_receipt)
+    second_result_path, second_result = _outer_submission_result(
+        tmp_path / "exit", second_path, second
+    )
+    with pytest.raises(OperationsError, match="^submission_result_mismatch$"):
+        create_submission_receipt(
+            receipt_path=second_receipt,
+            launch_record_path=second_path,
+            unit_snapshot=None,
+            systemd_run_exit_code=1,
+            observed_unit=second["systemd_unit"],
+            submission_result_path=second_result_path,
+        )
+    mismatch = {field: "" for field in UNIT_SNAPSHOT_FIELDS}
+    mismatch["LoadState"] = "loaded"
+    mismatch["InvocationID"] = "1" * 32
+    with pytest.raises(OperationsError, match="^unit_snapshot_invocation_id_mismatch$"):
+        create_submission_receipt(
+            receipt_path=second_receipt,
+            launch_record_path=second_path,
+            unit_snapshot=mismatch,
             systemd_run_exit_code=0,
             observed_unit=second["systemd_unit"],
+            submission_result_path=second_result_path,
+        )
+
+
+def test_outer_empty_snapshot_and_concurrent_recovery_are_no_clobber(tmp_path):
+    launch_path, receipt_path, launch, _argv = _typed_outer_launch(tmp_path)
+    create_submission_claim(launch_record_path=launch_path, receipt_path=receipt_path)
+    result_path, _result = _outer_submission_result(tmp_path, launch_path, launch)
+    empty_snapshot = tmp_path / "snapshot.json"
+    empty_snapshot.write_bytes(b"")
+
+    def recover():
+        return create_submission_receipt(
+            receipt_path=receipt_path,
+            launch_record_path=launch_path,
+            unit_snapshot=None,
+            systemd_run_exit_code=0,
+            observed_unit=launch["systemd_unit"],
+            submission_result_path=result_path,
+            snapshot_attempt_path=empty_snapshot,
+        )
+
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        futures = [executor.submit(recover) for _ in range(6)]
+    outcomes = []
+    for future in futures:
+        try:
+            outcomes.append(future.result()["unit_snapshot_status"])
+        except OperationsError as exc:
+            outcomes.append(str(exc))
+    assert outcomes.count("unavailable_empty_attempt") == 1
+    assert outcomes.count("operational_evidence_collision") == 5
+
+
+def test_outer_receipt_requires_live_or_immutable_snapshot_attempt(tmp_path):
+    launch_path, receipt_path, launch, _argv = _typed_outer_launch(tmp_path)
+    create_submission_claim(launch_record_path=launch_path, receipt_path=receipt_path)
+    result_path, _result = _outer_submission_result(tmp_path, launch_path, launch)
+    with pytest.raises(OperationsError, match="^unit_snapshot_evidence_missing$"):
+        create_submission_receipt(
+            receipt_path=receipt_path,
+            launch_record_path=launch_path,
+            unit_snapshot=None,
+            systemd_run_exit_code=0,
+            observed_unit=launch["systemd_unit"],
+            submission_result_path=result_path,
+        )
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("artifact_type", "wrong_claim"),
+        ("execution_stage", "target-inner-preflight"),
+        ("launch_record_path", "/wrong/launch.json"),
+        ("submission_state", "submitted"),
+    ],
+)
+def test_outer_submission_result_rejects_redigested_claim_semantic_mutation(
+    tmp_path, field, value
+):
+    launch_path, receipt_path, launch, _argv = _typed_outer_launch(tmp_path)
+    create_submission_claim(launch_record_path=launch_path, receipt_path=receipt_path)
+    claim_path = operations._submission_claim_path(launch_path)
+    claim = json.loads(claim_path.read_text(encoding="utf-8"))
+    claim[field] = value
+    claim["claim_digest"] = operations._record_digest(claim, "claim_digest")
+    claim_path.write_text(json.dumps(claim), encoding="utf-8")
+    with pytest.raises(OperationsError, match="^submission_claim_invalid$"):
+        _outer_submission_result(tmp_path, launch_path, launch)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("artifact_type", "wrong_result"),
+        ("submission_claim_path", "/wrong/claim.json"),
+        ("submission_state", "submission_failed"),
+    ],
+)
+def test_outer_receipt_rejects_redigested_result_semantic_mutation(
+    tmp_path, field, value
+):
+    launch_path, receipt_path, launch, _argv = _typed_outer_launch(tmp_path)
+    create_submission_claim(launch_record_path=launch_path, receipt_path=receipt_path)
+    result_path, result = _outer_submission_result(tmp_path, launch_path, launch)
+    result[field] = value
+    result["result_digest"] = operations._record_digest(result, "result_digest")
+    result_path.write_text(json.dumps(result), encoding="utf-8")
+    snapshot = {item: "" for item in UNIT_SNAPSHOT_FIELDS}
+    snapshot["LoadState"] = "not-found"
+    with pytest.raises(OperationsError, match="^submission_result_mismatch$"):
+        create_submission_receipt(
+            receipt_path=receipt_path,
+            launch_record_path=launch_path,
+            unit_snapshot=snapshot,
+            systemd_run_exit_code=0,
+            observed_unit=launch["systemd_unit"],
+            submission_result_path=result_path,
         )
 
 
@@ -973,7 +1591,7 @@ def test_typed_outer_projection_run_rejects_existing_output_and_mode_unit_cross_
             output_directory=str(output),
         )
     with pytest.raises(OperationsError, match="^systemd_unit_mismatch$"):
-        _typed_outer_launch(tmp_path / "cross", unit="p7c4b2c-outer-p2-wrong")
+        _typed_outer_launch(tmp_path / "cross", unit="p7c4b2c-outer-p2-wrong.service")
 
 
 def test_typed_outer_projection_accepts_logical_repository_alias(tmp_path):

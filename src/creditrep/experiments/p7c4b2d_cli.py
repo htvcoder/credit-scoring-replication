@@ -86,6 +86,7 @@ def main(argv: list[str] | None = None) -> int:
                     plan,
                     mode=args.mode,
                     output_directory=args.output_directory,
+                    execution_stage=args.stage,
                     operator_metadata=metadata,
                     repo_root=root,
                 )
@@ -115,13 +116,19 @@ def main(argv: list[str] | None = None) -> int:
             _print(value)
             return EXIT_OK if value["valid"] else EXIT_REVIEW_BLOCKED
         if args.command == "render-authorization-proposal":
-            report = validate_target_environment(environment, plan, repo_root=root)
+            report = validate_target_environment(
+                environment, plan, execution_stage=args.stage, repo_root=root
+            )
             if not report["valid"]:
                 _print({"valid": False, "reason_codes": report["reason_codes"]})
                 return EXIT_REVIEW_BLOCKED
             _print(
                 render_authorization_proposal(
-                    plan, environment, execution_stage=args.stage, expiry=None
+                    plan,
+                    environment,
+                    execution_stage=args.stage,
+                    expiry=None,
+                    repo_root=root,
                 )
             )
             return EXIT_OK

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import re
+import os
 from pathlib import Path
+import stat
 from typing import Any
 
 import yaml
@@ -32,10 +34,14 @@ def validate_portable_path(path_text: str, *, context: str) -> None:
     if "\\" in path_text:
         raise RegistryError(f"{context}: path must use '/' separators: {path_text}")
     if is_windows_absolute(path_text):
-        raise RegistryError(f"{context}: Windows absolute path is not portable: {path_text}")
+        raise RegistryError(
+            f"{context}: Windows absolute path is not portable: {path_text}"
+        )
     path = Path(path_text)
     if path.is_absolute() or path_text.startswith("/"):
-        raise RegistryError(f"{context}: POSIX absolute path is not portable: {path_text}")
+        raise RegistryError(
+            f"{context}: POSIX absolute path is not portable: {path_text}"
+        )
     if ".." in path.parts:
         raise RegistryError(f"{context}: path must not contain '..': {path_text}")
 
@@ -43,6 +49,58 @@ def validate_portable_path(path_text: str, *, context: str) -> None:
 def resolve_repo_path(path_text: str, *, repo_root: Path, context: str) -> Path:
     validate_portable_path(path_text, context=context)
     return repo_root / Path(path_text)
+
+
+def read_repo_file_no_symlinks(
+    path_text: str, *, repo_root: Path, context: str
+) -> bytes:
+    """Read one repository file without following symlinks during traversal."""
+    validate_portable_path(path_text, context=context)
+    root = repo_root.resolve(strict=True)
+    parts = Path(path_text).parts
+    if os.name != "nt" and hasattr(os, "O_NOFOLLOW"):
+        directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+        descriptors: list[int] = []
+        try:
+            current = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+            descriptors.append(current)
+            for component in parts[:-1]:
+                current = os.open(component, directory_flags, dir_fd=current)
+                descriptors.append(current)
+            source = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW, dir_fd=current)
+            descriptors.append(source)
+            if not stat.S_ISREG(os.fstat(source).st_mode):
+                raise OSError("source is not a regular file")
+            chunks = []
+            while True:
+                chunk = os.read(source, 1024 * 1024)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+            return b"".join(chunks)
+        finally:
+            for descriptor in reversed(descriptors):
+                os.close(descriptor)
+    source_path = root / Path(path_text)
+    before = []
+    cursor = root
+    for component in parts:
+        cursor = cursor / component
+        if cursor.is_symlink():
+            raise OSError("source symlink forbidden")
+        before.append(cursor.resolve(strict=True))
+    before[-1].relative_to(root)
+    payload = source_path.read_bytes()
+    after = []
+    cursor = root
+    for component in parts:
+        cursor = cursor / component
+        if cursor.is_symlink():
+            raise OSError("source symlink forbidden")
+        after.append(cursor.resolve(strict=True))
+    if before != after:
+        raise OSError("source path changed during read")
+    return payload
 
 
 def _normalize_dataset_id(dataset_id: str) -> str:
@@ -99,7 +157,9 @@ def parse_dataset_spec(dataset_id: str, raw: dict[str, Any]) -> DatasetSpec:
     declared_id = _normalize_dataset_id(str(raw.get("id", dataset_id)))
     normalized_id = _normalize_dataset_id(dataset_id)
     if declared_id != normalized_id:
-        raise RegistryError(f"{dataset_id}: id field {declared_id!r} does not match registry key.")
+        raise RegistryError(
+            f"{dataset_id}: id field {declared_id!r} does not match registry key."
+        )
 
     active_file = _active_file(raw, dataset_id=normalized_id)
     validate_portable_path(active_file, context=f"{normalized_id}.active_file")
@@ -107,7 +167,9 @@ def parse_dataset_spec(dataset_id: str, raw: dict[str, Any]) -> DatasetSpec:
         if raw.get(key):
             validate_portable_path(str(raw[key]), context=f"{normalized_id}.{key}")
     for path_text in raw.get("dictionary_files") or []:
-        validate_portable_path(str(path_text), context=f"{normalized_id}.dictionary_files")
+        validate_portable_path(
+            str(path_text), context=f"{normalized_id}.dictionary_files"
+        )
 
     target_cfg = raw.get("target")
     if not isinstance(target_cfg, dict):
@@ -130,10 +192,14 @@ def parse_dataset_spec(dataset_id: str, raw: dict[str, Any]) -> DatasetSpec:
             f"{normalized_id}: target column {target_column!r} cannot also be identifier/ignored."
         )
     if target_set & feature_metadata:
-        raise RegistryError(f"{normalized_id}: target column {target_column!r} cannot be a feature.")
+        raise RegistryError(
+            f"{normalized_id}: target column {target_column!r} cannot be a feature."
+        )
     overlap = set(categorical) & set(numeric)
     if overlap:
-        raise RegistryError(f"{normalized_id}: columns cannot be both numeric and categorical: {sorted(overlap)}")
+        raise RegistryError(
+            f"{normalized_id}: columns cannot be both numeric and categorical: {sorted(overlap)}"
+        )
     id_feature_overlap = set(identifiers) & feature_metadata
     if id_feature_overlap:
         raise RegistryError(
@@ -165,7 +231,11 @@ def load_registry(
     repo_root: Path | str | None = None,
 ) -> dict[str, DatasetSpec]:
     root = Path(repo_root).resolve() if repo_root is not None else find_repo_root()
-    path = Path(registry_path) if registry_path is not None else root / "data" / "datasets.yaml"
+    path = (
+        Path(registry_path)
+        if registry_path is not None
+        else root / "data" / "datasets.yaml"
+    )
     if not path.is_absolute():
         path = root / path
     if not path.exists():
@@ -176,7 +246,9 @@ def load_registry(
     except yaml.YAMLError as exc:
         raise RegistryError(f"Dataset registry YAML is invalid: {path}: {exc}") from exc
     if not isinstance(payload, dict) or not isinstance(payload.get("datasets"), dict):
-        raise RegistryError(f"Dataset registry is malformed: {path}; expected top-level 'datasets'.")
+        raise RegistryError(
+            f"Dataset registry is malformed: {path}; expected top-level 'datasets'."
+        )
 
     specs: dict[str, DatasetSpec] = {}
     for dataset_id, raw in payload["datasets"].items():
@@ -196,4 +268,6 @@ def get_dataset_spec(
         return registry[normalized_id]
     except KeyError as exc:
         valid = ", ".join(sorted(registry))
-        raise DatasetNotFoundError(f"Dataset ID {dataset_id!r} is not in registry. Valid IDs: {valid}") from exc
+        raise DatasetNotFoundError(
+            f"Dataset ID {dataset_id!r} is not in registry. Valid IDs: {valid}"
+        ) from exc

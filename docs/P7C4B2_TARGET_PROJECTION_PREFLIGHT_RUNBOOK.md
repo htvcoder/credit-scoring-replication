@@ -86,7 +86,25 @@ but legacy manifests without this projection binding are not combination input.
 
 Create separate target environments because mode and output namespace are
 digest-bound. Use `target_projection_preflight` for the self-contained full
-scope.
+scope. Collection must use `--stage target_projection_preflight`; the default
+canary collection intentionally binds only AC/GMC and is rejected here. Each
+outer environment must list exactly `AC, GC, TH02, HMEQ, TC, GMC` in that order
+and bind all six active-file hashes, the full locked-input digest, plan digest
+and source Git SHA before a proposal can be rendered.
+
+```bash
+set +e
+"$PYTHON" -m creditrep.experiments.p7c4b2d_cli \
+  collect-target-environment --stage target_projection_preflight \
+  --mode cpu_parallel_1 --output-directory "$OUT_P1" \
+  --operator-metadata "$OPERATOR_METADATA_P1" > "$ENV_P1"
+COLLECT_P1_RC=$?
+set -e
+test "$COLLECT_P1_RC" -eq 3
+```
+
+Repeat for P2 with its distinct mode, output and metadata. Exit 3 means the
+collector wrote review evidence but did not authorize execution.
 
 ```bash
 "$PYTHON" -m creditrep.experiments.p7c4b2d_cli \
@@ -127,7 +145,10 @@ Use only the typed `target-outer-projection-preflight` operations flow in
 `P7C4B2C_OUTER_REFIT_OVERHEAD_PREFLIGHT_RUNBOOK.md`. That flow records the exact
 argv before the compute boundary, atomically claims submission, submits that
 same argv with `systemd-run --user`, snapshots the unit through key/value
-`systemctl show`, and writes a one-time receipt. The external operations stage
+`systemctl show`, saves stdout/stderr and exit code in a typed immutable
+submission-result, and writes a one-time receipt. If `--collect` unloads the
+unit first, receipt recovery uses that saved result and marks the snapshot
+unavailable; it never accepts an operator-entered Invocation ID. The external operations stage
 maps exactly to protocol stage `target_projection_preflight`; substituting
 `target-inner-preflight`, directly invoking the runner, or constructing loose
 JSON is forbidden.

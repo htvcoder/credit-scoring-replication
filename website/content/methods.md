@@ -34,17 +34,18 @@ Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái 
 
 - Implementation đã hoàn thành ở mức code/contract: population 270 outer refit được suy ra từ 90 outer partitions × ba MLP; sampling phân tầng theo dataset, model, candidate proxy và CPU mode.
 - Execution core dùng process spawn, tách warmup khỏi measured phase, instrument canonical preprocessing/refit path, ghi artifact atomic, resume sample hợp lệ và quarantine state hỏng.
-- Synthetic validation chỉ kiểm tra lifecycle bằng fixture cực nhỏ và luôn là non-scientific evidence. Target outer-refit/overhead preflight chưa chạy, runtime/cost và canonical mode vẫn unknown, execution plan vẫn fail closed.
+- Synthetic validation chỉ kiểm tra lifecycle bằng fixture cực nhỏ và luôn là non-scientific evidence. Historical outer P1 target attempt trên source `aac4504...` đã fail-closed sau 9 AC task vì environment chỉ bind AC/GMC; failed evidence được giữ nguyên, không có valid projection result và 9 sample không được dùng cho projection. Runtime/cost đó chỉ là failure evidence non-publishable; canonical mode vẫn unknown và execution plan vẫn fail closed.
 
 ## P7C.4B.2d target authorization readiness
 
-- Stage 0 static contract đã harden: đối chiếu Git HEAD, dependency fingerprint, checksum input AC/GMC, disk/output namespace và bounded process-spawn probe; proposal bind đúng bốn canary task của từng mode và luôn non-effective.
+- Stage 0 static contract giữ AC/GMC cho canary, đồng thời outer projection dùng versioned closed-world binding đúng ordered `AC, GC, TH02, HMEQ, TC, GMC`, full locked-input digest, plan/source/mode/output/resource policy và cross-binding qua proposal/effective authorization. Missing/extra/wrong/case-variant binding bị chặn trước authorization và trước runner output/dispatch.
 - Fresh target canary `p7c4b2d-target-rerun-01` đã có target environment, price/budget scope, effective authorization và 4/4 task `target_preflight` completed ở `cpu_parallel_2`; closeout xác nhận identity/digest/telemetry/completion evidence hợp lệ.
 - Đây chỉ là acceptance vận hành cho canary. Nó không tạo scientific result, không làm scientific projection eligible và không authorize canonical scientific execution; full target compute/outer-refit preflight và canonical execution vẫn NO-GO.
 
 ## P7C.4B.2e controlled target-canary operations
 
 - Runbook và CLI vận hành đã hoàn tất và qua fixture tests: launch record bất biến, submission receipt một lần qua systemd, monitor-only, resume precheck và final artifact validation.
+- Outer operations dùng typed submission-result bind saved `systemd-run` stdout/stderr, exit code, exact unit và parsed 32-hex Invocation ID. Receipt có thể recover khi `--collect` đã unload unit hoặc snapshot attempt rỗng, nhưng chỉ chứng minh submission outcome, không chứng minh compute success.
 - Fresh run đã có target operation, effective authorization và submission receipt trong scope canary; 4/4 authorized task completed và `target_canary_acceptance.accepted` là true.
 
 ## P7C.4B.2b target inner-preflight execution integrity
@@ -54,7 +55,7 @@ Website hiện mô tả phương pháp ở mức kế hoạch và trạng thái 
 - Worker artifact chỉ được promotion từ unique temporary attempt namespace sau khi parent recheck authorization, runtime, timeout, RSS/RAM, disk, projected size, control-file hash, attempt identity, ledger và physical output identity. Failed attempt vẫn audit được nhưng không làm successful retry trở thành active failed canonical task.
 - Operations helper dùng closed typed mapping cho canary và `target-inner-preflight`; launch record/receipt chỉ chứng minh preparation/submission, không chứng minh workload hoặc scientific result. Target inner workload chưa chạy và canonical scientific execution vẫn NO-GO.
 - Đây vẫn chỉ là canary vận hành, không phải full scientific execution: `scientific_coverage.valid` là false với `incomplete_required_stratum` và `insufficient_repetitions`; scientific projection và canonical execution vẫn không eligible/chưa authorized.
-- Bước kỹ thuật kế tiếp trong P7C.4B.2 là target projection preflight: target inner-fit B2b cho cả hai CPU mode và hai self-contained outer-refit scope 162 task. Mỗi outer run bind riêng 12 giờ/USD 5, timeout task 20 phút, aggregate RSS 12 GiB, zero failure và tối đa hai task in-flight; các giới hạn này không áp dụng cho B2b hoặc canonical execution. Canary cũ không được dùng làm residual vì khác source SHA. Combined projection yêu cầu exact 324 task, closed inner/outer identity, reviewed typed overhead/price và luôn giữ canonical scientific authorization là false.
+- Bước kỹ thuật kế tiếp trong P7C.4B.2 là tạo lại fresh post-merge common-SHA target inner-fit B2b cho cả hai CPU mode và hai self-contained outer-refit scope 162 task; failed outer evidence cũ không được resume/promote. Mỗi outer run bind riêng 12 giờ/USD 5, timeout task 20 phút, aggregate RSS 12 GiB, zero failure và tối đa hai task in-flight; các giới hạn này không áp dụng cho B2b hoặc canonical execution. Canary/evidence cũ không được dùng làm residual vì khác source SHA. Combined projection yêu cầu exact 324 task, closed inner/outer identity, reviewed typed overhead/price và luôn giữ canonical scientific authorization là false.
 
 ## Modern reassessment
 

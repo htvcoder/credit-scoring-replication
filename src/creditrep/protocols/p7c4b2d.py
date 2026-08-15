@@ -20,10 +20,10 @@ import sys
 from typing import Any, Callable
 
 import psutil
-from creditrep.checksums import get_dataset_checksum
-from creditrep.datasets.registry import find_repo_root, get_dataset_spec, load_registry
+from creditrep.datasets.registry import find_repo_root
 from creditrep.locked_runtime_inputs import (
     LockedRuntimeInputError,
+    OUTER_PROJECTION_RUNTIME_DATASETS,
     load_locked_runtime_inputs,
 )
 from creditrep.protocols.p7c4b2c import (
@@ -35,6 +35,7 @@ from creditrep.protocols.p7c4b2c import (
 )
 
 SCHEMA_VERSION = 2
+OUTER_ENVIRONMENT_SCHEMA_VERSION = 3
 CHECKPOINT = "P7C.4B.2d"
 SHA256_RE = re.compile(r"^[A-Fa-f0-9]{64}$")
 GIT_RE = re.compile(r"^[a-f0-9]{40}$")
@@ -155,6 +156,14 @@ MAX_AUTHORIZATION_DURATION_SECONDS = 24 * 60 * 60
 ENVIRONMENT_SCHEMA_FIELDS = frozenset(
     (*ENVIRONMENT_FIELDS, "process_spawn_probe", "environment_digest")
 )
+OUTER_ENVIRONMENT_FIELDS = frozenset(
+    (
+        *ENVIRONMENT_SCHEMA_FIELDS,
+        "execution_stage",
+        "dataset_ids",
+        "dataset_binding_digest",
+    )
+)
 PROPOSAL_SCHEMA_FIELDS = frozenset(
     {
         "schema_version",
@@ -184,6 +193,10 @@ PROPOSAL_SCHEMA_FIELDS = frozenset(
         "resource_policy",
         "proposal_digest",
     }
+)
+OUTER_PROPOSAL_SCHEMA_VERSION = 3
+OUTER_PROPOSAL_FIELDS = frozenset(
+    (*PROPOSAL_SCHEMA_FIELDS, "dataset_ids", "dataset_hashes", "dataset_binding_digest")
 )
 EFFECTIVE_AUTHORIZATION_FIELDS = frozenset(
     {
@@ -215,6 +228,15 @@ EFFECTIVE_AUTHORIZATION_FIELDS = frozenset(
         "resource_policy",
         "authorization_digest",
     }
+)
+OUTER_EFFECTIVE_AUTHORIZATION_SCHEMA_VERSION = 2
+OUTER_EFFECTIVE_AUTHORIZATION_FIELDS = frozenset(
+    (
+        *EFFECTIVE_AUTHORIZATION_FIELDS,
+        "dataset_ids",
+        "dataset_hashes",
+        "dataset_binding_digest",
+    )
 )
 
 
@@ -371,17 +393,56 @@ def required_canary_datasets(plan: dict[str, Any], mode: str) -> tuple[str, ...]
     )
 
 
+def required_stage_datasets(
+    plan: dict[str, Any], mode: str, execution_stage: str
+) -> tuple[str, ...]:
+    if execution_stage == TARGET_CANARY_STAGE:
+        return required_canary_datasets(plan, mode)
+    if execution_stage == TARGET_PROJECTION_PREFLIGHT_STAGE:
+        task_datasets = tuple(
+            dict.fromkeys(
+                task["dataset_id"]
+                for task in select_projection_preflight(plan, mode)["tasks"]
+            )
+        )
+        if task_datasets != OUTER_PROJECTION_RUNTIME_DATASETS:
+            raise P7C4B2DError("outer_plan_dataset_coverage_mismatch")
+        return OUTER_PROJECTION_RUNTIME_DATASETS
+    raise P7C4B2DError("invalid_execution_stage")
+
+
+def dataset_binding_digest(
+    *,
+    dataset_ids: tuple[str, ...] | list[str],
+    dataset_hashes: dict[str, str],
+    locked_runtime_inputs_digest: str,
+    plan_digest: str,
+) -> str:
+    return canonical_digest(
+        {
+            "schema_version": 1,
+            "dataset_ids": list(dataset_ids),
+            "dataset_hashes": dataset_hashes,
+            "locked_runtime_inputs_digest": locked_runtime_inputs_digest,
+            "plan_digest": plan_digest,
+        },
+        "dataset_binding_digest",
+    )
+
+
 def collect_dataset_hashes(
-    plan: dict[str, Any], mode: str, *, repo_root: Path | None = None
+    plan: dict[str, Any],
+    mode: str,
+    *,
+    execution_stage: str = TARGET_CANARY_STAGE,
+    repo_root: Path | None = None,
 ) -> dict[str, str]:
     root = (repo_root or find_repo_root()).resolve()
-    registry = load_registry(repo_root=root)
-    values = {}
-    for dataset_id in required_canary_datasets(plan, mode):
-        spec = get_dataset_spec(dataset_id, registry)
-        checksum = get_dataset_checksum(dataset_id, spec.active_file, repo_root=root)
-        values[dataset_id] = checksum.actual_sha256
-    return values
+    dataset_ids = required_stage_datasets(plan, mode, execution_stage)
+    try:
+        return load_locked_runtime_inputs(root, dataset_ids=dataset_ids).source_hashes
+    except LockedRuntimeInputError as exc:
+        raise P7C4B2DError("dataset_input_binding_invalid") from exc
 
 
 def probe_process_spawn(timeout_seconds: float = 2.0) -> dict[str, Any]:
@@ -466,6 +527,7 @@ def collect_target_environment(
     *,
     mode: str,
     output_directory: str,
+    execution_stage: str = TARGET_CANARY_STAGE,
     operator_metadata: dict[str, Any] | None = None,
     repo_root: Path | None = None,
 ) -> dict[str, Any]:
@@ -480,7 +542,11 @@ def collect_target_environment(
     except OSError:
         free_disk = None
     value = {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": (
+            OUTER_ENVIRONMENT_SCHEMA_VERSION
+            if execution_stage == TARGET_PROJECTION_PREFLIGHT_STAGE
+            else SCHEMA_VERSION
+        ),
         "artifact_type": "target_environment",
         "checkpoint": CHECKPOINT,
         "provider": None,
@@ -523,13 +589,31 @@ def collect_target_environment(
         "process_spawn_probe": probe_process_spawn(),
     }
     try:
-        value["dataset_hashes"] = collect_dataset_hashes(plan, mode, repo_root=root)
+        dataset_ids = required_stage_datasets(plan, mode, execution_stage)
+        runtime_inputs = load_locked_runtime_inputs(root, dataset_ids=dataset_ids)
+        value["dataset_hashes"] = runtime_inputs.source_hashes
+        value["locked_runtime_inputs_digest"] = runtime_inputs.digest
     except Exception:
         value["dataset_hashes"] = None
-    try:
-        value["locked_runtime_inputs_digest"] = load_locked_runtime_inputs(root).digest
-    except LockedRuntimeInputError:
         value["locked_runtime_inputs_digest"] = None
+    if execution_stage == TARGET_PROJECTION_PREFLIGHT_STAGE:
+        value.update(
+            {
+                "execution_stage": execution_stage,
+                "dataset_ids": list(OUTER_PROJECTION_RUNTIME_DATASETS),
+                "dataset_binding_digest": None,
+            }
+        )
+        if (
+            value["dataset_hashes"] is not None
+            and value["locked_runtime_inputs_digest"]
+        ):
+            value["dataset_binding_digest"] = dataset_binding_digest(
+                dataset_ids=OUTER_PROJECTION_RUNTIME_DATASETS,
+                dataset_hashes=value["dataset_hashes"],
+                locked_runtime_inputs_digest=value["locked_runtime_inputs_digest"],
+                plan_digest=plan.get("plan_digest"),
+            )
     value["environment_digest"] = environment_digest(value)
     return (
         merge_operator_metadata(value, operator_metadata)
@@ -672,6 +756,7 @@ def validate_target_environment(
     environment: dict[str, Any],
     plan: dict[str, Any],
     *,
+    execution_stage: str | None = None,
     repo_root: Path | None = None,
     spawn_probe: Callable[[], dict[str, Any]] | None = None,
     allow_existing_output: bool = False,
@@ -681,15 +766,31 @@ def validate_target_environment(
     codes: list[str] = []
     if not isinstance(environment, dict):
         environment = {}
-    if set(environment) != ENVIRONMENT_SCHEMA_FIELDS:
+    outer_environment = (
+        environment.get("schema_version") == OUTER_ENVIRONMENT_SCHEMA_VERSION
+    )
+    expected_fields = (
+        OUTER_ENVIRONMENT_FIELDS if outer_environment else ENVIRONMENT_SCHEMA_FIELDS
+    )
+    if set(environment) != expected_fields:
         codes.append("environment_schema_mismatch")
     missing = [field for field in ENVIRONMENT_FIELDS if environment.get(field) is None]
     if missing:
         codes.append("missing_target_environment_metadata")
-    if environment.get("schema_version") != SCHEMA_VERSION or environment.get(
-        "environment_digest"
-    ) != environment_digest(environment):
+    if environment.get("schema_version") not in {
+        SCHEMA_VERSION,
+        OUTER_ENVIRONMENT_SCHEMA_VERSION,
+    } or environment.get("environment_digest") != environment_digest(environment):
         codes.append("invalid_environment_value")
+    if execution_stage == TARGET_PROJECTION_PREFLIGHT_STAGE and not outer_environment:
+        codes.append("outer_dataset_binding_required")
+    if execution_stage == TARGET_CANARY_STAGE and outer_environment:
+        codes.append("canary_environment_schema_mismatch")
+    if (
+        outer_environment
+        and environment.get("execution_stage") != TARGET_PROJECTION_PREFLIGHT_STAGE
+    ):
+        codes.append("execution_stage_mismatch")
     if environment.get("artifact_type") != "target_environment":
         codes.append("environment_artifact_type_mismatch")
     if environment.get("checkpoint") != CHECKPOINT:
@@ -726,8 +827,18 @@ def validate_target_environment(
         environment.get("plan_digest")
     ):
         codes.append("plan_digest_mismatch")
+    binding_stage = (
+        TARGET_PROJECTION_PREFLIGHT_STAGE
+        if outer_environment or execution_stage == TARGET_PROJECTION_PREFLIGHT_STAGE
+        else TARGET_CANARY_STAGE
+    )
     try:
-        runtime_inputs = load_locked_runtime_inputs(root)
+        expected_dataset_ids = required_stage_datasets(
+            plan, environment.get("execution_mode"), binding_stage
+        )
+        runtime_inputs = load_locked_runtime_inputs(
+            root, dataset_ids=expected_dataset_ids
+        )
         if (
             not _sha256(environment.get("locked_runtime_inputs_digest"))
             or environment.get("locked_runtime_inputs_digest", "").upper()
@@ -736,6 +847,11 @@ def validate_target_environment(
             codes.append("locked_runtime_input_mismatch")
     except LockedRuntimeInputError:
         codes.append("locked_runtime_input_mismatch")
+        runtime_inputs = None
+    except P7C4B2DError as exc:
+        codes.append(str(exc))
+        expected_dataset_ids = ()
+        runtime_inputs = None
     try:
         expected_lock = dependency_lock_fingerprint(root)["sha256"]
         if environment.get("environment_lock_hash") != expected_lock:
@@ -765,23 +881,53 @@ def validate_target_environment(
     ):
         codes.append("output_collision")
     if mode in MODES:
-        expected_datasets = set(required_canary_datasets(plan, mode))
+        try:
+            expected_dataset_ids = required_stage_datasets(plan, mode, binding_stage)
+        except P7C4B2DError as exc:
+            codes.append(str(exc))
+            expected_dataset_ids = ()
         supplied = environment.get("dataset_hashes")
         if (
             not isinstance(supplied, dict)
-            or set(supplied) != expected_datasets
+            or tuple(supplied) != expected_dataset_ids
             or not all(_sha256(value) for value in supplied.values())
         ):
-            codes.append("dataset_input_hash_mismatch")
+            codes.append(
+                "outer_dataset_inventory_mismatch"
+                if binding_stage == TARGET_PROJECTION_PREFLIGHT_STAGE
+                else "dataset_input_hash_mismatch"
+            )
         else:
             try:
-                actual_hashes = collect_dataset_hashes(plan, mode, repo_root=root)
+                actual_hashes = collect_dataset_hashes(
+                    plan, mode, execution_stage=binding_stage, repo_root=root
+                )
                 if {
                     key: value.upper() for key, value in supplied.items()
                 } != actual_hashes:
-                    codes.append("dataset_input_hash_mismatch")
+                    codes.append(
+                        "outer_dataset_hash_mismatch"
+                        if binding_stage == TARGET_PROJECTION_PREFLIGHT_STAGE
+                        else "dataset_input_hash_mismatch"
+                    )
             except Exception:
                 codes.append("dataset_input_missing")
+        if binding_stage == TARGET_PROJECTION_PREFLIGHT_STAGE:
+            if environment.get("dataset_ids") != list(expected_dataset_ids):
+                codes.append("outer_dataset_inventory_mismatch")
+            expected_binding = None
+            if isinstance(supplied, dict) and runtime_inputs is not None:
+                try:
+                    expected_binding = dataset_binding_digest(
+                        dataset_ids=expected_dataset_ids,
+                        dataset_hashes=supplied,
+                        locked_runtime_inputs_digest=runtime_inputs.digest,
+                        plan_digest=plan.get("plan_digest"),
+                    )
+                except (TypeError, ValueError):
+                    pass
+            if environment.get("dataset_binding_digest") != expected_binding:
+                codes.append("outer_dataset_binding_digest_mismatch")
     probe = (spawn_probe or probe_process_spawn)()
     if probe.get("status") == "timeout":
         codes.append("process_spawn_probe_timeout")
@@ -938,14 +1084,27 @@ def render_authorization_proposal(
     *,
     execution_stage: str,
     expiry: str | None,
+    repo_root: Path | None = None,
+    spawn_probe: Callable[[], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    if execution_stage not in TARGET_EXECUTION_STAGES or environment.get(
-        "execution_mode"
-    ) not in MODES:
+    if (
+        execution_stage not in TARGET_EXECUTION_STAGES
+        or environment.get("execution_mode") not in MODES
+    ):
         raise P7C4B2DError("invalid_execution_stage")
     scope = select_authorized_scope(
         plan, environment["execution_mode"], execution_stage
     )
+    if execution_stage == TARGET_PROJECTION_PREFLIGHT_STAGE:
+        report = validate_target_environment(
+            environment,
+            plan,
+            execution_stage=execution_stage,
+            repo_root=repo_root,
+            spawn_probe=spawn_probe,
+        )
+        if not report["valid"]:
+            raise P7C4B2DError(",".join(report["reason_codes"]))
     resource_policy = (
         environment.get("projection_preflight_resource_policy")
         if execution_stage == TARGET_PROJECTION_PREFLIGHT_STAGE
@@ -955,8 +1114,7 @@ def render_authorization_proposal(
         not _valid_projection_resource_policy(
             resource_policy, environment.get("execution_mode")
         )
-        or environment.get("maximum_runtime_hours")
-        != PROJECTION_MAXIMUM_RUNTIME_HOURS
+        or environment.get("maximum_runtime_hours") != PROJECTION_MAXIMUM_RUNTIME_HOURS
         or canonical_decimal(environment.get("maximum_monetary_budget"))
         != PROJECTION_MAXIMUM_MONETARY_BUDGET
         or not isinstance(environment.get("ram_bytes"), int)
@@ -965,7 +1123,11 @@ def render_authorization_proposal(
     ):
         raise P7C4B2DError("invalid_projection_resource_policy")
     value = {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": (
+            OUTER_PROPOSAL_SCHEMA_VERSION
+            if execution_stage == TARGET_PROJECTION_PREFLIGHT_STAGE
+            else SCHEMA_VERSION
+        ),
         "artifact_type": "authorization_proposal",
         "authorization_effective": False,
         "checkpoint": CHECKPOINT,
@@ -995,6 +1157,14 @@ def render_authorization_proposal(
         "cost_acknowledgement": "target_execution_may_incur_cost",
         "resource_policy": resource_policy,
     }
+    if execution_stage == TARGET_PROJECTION_PREFLIGHT_STAGE:
+        value.update(
+            {
+                "dataset_ids": list(environment["dataset_ids"]),
+                "dataset_hashes": dict(environment["dataset_hashes"]),
+                "dataset_binding_digest": environment["dataset_binding_digest"],
+            }
+        )
     value["proposal_digest"] = canonical_digest(value, "proposal_digest")
     return value
 
@@ -1010,11 +1180,19 @@ def validate_authorization_proposal(
             "authorization_effective": False,
         }
     environment_value = environment if isinstance(environment, dict) else {}
-    if set(proposal) != PROPOSAL_SCHEMA_FIELDS:
+    stage = proposal.get("execution_stage")
+    outer_proposal = stage == TARGET_PROJECTION_PREFLIGHT_STAGE
+    expected_fields = (
+        OUTER_PROPOSAL_FIELDS if outer_proposal else PROPOSAL_SCHEMA_FIELDS
+    )
+    if set(proposal) != expected_fields:
         codes.append("authorization_proposal_schema_mismatch")
     if proposal.get("artifact_type") != "authorization_proposal":
         codes.append("authorization_proposal_invalid")
-    if proposal.get("schema_version") != SCHEMA_VERSION:
+    expected_schema = (
+        OUTER_PROPOSAL_SCHEMA_VERSION if outer_proposal else SCHEMA_VERSION
+    )
+    if proposal.get("schema_version") != expected_schema:
         codes.append("authorization_proposal_schema_mismatch")
     if proposal.get("checkpoint") != CHECKPOINT:
         codes.append("authorization_proposal_checkpoint_mismatch")
@@ -1041,7 +1219,6 @@ def validate_authorization_proposal(
     if mode not in MODES:
         codes.append("execution_mode_unsupported")
     else:
-        stage = proposal.get("execution_stage")
         try:
             expected = select_authorized_scope(plan, mode, stage)["task_ids"]
         except P7C4B2DError:
@@ -1068,22 +1245,41 @@ def validate_authorization_proposal(
             codes.append("authorization_mismatch")
     if proposal.get("execution_stage") not in TARGET_EXECUTION_STAGES:
         codes.append("authorization_mismatch")
-    stage = proposal.get("execution_stage")
     if stage == TARGET_PROJECTION_PREFLIGHT_STAGE:
         if (
             not _valid_projection_resource_policy(proposal.get("resource_policy"), mode)
             or proposal.get("resource_policy")
             != environment_value.get("projection_preflight_resource_policy")
-            or proposal.get("maximum_runtime_hours")
-            != PROJECTION_MAXIMUM_RUNTIME_HOURS
+            or proposal.get("maximum_runtime_hours") != PROJECTION_MAXIMUM_RUNTIME_HOURS
             or proposal.get("maximum_monetary_budget")
             != PROJECTION_MAXIMUM_MONETARY_BUDGET
             or not isinstance(environment_value.get("ram_bytes"), int)
             or isinstance(environment_value.get("ram_bytes"), bool)
-            or environment_value["ram_bytes"]
-            <= PROJECTION_AGGREGATE_RSS_LIMIT_BYTES
+            or environment_value["ram_bytes"] <= PROJECTION_AGGREGATE_RSS_LIMIT_BYTES
         ):
             codes.append("invalid_projection_resource_policy")
+        expected_dataset_ids = list(OUTER_PROJECTION_RUNTIME_DATASETS)
+        if (
+            proposal.get("dataset_ids") != expected_dataset_ids
+            or environment_value.get("dataset_ids") != expected_dataset_ids
+            or proposal.get("dataset_hashes") != environment_value.get("dataset_hashes")
+            or proposal.get("dataset_binding_digest")
+            != environment_value.get("dataset_binding_digest")
+        ):
+            codes.append("outer_dataset_binding_mismatch")
+        try:
+            expected_binding = dataset_binding_digest(
+                dataset_ids=OUTER_PROJECTION_RUNTIME_DATASETS,
+                dataset_hashes=proposal.get("dataset_hashes"),
+                locked_runtime_inputs_digest=proposal.get(
+                    "locked_runtime_inputs_digest"
+                ),
+                plan_digest=proposal.get("plan_digest"),
+            )
+        except (TypeError, ValueError):
+            expected_binding = None
+        if proposal.get("dataset_binding_digest") != expected_binding:
+            codes.append("outer_dataset_binding_digest_mismatch")
     elif proposal.get("resource_policy") is not None:
         codes.append("authorization_mismatch")
     if proposal.get("git_commit") != environment_value.get("expected_git_commit"):
@@ -1153,7 +1349,11 @@ def _create_effective_authorization(
 ) -> dict[str, Any]:
     """Private deterministic seam used by tests; production callers cannot date input."""
     environment_report = validate_target_environment(
-        environment, plan, repo_root=repo_root, spawn_probe=spawn_probe
+        environment,
+        plan,
+        execution_stage=proposal.get("execution_stage"),
+        repo_root=repo_root,
+        spawn_probe=spawn_probe,
     )
     proposal_report = validate_authorization_proposal(proposal, plan, environment)
     if not environment_report["valid"]:
@@ -1180,7 +1380,11 @@ def _create_effective_authorization(
     if static_cost is None or budget is None or budget < static_cost:
         raise P7C4B2DError("monetary_budget_mismatch")
     value = {
-        "schema_version": EFFECTIVE_AUTHORIZATION_SCHEMA_VERSION,
+        "schema_version": (
+            OUTER_EFFECTIVE_AUTHORIZATION_SCHEMA_VERSION
+            if proposal["execution_stage"] == TARGET_PROJECTION_PREFLIGHT_STAGE
+            else EFFECTIVE_AUTHORIZATION_SCHEMA_VERSION
+        ),
         "artifact_type": EFFECTIVE_AUTHORIZATION_TYPE,
         "authorization_effective": True,
         "checkpoint": CHECKPOINT,
@@ -1207,6 +1411,14 @@ def _create_effective_authorization(
         "disk_policy": proposal["disk_policy"],
         "resource_policy": proposal["resource_policy"],
     }
+    if proposal["execution_stage"] == TARGET_PROJECTION_PREFLIGHT_STAGE:
+        value.update(
+            {
+                "dataset_ids": list(proposal["dataset_ids"]),
+                "dataset_hashes": dict(proposal["dataset_hashes"]),
+                "dataset_binding_digest": proposal["dataset_binding_digest"],
+            }
+        )
     value["authorization_digest"] = canonical_digest(value, "authorization_digest")
     return value
 
@@ -1230,11 +1442,24 @@ def validate_effective_authorization(
             "reason_codes": ["authorization_missing"],
             "authorization_effective": False,
         }
-    if set(authorization) != EFFECTIVE_AUTHORIZATION_FIELDS:
+    outer_authorization = (
+        authorization.get("execution_stage") == TARGET_PROJECTION_PREFLIGHT_STAGE
+    )
+    expected_fields = (
+        OUTER_EFFECTIVE_AUTHORIZATION_FIELDS
+        if outer_authorization
+        else EFFECTIVE_AUTHORIZATION_FIELDS
+    )
+    if set(authorization) != expected_fields:
         codes.append("authorization_schema_mismatch")
     if authorization.get("artifact_type") != EFFECTIVE_AUTHORIZATION_TYPE:
         codes.append("wrong_artifact_type")
-    if authorization.get("schema_version") != EFFECTIVE_AUTHORIZATION_SCHEMA_VERSION:
+    expected_schema = (
+        OUTER_EFFECTIVE_AUTHORIZATION_SCHEMA_VERSION
+        if outer_authorization
+        else EFFECTIVE_AUTHORIZATION_SCHEMA_VERSION
+    )
+    if authorization.get("schema_version") != expected_schema:
         codes.append("authorization_schema_mismatch")
     if authorization.get("checkpoint") != CHECKPOINT:
         codes.append("authorization_checkpoint_mismatch")
@@ -1285,6 +1510,7 @@ def validate_effective_authorization(
     environment_report = validate_target_environment(
         environment,
         plan,
+        execution_stage=authorization.get("execution_stage"),
         repo_root=repo_root,
         spawn_probe=spawn_probe,
         allow_existing_output=allow_existing_output,
@@ -1341,6 +1567,34 @@ def validate_effective_authorization(
     for field, expected_value in expected.items():
         if authorization.get(field) != expected_value:
             codes.append(code_for[field])
+    if outer_authorization:
+        expected_dataset_ids = list(OUTER_PROJECTION_RUNTIME_DATASETS)
+        if (
+            authorization.get("dataset_ids") != expected_dataset_ids
+            or authorization.get("dataset_hashes")
+            != environment_value.get("dataset_hashes")
+            or authorization.get("dataset_binding_digest")
+            != environment_value.get("dataset_binding_digest")
+            or not isinstance(proposal, dict)
+            or authorization.get("dataset_ids") != proposal.get("dataset_ids")
+            or authorization.get("dataset_hashes") != proposal.get("dataset_hashes")
+            or authorization.get("dataset_binding_digest")
+            != proposal.get("dataset_binding_digest")
+        ):
+            codes.append("outer_dataset_binding_mismatch")
+        try:
+            expected_binding = dataset_binding_digest(
+                dataset_ids=OUTER_PROJECTION_RUNTIME_DATASETS,
+                dataset_hashes=authorization.get("dataset_hashes"),
+                locked_runtime_inputs_digest=authorization.get(
+                    "locked_runtime_inputs_digest"
+                ),
+                plan_digest=authorization.get("plan_digest"),
+            )
+        except (TypeError, ValueError):
+            expected_binding = None
+        if authorization.get("dataset_binding_digest") != expected_binding:
+            codes.append("outer_dataset_binding_digest_mismatch")
     static_cost = _static_authorization_cost_upper_bound(authorization)
     budget = _decimal_value(authorization.get("maximum_monetary_budget"))
     budget_covers_window = (

@@ -4,18 +4,19 @@ from __future__ import annotations
 
 import csv
 from dataclasses import asdict, dataclass
+import hashlib
 import math
 from pathlib import Path
 import re
 from typing import Any
 
-from creditrep.checksums import sha256_file
 from creditrep.config.loader import sha256_canonical
 from creditrep.datasets.models import DatasetSpec
 from creditrep.datasets.registry import (
     find_repo_root,
     parse_dataset_spec,
     resolve_repo_path,
+    read_repo_file_no_symlinks,
     validate_portable_path,
 )
 from creditrep.preprocessing import load_protocol_a_config
@@ -25,6 +26,7 @@ from creditrep.strict_yaml import StrictYAMLError, load_strict_yaml
 
 LOCKED_RUNTIME_INPUT_SCHEMA_VERSION = 1
 LOCKED_RUNTIME_DATASETS = ("AC", "GMC")
+OUTER_PROJECTION_RUNTIME_DATASETS = ("AC", "GC", "TH02", "HMEQ", "TC", "GMC")
 SHA256_RE = re.compile(r"^[A-Fa-f0-9]{64}$")
 
 
@@ -43,7 +45,9 @@ class ValidatedRuntimeInputs:
     source_hashes: dict[str, str]
 
 
-def _selected_registry(root: Path) -> dict[str, DatasetSpec]:
+def _selected_registry(
+    root: Path, dataset_ids: tuple[str, ...]
+) -> dict[str, DatasetSpec]:
     path = root / "data" / "datasets.yaml"
     if not path.is_file():
         raise LockedRuntimeInputError("dataset_registry_missing")
@@ -56,7 +60,7 @@ def _selected_registry(root: Path) -> dict[str, DatasetSpec]:
         raise LockedRuntimeInputError("dataset_registry_schema_mismatch")
     raw_datasets = payload["datasets"]
     specs: dict[str, DatasetSpec] = {}
-    for dataset_id in LOCKED_RUNTIME_DATASETS:
+    for dataset_id in dataset_ids:
         raw = raw_datasets.get(dataset_id.lower())
         if not isinstance(raw, dict):
             raise LockedRuntimeInputError(f"{dataset_id}: registry_entry_missing")
@@ -189,7 +193,7 @@ def _dataset_projection(spec: DatasetSpec) -> dict[str, Any]:
 
 
 def _selected_checksums(
-    root: Path, specs: dict[str, DatasetSpec]
+    root: Path, specs: dict[str, DatasetSpec], dataset_ids: tuple[str, ...]
 ) -> tuple[list[dict[str, str]], dict[str, str]]:
     path = root / "data" / "checksums-sha256.csv"
     if not path.is_file():
@@ -223,14 +227,25 @@ def _selected_checksums(
 
     rows: list[dict[str, str]] = []
     source_hashes: dict[str, str] = {}
-    for dataset_id in LOCKED_RUNTIME_DATASETS:
+    for dataset_id in dataset_ids:
         spec = specs[dataset_id.lower()]
         source_path = resolve_repo_path(
             spec.active_file, repo_root=root, context=f"{dataset_id}.active_file"
         )
-        if not source_path.is_file():
-            raise LockedRuntimeInputError(f"{dataset_id}: source_file_missing")
-        actual = sha256_file(source_path)
+        try:
+            source_bytes = read_repo_file_no_symlinks(
+                spec.active_file,
+                repo_root=root,
+                context=f"{dataset_id}.active_file",
+            )
+        except (FileNotFoundError, OSError, RuntimeError, ValueError) as exc:
+            code = (
+                "source_file_missing"
+                if not source_path.exists()
+                else "source_symlink_or_path_invalid"
+            )
+            raise LockedRuntimeInputError(f"{dataset_id}: {code}") from exc
+        actual = hashlib.sha256(source_bytes).hexdigest().upper()
         if actual != matches[spec.active_file]:
             raise LockedRuntimeInputError(f"{dataset_id}: source_checksum_mismatch")
         source_hashes[dataset_id] = actual
@@ -247,20 +262,33 @@ def _selected_checksums(
 
 def load_locked_runtime_inputs(
     repo_root: Path | str | None = None,
+    *,
+    dataset_ids: tuple[str, ...] = LOCKED_RUNTIME_DATASETS,
 ) -> ValidatedRuntimeInputs:
     """Load, semantically project and verify all target workload runtime inputs."""
 
     root = Path(repo_root).resolve() if repo_root is not None else find_repo_root()
     try:
         protocol_config = load_protocol_a_config(repo_root=root)
-        specs = _selected_registry(root)
-        checksum_rows, source_hashes = _selected_checksums(root, specs)
+        if (
+            not isinstance(dataset_ids, tuple)
+            or not dataset_ids
+            or len(dataset_ids) != len(set(dataset_ids))
+            or any(
+                not isinstance(dataset_id, str)
+                or dataset_id not in OUTER_PROJECTION_RUNTIME_DATASETS
+                for dataset_id in dataset_ids
+            )
+        ):
+            raise LockedRuntimeInputError("locked_runtime_dataset_inventory_invalid")
+        specs = _selected_registry(root, dataset_ids)
+        checksum_rows, source_hashes = _selected_checksums(root, specs, dataset_ids)
         snapshot = {
             "schema_version": LOCKED_RUNTIME_INPUT_SCHEMA_VERSION,
             "protocol_a": asdict(protocol_config),
             "datasets": {
                 dataset_id: _dataset_projection(specs[dataset_id.lower()])
-                for dataset_id in LOCKED_RUNTIME_DATASETS
+                for dataset_id in dataset_ids
             },
             "selected_checksums": checksum_rows,
         }
@@ -279,13 +307,16 @@ def load_locked_runtime_inputs(
 
 
 def validate_locked_runtime_inputs(
-    expected_digest: Any, repo_root: Path | str | None = None
+    expected_digest: Any,
+    repo_root: Path | str | None = None,
+    *,
+    dataset_ids: tuple[str, ...] = LOCKED_RUNTIME_DATASETS,
 ) -> ValidatedRuntimeInputs:
     """Reload current inputs and compare them with the authorized semantic digest."""
 
     if not isinstance(expected_digest, str) or not SHA256_RE.fullmatch(expected_digest):
         raise LockedRuntimeInputError("locked_runtime_input_digest_invalid")
-    value = load_locked_runtime_inputs(repo_root)
+    value = load_locked_runtime_inputs(repo_root, dataset_ids=dataset_ids)
     if value.digest != expected_digest.upper():
         raise LockedRuntimeInputError("locked_runtime_input_mismatch")
     return value

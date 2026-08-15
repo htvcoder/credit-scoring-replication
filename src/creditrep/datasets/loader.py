@@ -15,6 +15,7 @@ from creditrep.datasets.registry import (
     find_repo_root,
     get_dataset_spec,
     load_registry,
+    read_repo_file_no_symlinks,
     resolve_repo_path,
 )
 
@@ -184,7 +185,11 @@ def load_dataset(
             f"{spec.dataset_id}: active file does not exist: {spec.active_file}"
         )
     try:
-        source_bytes = source_path.read_bytes()
+        source_bytes = read_repo_file_no_symlinks(
+            spec.active_file,
+            repo_root=root,
+            context=f"{spec.dataset_id}.active_file",
+        )
     except OSError as exc:
         raise DatasetFileError(
             f"{spec.dataset_id}: cannot read active file: {spec.active_file}"

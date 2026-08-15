@@ -310,13 +310,33 @@ Scope này dùng approval phrase riêng
 Authorization chỉ mở đúng engineering preflight task IDs; nó không làm scientific
 projection eligible và không authorize canonical scientific execution.
 
+Projection environment/proposal/effective authorization use explicit versioned
+schemas that preserve the ordered closed-world dataset inventory `AC, GC, TH02,
+HMEQ, TC, GMC`, every active-source SHA-256, the full locked-runtime-input
+digest, plan digest and their cross-binding digest. Recomputed self-digests do
+not repair a missing, extra, case-variant or wrong dataset binding. Historical
+AC/GMC environment evidence remains compatible with `target_canary` only and is
+not a projection compatibility path. Runner run/resume and final validation
+recheck the same binding before output creation/dispatch and in persisted
+provenance.
+
 Outer operator evidence uses the distinct closed operations stage
 `target-outer-projection-preflight`, mapped exactly to protocol stage
-`target_projection_preflight`. Its typed launch/claim/receipt chain binds the
+`target_projection_preflight`. Its typed launch/claim/submission-result/receipt chain binds the
 source, mode, 162-task digest, logical/resolved output, all three control
-artifacts, exact run or resume argv, unit and InvocationID. It cannot be replaced
+artifacts, exact run or resume argv, unit, saved `systemd-run` stdout/stderr,
+exit code and parsed InvocationID. When `--collect` has already unloaded the
+unit, the receipt marks the live snapshot unavailable and proves only the saved
+submission outcome; it never infers compute success. It cannot be replaced
 by the inner stage, direct runner submission or loose operator JSON. A receipt
 proves submission outcome only; P1 closeout is required before P2 submission.
+
+The retained failed outer P1 evidence on source `aac4504...` is terminal-invalid
+and must not be deleted, resumed, reset, promoted or combined with nine completed
+AC samples. After this hotfix is merged, all evidence bound to the old SHA is
+stale for the new common-source chain. Fresh B2b P1/P2 and outer evidence may be
+required on the post-merge SHA; mixed-SHA upgrade is forbidden. Canonical
+scientific execution remains `false` / NO-GO.
 
 Mỗi projection-preflight authorization bind riêng đúng 12 giờ, USD 5, timeout
 20 phút/task, aggregate process-tree RSS 12884901888 byte, zero tolerated task
