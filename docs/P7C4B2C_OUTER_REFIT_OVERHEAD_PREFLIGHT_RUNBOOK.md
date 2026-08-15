@@ -130,6 +130,15 @@ workload from a closed mapping; public Python APIs reject callable injection.
 Target output must resolve exactly to the authorized namespace, and live disk,
 expiry and remaining runtime are checked before dispatch.
 
+The outer projection environment is closed-world and ordered: `AC, GC, TH02,
+HMEQ, TC, GMC`. Its versioned artifact binds exactly those six active-file
+SHA-256 values, the full locked-runtime-input digest, plan digest, source Git
+SHA, mode, output and resource policy. Missing, extra, duplicate, case-variant,
+malformed or mismatched dataset evidence stops before proposal/authorization and
+again before the runner creates its output directory. The historical AC/GMC
+canary environment remains valid only for `target_canary`; it cannot authorize
+fresh outer projection work.
+
 Target manifests bind the original authorization digest and full scope.
 `authorization_runtime.json` conservatively counts the wall-clock envelope from
 the original start, including crash/downtime, so resume cannot replace the
@@ -177,15 +186,22 @@ REPO=/srv/credit-scoring-replication
 PYTHON="$REPO/.venv/bin/python"
 MODE_P1=cpu_parallel_1
 OUT_P1="$REPO/artifacts/p7c4b2c-outer/$RUN_ID_P1"
-UNIT_P1="p7c4b2c-outer-p1-$RUN_ID_P1"
+UNIT_P1="p7c4b2c-outer-p1-$RUN_ID_P1.service"
 LOG_P1="$REPO/artifacts/p7c4b2c-operations/$UNIT_P1.log"
 LAUNCH_P1="$REPO/artifacts/p7c4b2c-operations/$UNIT_P1.launch.json"
 CLAIM_P1="${LAUNCH_P1%/*}/.${LAUNCH_P1##*/}.submission-claim.json"
 RECEIPT_P1="$REPO/artifacts/p7c4b2c-operations/$UNIT_P1.receipt.json"
 SNAPSHOT_P1="$REPO/artifacts/p7c4b2c-operations/$UNIT_P1.unit.json"
+SYSTEMD_STDOUT_P1="$REPO/artifacts/p7c4b2c-operations/$UNIT_P1.systemd-run.stdout"
+SYSTEMD_STDERR_P1="$REPO/artifacts/p7c4b2c-operations/$UNIT_P1.systemd-run.stderr"
+SUBMISSION_RESULT_P1="$REPO/artifacts/p7c4b2c-operations/$UNIT_P1.submission-result.json"
+SYSTEMD_EXIT_P1="$REPO/artifacts/p7c4b2c-operations/$UNIT_P1.systemd-run.exit-code"
 cd "$REPO"
 test ! -e "$OUT_P1"
 test ! -e "$LAUNCH_P1" && test ! -e "$CLAIM_P1" && test ! -e "$RECEIPT_P1"
+test ! -e "$SYSTEMD_STDOUT_P1" && test ! -e "$SYSTEMD_STDERR_P1"
+test ! -e "$SUBMISSION_RESULT_P1" && test ! -e "$SYSTEMD_EXIT_P1"
+test ! -e "$SNAPSHOT_P1"
 ```
 
 Validate the existing controls read-only. This does not create or refresh an
@@ -228,30 +244,31 @@ an SSH disconnect. Recover the same unit and write its one-time receipt.
 ```bash
 "$PYTHON" -m creditrep.experiments.p7c4b2e_operations_cli \
   create-submission-claim --launch-record "$LAUNCH_P1" --receipt "$RECEIPT_P1"
-set +e
-systemd-run --user --unit="$UNIT_P1" --working-directory="$REPO" \
-  --property="StandardOutput=append:$LOG_P1" \
-  --property="StandardError=append:$LOG_P1" \
-  "$PYTHON" -m creditrep.experiments.p7c4b2c_cli run \
-  --execution-class target_preflight --mode "$MODE_P1" --output "$OUT_P1" \
-  --target-environment "$ENV_P1" --authorization-proposal "$PROPOSAL_P1" \
-  --effective-authorization "$AUTH_P1"
-SYSTEMD_RUN_RC=$?
-set -e
+"$PYTHON" -m creditrep.experiments.p7c4b2e_operations_cli \
+  submit-systemd-run --submission-result "$SUBMISSION_RESULT_P1" \
+  --launch-record "$LAUNCH_P1" --systemd-run-stdout "$SYSTEMD_STDOUT_P1" \
+  --systemd-run-stderr "$SYSTEMD_STDERR_P1" \
+  --systemd-run-exit-code-file "$SYSTEMD_EXIT_P1"
+SYSTEMD_RUN_RC=$(jq -r '.systemd_run_exit_code' "$SUBMISSION_RESULT_P1")
 ```
 
-Parse `systemctl show` key/value output; do not request JSON from systemctl.
-The parser supplies every closed snapshot field even when submission failed.
+The typed submission result parses the saved output itself: a successful exit
+must contain exactly the recorded unit and one lowercase 32-hex Invocation ID.
+Never type or copy an Invocation ID into JSON. Parse `systemctl show` key/value
+output; do not request JSON from systemctl. A collected unit is recoverable from
+the immutable submission result even if the snapshot attempt is empty.
 
 ```bash
 { systemctl --user show "$UNIT_P1" \
   --property=LoadState,ActiveState,SubState,MainPID,ExecMainCode,ExecMainStatus,Result,InvocationID,ExecMainStartTimestamp,ExecMainExitTimestamp || true; } \
   | "$PYTHON" -c 'import json,sys; keys="LoadState ActiveState SubState MainPID ExecMainCode ExecMainStatus Result InvocationID ExecMainStartTimestamp ExecMainExitTimestamp".split(); got=dict(line.rstrip("\n").split("=",1) for line in sys.stdin if "=" in line); print(json.dumps({k:got.get(k,"") for k in keys},sort_keys=True))' \
-  > "$SNAPSHOT_P1"
+  > "$SNAPSHOT_P1.tmp"
+mv -n "$SNAPSHOT_P1.tmp" "$SNAPSHOT_P1"
 "$PYTHON" -m creditrep.experiments.p7c4b2e_operations_cli \
   create-submission-receipt --receipt "$RECEIPT_P1" \
   --launch-record "$LAUNCH_P1" --unit "$UNIT_P1" \
-  --unit-snapshot-json "$(cat "$SNAPSHOT_P1")" \
+  --submission-result "$SUBMISSION_RESULT_P1" \
+  --unit-snapshot-file "$SNAPSHOT_P1" \
   --systemd-run-exit-code "$SYSTEMD_RUN_RC"
 ```
 
@@ -268,7 +285,20 @@ journalctl --user -u "$UNIT_P1" --no-pager --lines=100
 test -f "$OUT_P1/COMPLETED.json"
 ```
 
-For recovery, first rebuild `SNAPSHOT_P1` with the proven key/value parser above.
+`submit-systemd-run` first atomically creates an immutable submission-attempt
+marker that consumes the claim, then ignores SSH hangup while it runs the exact
+launch-record command and atomically persists stdout, stderr, exit code and the
+typed result before returning. A concurrent call or retry after any crash is
+rejected even if capture did not finish. After SSH loss, do not repeat
+submission; reuse the completed typed result. If the unit is already collected,
+pass a key/value snapshot
+whose `LoadState` is `not-found`, or pass the immutable empty failed snapshot
+attempt; the receipt records snapshot unavailability without inferring compute
+success. Never delete or overwrite the failed snapshot attempt. If the capture
+transaction itself is incomplete, recovery is fail-closed: keep its evidence for
+review and do not guess the exit code or resubmit.
+
+For runner resume, first rebuild `SNAPSHOT_P1` with the proven key/value parser.
 Resume only a validator-recognized incomplete run with inactive unit/process and
 the original controls. A corrupt, completed, mismatched, or active run is NO-GO.
 
@@ -277,10 +307,15 @@ the original controls. A corrupt, completed, mismatched, or active run is NO-GO.
   --run-dir "$OUT_P1" --launch-record "$LAUNCH_P1" \
   --unit-snapshot-json "$(cat "$SNAPSHOT_P1")" \
   --environment "$ENV_P1" --proposal "$PROPOSAL_P1" --authorization "$AUTH_P1"
-RESUME_UNIT_P1="p7c4b2c-outer-p1-$RUN_ID_P1-resume-$RESUME_ID"
+RESUME_UNIT_P1="p7c4b2c-outer-p1-$RUN_ID_P1-resume-$RESUME_ID.service"
 RESUME_LAUNCH_P1="$REPO/artifacts/p7c4b2c-operations/$RESUME_UNIT_P1.launch.json"
 RESUME_RECEIPT_P1="$REPO/artifacts/p7c4b2c-operations/$RESUME_UNIT_P1.receipt.json"
 RESUME_LOG_P1="$REPO/artifacts/p7c4b2c-operations/$RESUME_UNIT_P1.log"
+RESUME_SYSTEMD_STDOUT_P1="$REPO/artifacts/p7c4b2c-operations/$RESUME_UNIT_P1.systemd-run.stdout"
+RESUME_SYSTEMD_STDERR_P1="$REPO/artifacts/p7c4b2c-operations/$RESUME_UNIT_P1.systemd-run.stderr"
+RESUME_SYSTEMD_EXIT_P1="$REPO/artifacts/p7c4b2c-operations/$RESUME_UNIT_P1.systemd-run.exit-code"
+RESUME_SUBMISSION_RESULT_P1="$REPO/artifacts/p7c4b2c-operations/$RESUME_UNIT_P1.submission-result.json"
+RESUME_SNAPSHOT_P1="$REPO/artifacts/p7c4b2c-operations/$RESUME_UNIT_P1.unit.json"
 RESUME_ARGV_P1=$(jq -cn --args '$ARGS.positional' -- \
   "$PYTHON" -m creditrep.experiments.p7c4b2c_cli resume --run-dir "$OUT_P1" \
   --target-environment "$ENV_P1" --authorization-proposal "$PROPOSAL_P1" \
@@ -310,24 +345,37 @@ TARGET_OUTER_PROJECTION_PREFLIGHT_RESUME_COMPUTE_BOUNDARY
 "$PYTHON" -m creditrep.experiments.p7c4b2e_operations_cli \
   create-submission-claim --launch-record "$RESUME_LAUNCH_P1" \
   --receipt "$RESUME_RECEIPT_P1"
-set +e
-systemd-run --user --unit="$RESUME_UNIT_P1" --working-directory="$REPO" \
-  --property="StandardOutput=append:$RESUME_LOG_P1" \
-  --property="StandardError=append:$RESUME_LOG_P1" \
-  "$PYTHON" -m creditrep.experiments.p7c4b2c_cli resume --run-dir "$OUT_P1" \
-  --target-environment "$ENV_P1" --authorization-proposal "$PROPOSAL_P1" \
-  --effective-authorization "$AUTH_P1"
-RESUME_SYSTEMD_RUN_RC=$?
-set -e
+"$PYTHON" -m creditrep.experiments.p7c4b2e_operations_cli \
+  submit-systemd-run --submission-result "$RESUME_SUBMISSION_RESULT_P1" \
+  --launch-record "$RESUME_LAUNCH_P1" \
+  --systemd-run-stdout "$RESUME_SYSTEMD_STDOUT_P1" \
+  --systemd-run-stderr "$RESUME_SYSTEMD_STDERR_P1" \
+  --systemd-run-exit-code-file "$RESUME_SYSTEMD_EXIT_P1"
+RESUME_SYSTEMD_RUN_RC=$(jq -r '.systemd_run_exit_code' \
+  "$RESUME_SUBMISSION_RESULT_P1")
 ```
 
 After the claim or any `Running as unit` response, never submit again. Snapshot
 `RESUME_UNIT_P1` with the same key/value Python parser, then create the receipt
-with `RESUME_LAUNCH_P1`, `RESUME_RECEIPT_P1`, the fresh unit snapshot and
+with `RESUME_LAUNCH_P1`, `RESUME_RECEIPT_P1`,
+`RESUME_SUBMISSION_RESULT_P1`, the fresh unit snapshot and
 `RESUME_SYSTEMD_RUN_RC`. Repeat read-only monitoring and public validation.
 Never reuse the initial launch, unit, claim or receipt. Resume does not replace
 authorization, reset runtime/budget, widen task scope, or turn completed/invalid
 evidence into PASS.
+For a resume launch, `submit-systemd-run` also queries the original unit with
+key/value `systemctl show` immediately before consuming the fresh claim. It
+fails closed unless that unit is absent, inactive or failed with no main PID;
+the earlier operator precheck cannot be skipped to run two writers concurrently.
+
+```bash
+"$PYTHON" -m creditrep.experiments.p7c4b2e_operations_cli \
+  create-submission-receipt --receipt "$RESUME_RECEIPT_P1" \
+  --launch-record "$RESUME_LAUNCH_P1" --unit "$RESUME_UNIT_P1" \
+  --submission-result "$RESUME_SUBMISSION_RESULT_P1" \
+  --unit-snapshot-file "$RESUME_SNAPSHOT_P1" \
+  --systemd-run-exit-code "$RESUME_SYSTEMD_RUN_RC"
+```
 
 Target plans also declare the closed `runtime_input_binding` contract. Its
 `locked_runtime_inputs_digest` is a canonical semantic projection of the complete

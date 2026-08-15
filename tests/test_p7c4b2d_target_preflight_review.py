@@ -21,6 +21,7 @@ from creditrep.experiments.p7c4b2c_cli import main as preflight_cli_main
 from creditrep.experiments.p7c4b2d_cli import EXIT_REVIEW_BLOCKED, main as cli_main
 from creditrep.locked_runtime_inputs import (
     LockedRuntimeInputError,
+    OUTER_PROJECTION_RUNTIME_DATASETS,
     load_locked_runtime_inputs,
 )
 from creditrep.preprocessing import load_protocol_a_config
@@ -42,6 +43,7 @@ from creditrep.protocols.p7c4b2d import (
     create_effective_authorization,
     dependency_lock_fingerprint,
     decision_package,
+    dataset_binding_digest,
     environment_digest,
     merge_operator_metadata,
     normalize_target_output,
@@ -69,7 +71,9 @@ def _repo(tmp_path: Path) -> Path:
     (tmp_path / "requirements-dev.txt").write_text(
         "-r requirements.txt\n", encoding="utf-8"
     )
-    for dataset, payload in {"ac": b"ac fixture\n", "gmc": b"gmc fixture\n"}.items():
+    dataset_names = ("ac", "gc", "th02", "hmeq", "tc", "gmc")
+    for dataset in dataset_names:
+        payload = f"{dataset} fixture\n".encode()
         folder = tmp_path / "data" / "raw" / dataset
         folder.mkdir(parents=True, exist_ok=True)
         (folder / f"{dataset}.csv").write_bytes(payload)
@@ -77,6 +81,26 @@ def _repo(tmp_path: Path) -> Path:
   ac:
     id: ac
     active_file: data/raw/ac/ac.csv
+    reader: {type: csv}
+    target: {column: target, mapping_to_binary: {'0': 0, '1': 1}}
+  gc:
+    id: gc
+    active_file: data/raw/gc/gc.csv
+    reader: {type: csv}
+    target: {column: target, mapping_to_binary: {'0': 0, '1': 1}}
+  th02:
+    id: th02
+    active_file: data/raw/th02/th02.csv
+    reader: {type: csv}
+    target: {column: target, mapping_to_binary: {'0': 0, '1': 1}}
+  hmeq:
+    id: hmeq
+    active_file: data/raw/hmeq/hmeq.csv
+    reader: {type: csv}
+    target: {column: target, mapping_to_binary: {'0': 0, '1': 1}}
+  tc:
+    id: tc
+    active_file: data/raw/tc/tc.csv
     reader: {type: csv}
     target: {column: target, mapping_to_binary: {'0': 0, '1': 1}}
   gmc:
@@ -87,7 +111,7 @@ def _repo(tmp_path: Path) -> Path:
 """
     (tmp_path / "data" / "datasets.yaml").write_text(registry, encoding="utf-8")
     checks = ['"Path","Algorithm","Hash"']
-    for dataset in ("ac", "gmc"):
+    for dataset in dataset_names:
         payload = (tmp_path / "data" / "raw" / dataset / f"{dataset}.csv").read_bytes()
         checks.append(
             f'"data/raw/{dataset}/{dataset}.csv","SHA256","{hashlib.sha256(payload).hexdigest().upper()}"'
@@ -165,11 +189,29 @@ def _environment(plan, root: Path, monkeypatch, *, mode="cpu_parallel_1"):
     return value
 
 
-def _as_projection_environment(value):
+def _as_projection_environment(value, plan, root):
     value["maximum_runtime_hours"] = 12
     value["maximum_monetary_budget"] = "5.0"
     value["hourly_price"] = "0.26"
     value["ram_bytes"] = PROJECTION_AGGREGATE_RSS_LIMIT_BYTES + 1
+    runtime_inputs = load_locked_runtime_inputs(
+        root, dataset_ids=OUTER_PROJECTION_RUNTIME_DATASETS
+    )
+    value.update(
+        {
+            "schema_version": 3,
+            "execution_stage": TARGET_PROJECTION_PREFLIGHT_STAGE,
+            "dataset_ids": list(OUTER_PROJECTION_RUNTIME_DATASETS),
+            "dataset_hashes": runtime_inputs.source_hashes,
+            "locked_runtime_inputs_digest": runtime_inputs.digest,
+        }
+    )
+    value["dataset_binding_digest"] = dataset_binding_digest(
+        dataset_ids=OUTER_PROJECTION_RUNTIME_DATASETS,
+        dataset_hashes=value["dataset_hashes"],
+        locked_runtime_inputs_digest=value["locked_runtime_inputs_digest"],
+        plan_digest=plan["plan_digest"],
+    )
     value["environment_digest"] = environment_digest(value)
     return value
 
@@ -261,9 +303,14 @@ def test_projection_preflight_proposal_is_typed_and_fail_closed(
 ):
     plan, root = _plan(), _repo(tmp_path)
     environment = _environment(plan, root, monkeypatch, mode="cpu_parallel_2")
-    _as_projection_environment(environment)
+    _as_projection_environment(environment, plan, root)
     proposal = render_authorization_proposal(
-        plan, environment, execution_stage=stage, expiry=None
+        plan,
+        environment,
+        execution_stage=stage,
+        expiry=None,
+        repo_root=root,
+        spawn_probe=_pass_probe,
     )
 
     assert proposal["maximum_task_count"] == expected_count
@@ -271,20 +318,25 @@ def test_projection_preflight_proposal_is_typed_and_fail_closed(
     assert validate_authorization_proposal(proposal, plan, environment)["valid"]
     proposal["task_ids"] = proposal["task_ids"][:-1]
     _redigest_proposal(proposal)
-    assert "authorization_proposal_task_scope_mismatch" in validate_authorization_proposal(
-        proposal, plan, environment
-    )["reason_codes"]
+    assert (
+        "authorization_proposal_task_scope_mismatch"
+        in validate_authorization_proposal(proposal, plan, environment)["reason_codes"]
+    )
 
 
-def test_projection_preflight_requires_distinct_operator_approval(tmp_path, monkeypatch):
+def test_projection_preflight_requires_distinct_operator_approval(
+    tmp_path, monkeypatch
+):
     plan, root = _plan(), _repo(tmp_path)
     environment = _environment(plan, root, monkeypatch)
-    _as_projection_environment(environment)
+    _as_projection_environment(environment, plan, root)
     proposal = render_authorization_proposal(
         plan,
         environment,
         execution_stage=TARGET_PROJECTION_PREFLIGHT_STAGE,
         expiry=None,
+        repo_root=root,
+        spawn_probe=_pass_probe,
     )
     with pytest.raises(P7C4B2DError, match="operator_approval_missing"):
         _create_effective_authorization(
@@ -324,25 +376,265 @@ def test_projection_preflight_requires_distinct_operator_approval(tmp_path, monk
 def test_projection_resource_policy_is_exact_and_per_run(tmp_path, monkeypatch):
     plan, root = _plan(), _repo(tmp_path)
     first = _as_projection_environment(
-        _environment(plan, root, monkeypatch, mode="cpu_parallel_1")
+        _environment(plan, root, monkeypatch, mode="cpu_parallel_1"), plan, root
     )
     second = _as_projection_environment(
-        _environment(plan, root, monkeypatch, mode="cpu_parallel_2")
+        _environment(plan, root, monkeypatch, mode="cpu_parallel_2"), plan, root
     )
     first["output_directory"] = str(root / "artifacts" / "outer-p1")
     second["output_directory"] = str(root / "artifacts" / "outer-p2")
     first["environment_digest"] = environment_digest(first)
     second["environment_digest"] = environment_digest(second)
     proposals = [
-        render_authorization_proposal(plan, value, execution_stage=TARGET_PROJECTION_PREFLIGHT_STAGE, expiry=None)
+        render_authorization_proposal(
+            plan,
+            value,
+            execution_stage=TARGET_PROJECTION_PREFLIGHT_STAGE,
+            expiry=None,
+            repo_root=root,
+            spawn_probe=_pass_probe,
+        )
         for value in (first, second)
     ]
-    assert [item["resource_policy"]["maximum_in_flight_tasks"] for item in proposals] == [1, 2]
+    assert [
+        item["resource_policy"]["maximum_in_flight_tasks"] for item in proposals
+    ] == [1, 2]
     assert all(item["maximum_runtime_hours"] == 12 for item in proposals)
     assert all(item["maximum_monetary_budget"] == "5.0" for item in proposals)
     assert sum(item["maximum_runtime_hours"] for item in proposals) == 24
     assert sum(float(item["maximum_monetary_budget"]) for item in proposals) == 10
-    assert proposals[0]["target_environment_digest"] != proposals[1]["target_environment_digest"]
+    assert (
+        proposals[0]["target_environment_digest"]
+        != proposals[1]["target_environment_digest"]
+    )
+
+
+@pytest.mark.parametrize("missing_dataset", OUTER_PROJECTION_RUNTIME_DATASETS)
+def test_outer_environment_rejects_each_missing_dataset(
+    tmp_path, monkeypatch, missing_dataset
+):
+    plan, root = _plan(), _repo(tmp_path)
+    environment = _as_projection_environment(
+        _environment(plan, root, monkeypatch), plan, root
+    )
+    environment["dataset_ids"].remove(missing_dataset)
+    environment["dataset_hashes"].pop(missing_dataset)
+    environment["dataset_binding_digest"] = dataset_binding_digest(
+        dataset_ids=environment["dataset_ids"],
+        dataset_hashes=environment["dataset_hashes"],
+        locked_runtime_inputs_digest=environment["locked_runtime_inputs_digest"],
+        plan_digest=environment["plan_digest"],
+    )
+    environment["environment_digest"] = environment_digest(environment)
+    report = validate_target_environment(
+        environment,
+        plan,
+        execution_stage=TARGET_PROJECTION_PREFLIGHT_STAGE,
+        repo_root=root,
+        spawn_probe=_pass_probe,
+    )
+    assert not report["valid"]
+    assert "outer_dataset_inventory_mismatch" in report["reason_codes"]
+
+
+@pytest.mark.parametrize("mutation", ["extra", "duplicate", "lowercase", "wrong_hash"])
+def test_outer_environment_inventory_and_hash_mutations_fail_closed(
+    tmp_path, monkeypatch, mutation
+):
+    plan, root = _plan(), _repo(tmp_path)
+    environment = _as_projection_environment(
+        _environment(plan, root, monkeypatch), plan, root
+    )
+    if mutation == "extra":
+        environment["dataset_ids"].append("EXTRA")
+        environment["dataset_hashes"]["EXTRA"] = "A" * 64
+    elif mutation == "duplicate":
+        environment["dataset_ids"].append("GC")
+    elif mutation == "lowercase":
+        environment["dataset_ids"][1] = "gc"
+        environment["dataset_hashes"]["gc"] = environment["dataset_hashes"].pop("GC")
+    else:
+        environment["dataset_hashes"]["GC"] = "0" * 64
+    environment["dataset_binding_digest"] = dataset_binding_digest(
+        dataset_ids=environment["dataset_ids"],
+        dataset_hashes=environment["dataset_hashes"],
+        locked_runtime_inputs_digest=environment["locked_runtime_inputs_digest"],
+        plan_digest=environment["plan_digest"],
+    )
+    environment["environment_digest"] = environment_digest(environment)
+    report = validate_target_environment(
+        environment,
+        plan,
+        execution_stage=TARGET_PROJECTION_PREFLIGHT_STAGE,
+        repo_root=root,
+        spawn_probe=_pass_probe,
+    )
+    assert not report["valid"]
+    assert set(report["reason_codes"]) & {
+        "outer_dataset_inventory_mismatch",
+        "outer_dataset_hash_mismatch",
+    }
+
+
+def test_outer_partial_historical_binding_fails_before_output_or_fit(
+    tmp_path, monkeypatch
+):
+    plan, root = _plan(), _repo(tmp_path)
+    environment = _as_projection_environment(
+        _environment(plan, root, monkeypatch), plan, root
+    )
+    output = root / "artifacts" / "outer-regression"
+    environment["output_directory"] = str(output)
+    environment["environment_digest"] = environment_digest(environment)
+    proposal = render_authorization_proposal(
+        plan,
+        environment,
+        execution_stage=TARGET_PROJECTION_PREFLIGHT_STAGE,
+        expiry=None,
+        repo_root=root,
+        spawn_probe=_pass_probe,
+    )
+    now = datetime.now(UTC)
+    authorization = _create_effective_authorization(
+        proposal,
+        environment,
+        plan,
+        operator_identity="fixture-operator",
+        operator_approval=TARGET_PROJECTION_PREFLIGHT_APPROVAL,
+        expires_at=(now + timedelta(hours=1)).isoformat(),
+        repo_root=root,
+        spawn_probe=_pass_probe,
+        now_provider=lambda: now,
+    )
+    partial_ids = ["AC", "GMC"]
+    partial_hashes = {key: environment["dataset_hashes"][key] for key in partial_ids}
+    wrong_binding = dataset_binding_digest(
+        dataset_ids=partial_ids,
+        dataset_hashes=partial_hashes,
+        locked_runtime_inputs_digest=environment["locked_runtime_inputs_digest"],
+        plan_digest=plan["plan_digest"],
+    )
+    for artifact in (environment, proposal, authorization):
+        artifact["dataset_ids"] = partial_ids
+        artifact["dataset_hashes"] = partial_hashes
+        artifact["dataset_binding_digest"] = wrong_binding
+    environment["environment_digest"] = environment_digest(environment)
+    proposal["target_environment_digest"] = environment["environment_digest"]
+    proposal["proposal_digest"] = canonical_digest(proposal, "proposal_digest")
+    authorization["target_environment_digest"] = environment["environment_digest"]
+    authorization["proposal_digest"] = proposal["proposal_digest"]
+    authorization["authorization_digest"] = canonical_digest(
+        authorization, "authorization_digest"
+    )
+    monkeypatch.setattr(
+        runner,
+        "canonical_outer_refit",
+        lambda *_args, **_kwargs: pytest.fail("estimator dispatch must not occur"),
+    )
+    with pytest.raises(P7C4B2CError, match="outer_dataset_inventory_mismatch"):
+        runner.run(
+            plan,
+            output,
+            execution_class="target_preflight",
+            mode="cpu_parallel_1",
+            repo_root=root,
+            target_environment=environment,
+            authorization_proposal=proposal,
+            effective_authorization=authorization,
+        )
+    assert not output.exists()
+
+
+def test_outer_recomputed_cross_binding_and_digest_mutations_are_rejected(
+    tmp_path, monkeypatch
+):
+    plan, root = _plan(), _repo(tmp_path)
+    environment = _as_projection_environment(
+        _environment(plan, root, monkeypatch), plan, root
+    )
+    proposal = render_authorization_proposal(
+        plan,
+        environment,
+        execution_stage=TARGET_PROJECTION_PREFLIGHT_STAGE,
+        expiry=None,
+        repo_root=root,
+        spawn_probe=_pass_probe,
+    )
+    now = datetime.now(UTC)
+    authorization = _create_effective_authorization(
+        proposal,
+        environment,
+        plan,
+        operator_identity="fixture-operator",
+        operator_approval=TARGET_PROJECTION_PREFLIGHT_APPROVAL,
+        expires_at=(now + timedelta(hours=1)).isoformat(),
+        repo_root=root,
+        spawn_probe=_pass_probe,
+        now_provider=lambda: now,
+    )
+    authorization["dataset_hashes"]["GC"] = "0" * 64
+    authorization["dataset_binding_digest"] = dataset_binding_digest(
+        dataset_ids=authorization["dataset_ids"],
+        dataset_hashes=authorization["dataset_hashes"],
+        locked_runtime_inputs_digest=authorization["locked_runtime_inputs_digest"],
+        plan_digest=authorization["plan_digest"],
+    )
+    authorization["authorization_digest"] = canonical_digest(
+        authorization, "authorization_digest"
+    )
+    auth_report = validate_effective_authorization(
+        authorization,
+        proposal,
+        environment,
+        plan,
+        now=now + timedelta(minutes=1),
+        repo_root=root,
+        spawn_probe=_pass_probe,
+    )
+    assert "outer_dataset_binding_mismatch" in auth_report["reason_codes"]
+    proposal["dataset_hashes"]["GC"] = "0" * 64
+    proposal["dataset_binding_digest"] = dataset_binding_digest(
+        dataset_ids=proposal["dataset_ids"],
+        dataset_hashes=proposal["dataset_hashes"],
+        locked_runtime_inputs_digest=proposal["locked_runtime_inputs_digest"],
+        plan_digest=proposal["plan_digest"],
+    )
+    proposal["proposal_digest"] = canonical_digest(proposal, "proposal_digest")
+    assert (
+        "outer_dataset_binding_mismatch"
+        in validate_authorization_proposal(proposal, plan, environment)["reason_codes"]
+    )
+
+    environment["locked_runtime_inputs_digest"] = "0" * 64
+    environment["dataset_binding_digest"] = dataset_binding_digest(
+        dataset_ids=environment["dataset_ids"],
+        dataset_hashes=environment["dataset_hashes"],
+        locked_runtime_inputs_digest=environment["locked_runtime_inputs_digest"],
+        plan_digest=environment["plan_digest"],
+    )
+    environment["environment_digest"] = environment_digest(environment)
+    report = validate_target_environment(
+        environment,
+        plan,
+        execution_stage=TARGET_PROJECTION_PREFLIGHT_STAGE,
+        repo_root=root,
+        spawn_probe=_pass_probe,
+    )
+    assert "locked_runtime_input_mismatch" in report["reason_codes"]
+
+
+def test_outer_locked_inputs_reject_source_symlink_escape(tmp_path):
+    if os.name == "nt":
+        pytest.skip("source symlink boundary requires a symlink-capable test host")
+    (tmp_path / "repo").mkdir()
+    root = _repo(tmp_path / "repo")
+    outside = tmp_path / "outside-gc.csv"
+    outside.write_bytes((root / "data/raw/gc/gc.csv").read_bytes())
+    source = root / "data/raw/gc/gc.csv"
+    source.unlink()
+    source.symlink_to(outside)
+    with pytest.raises(LockedRuntimeInputError, match="source_symlink_or_path_invalid"):
+        load_locked_runtime_inputs(root, dataset_ids=OUTER_PROJECTION_RUNTIME_DATASETS)
 
 
 def test_runtime_and_monetary_guards_are_independent():
@@ -352,9 +644,15 @@ def test_runtime_and_monetary_guards_are_independent():
         "hourly_price": "0.26",
         "vm_count": 1,
     }
-    assert runner._elapsed_budget_violation(provenance, 43_200) == "runtime_budget_exceeded"
+    assert (
+        runner._elapsed_budget_violation(provenance, 43_200)
+        == "runtime_budget_exceeded"
+    )
     expensive = {**provenance, "hourly_price": "0.5"}
-    assert runner._elapsed_budget_violation(expensive, 36_000) == "monetary_budget_exceeded"
+    assert (
+        runner._elapsed_budget_violation(expensive, 36_000)
+        == "monetary_budget_exceeded"
+    )
     assert runner._elapsed_budget_violation(provenance, 1.0) is None
 
 
@@ -1430,14 +1728,9 @@ def test_four_task_target_canary_acceptance_is_separate_from_scientific_coverage
     assert report["target_canary_acceptance"]["applicable"] is True
     assert report["target_canary_acceptance"]["accepted"] is True
     assert report["target_canary_acceptance"]["reason_codes"] == []
+    assert report["target_canary_acceptance"]["scientific_projection_eligible"] is False
     assert (
-        report["target_canary_acceptance"]["scientific_projection_eligible"]
-        is False
-    )
-    assert (
-        report["target_canary_acceptance"][
-            "canonical_scientific_execution_authorized"
-        ]
+        report["target_canary_acceptance"]["canonical_scientific_execution_authorized"]
         is False
     )
     assert report["scientific_coverage"]["valid"] is False
@@ -1583,9 +1876,7 @@ def test_target_source_identity_is_cross_bound_and_strictly_validated(
     assert "git_provenance_mismatch" in report["reason_codes"]
 
 
-def test_target_output_path_is_bound_to_persisted_authorization(
-    tmp_path, monkeypatch
-):
+def test_target_output_path_is_bound_to_persisted_authorization(tmp_path, monkeypatch):
     _plan_value, _root, output, *_authorization = _complete_four_task_target_fixture(
         tmp_path, monkeypatch
     )
@@ -1626,9 +1917,9 @@ def test_valid_finalization_returns_post_marker_public_validation(
     public_calls = []
     original_validate = runner.validate_artifacts
 
-    def tracked_public_validation(run_dir):
+    def tracked_public_validation(run_dir, **kwargs):
         public_calls.append((run_dir / "COMPLETED.json").exists())
-        return original_validate(run_dir)
+        return original_validate(run_dir, **kwargs)
 
     monkeypatch.setattr(runner, "validate_artifacts", tracked_public_validation)
     result = _finalize_completed_fixture_as_initial_run(
@@ -1638,9 +1929,10 @@ def test_valid_finalization_returns_post_marker_public_validation(
     assert public_calls == [True]
     assert result["validation"]["valid"] is True
     assert result["validation"] == original_validate(output)
-    assert preflight_cli_main(
-        ["validate-artifacts", "--run-dir", str(output)]
-    ) == runner.EXIT_OK
+    assert (
+        preflight_cli_main(["validate-artifacts", "--run-dir", str(output)])
+        == runner.EXIT_OK
+    )
 
 
 def test_corrupt_marker_write_returns_post_marker_failure_and_cli_exit_two(
@@ -1662,9 +1954,9 @@ def test_corrupt_marker_write_returns_post_marker_failure_and_cli_exit_two(
     )
 
     assert result["validation"]["valid"] is False
-    assert "run_complete_marker_integrity_failure" in result["validation"][
-        "reason_codes"
-    ]
+    assert (
+        "run_complete_marker_integrity_failure" in result["validation"]["reason_codes"]
+    )
     assert (
         preflight_cli_main(["validate-artifacts", "--run-dir", str(output)])
         == runner.EXIT_VALIDATION
@@ -1767,9 +2059,9 @@ def test_resume_rejects_existing_corrupt_run_marker_without_repair(
 
     assert result["executed"] == 0
     assert result["validation"]["valid"] is False
-    assert "run_complete_marker_integrity_failure" in result["validation"][
-        "reason_codes"
-    ]
+    assert (
+        "run_complete_marker_integrity_failure" in result["validation"]["reason_codes"]
+    )
     assert marker_path.read_bytes() == marker_before
     assert validation_path.read_bytes() == validation_before
 
@@ -1816,9 +2108,9 @@ def test_incomplete_resume_finishes_without_fit_and_uses_post_marker_validation(
     public_calls = []
     original_validate = runner.validate_artifacts
 
-    def tracked_public_validation(run_dir):
+    def tracked_public_validation(run_dir, **kwargs):
         public_calls.append((run_dir / "COMPLETED.json").exists())
-        return original_validate(run_dir)
+        return original_validate(run_dir, **kwargs)
 
     monkeypatch.setattr(runner, "validate_artifacts", tracked_public_validation)
     result = runner.resume(
@@ -1904,9 +2196,10 @@ def test_four_task_target_canary_failures_remain_fail_closed(
     assert report["target_canary_acceptance"]["accepted"] is False
     assert reason in report["reason_codes"]
     if mutation == "missing-task":
-        assert preflight_cli_main(
-            ["validate-artifacts", "--run-dir", str(output)]
-        ) == runner.EXIT_VALIDATION
+        assert (
+            preflight_cli_main(["validate-artifacts", "--run-dir", str(output)])
+            == runner.EXIT_VALIDATION
+        )
 
 
 def test_target_runner_accepts_valid_gate_and_persists_provenance_without_workload(

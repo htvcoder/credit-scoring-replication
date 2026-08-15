@@ -30,6 +30,7 @@ from creditrep.config.loader import sha256_canonical
 from creditrep.datasets.registry import find_repo_root
 from creditrep.locked_runtime_inputs import (
     LockedRuntimeInputError,
+    OUTER_PROJECTION_RUNTIME_DATASETS,
     ValidatedRuntimeInputs,
     validate_locked_runtime_inputs,
 )
@@ -52,6 +53,7 @@ from creditrep.protocols.p7c4b2d import (
     PROJECTION_MAXIMUM_MONETARY_BUDGET,
     PROJECTION_MAXIMUM_RUNTIME_HOURS,
     TARGET_PROJECTION_PREFLIGHT_STAGE,
+    dataset_binding_digest,
     normalize_target_output,
     projection_preflight_resource_policy,
     select_authorized_scope,
@@ -72,9 +74,10 @@ RUNTIME_CLOCK_SKEW_SECONDS = 5.0
 
 
 def _lower_hex(value: Any, length: int) -> bool:
-    return isinstance(value, str) and re.fullmatch(
-        rf"[0-9a-f]{{{length}}}", value
-    ) is not None
+    return (
+        isinstance(value, str)
+        and re.fullmatch(rf"[0-9a-f]{{{length}}}", value) is not None
+    )
 
 
 def _utc() -> str:
@@ -384,7 +387,7 @@ def _authorization_provenance(
     worker_count: int,
     canonical_tasks: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    return {
+    value = {
         "schema_version": PROVENANCE_SCHEMA_VERSION,
         "authorization_digest": authorization["authorization_digest"],
         "proposal_digest": authorization["proposal_digest"],
@@ -409,6 +412,15 @@ def _authorization_provenance(
         "minimum_free_disk_bytes": authorization["minimum_free_disk_bytes"],
         "resource_policy": authorization["resource_policy"],
     }
+    if authorization["execution_stage"] == TARGET_PROJECTION_PREFLIGHT_STAGE:
+        value.update(
+            {
+                "dataset_ids": list(authorization["dataset_ids"]),
+                "dataset_hashes": dict(authorization["dataset_hashes"]),
+                "dataset_binding_digest": authorization["dataset_binding_digest"],
+            }
+        )
+    return value
 
 
 def _validate_resume_provenance(
@@ -470,15 +482,18 @@ def _validate_persisted_target_contract(
     manifest: dict[str, Any],
     plan: dict[str, Any],
     expected_tasks: list[dict[str, Any]],
+    *,
+    repo_root: Path | None = None,
 ) -> list[str]:
     """Validate immutable target-preflight bindings without re-authorizing a run."""
     if manifest.get("execution_class") != "target_preflight":
         return []
     codes: list[str] = []
     provenance = manifest.get("authorization_provenance")
-    if not isinstance(provenance, dict) or provenance.get(
-        "schema_version"
-    ) != PROVENANCE_SCHEMA_VERSION:
+    if (
+        not isinstance(provenance, dict)
+        or provenance.get("schema_version") != PROVENANCE_SCHEMA_VERSION
+    ):
         return ["target_resume_provenance_missing"]
     expected_ids = [task.get("sample_id") for task in expected_tasks]
     try:
@@ -521,6 +536,36 @@ def _validate_persisted_target_contract(
             expected_policy = None
         if provenance.get("resource_policy") != expected_policy:
             codes.append("authorization_provenance_mismatch")
+        dataset_ids = provenance.get("dataset_ids")
+        dataset_hashes = provenance.get("dataset_hashes")
+        try:
+            expected_dataset_binding = dataset_binding_digest(
+                dataset_ids=OUTER_PROJECTION_RUNTIME_DATASETS,
+                dataset_hashes=dataset_hashes,
+                locked_runtime_inputs_digest=provenance.get(
+                    "locked_runtime_inputs_digest"
+                ),
+                plan_digest=provenance.get("plan_digest"),
+            )
+        except (TypeError, ValueError):
+            expected_dataset_binding = None
+        if (
+            dataset_ids != list(OUTER_PROJECTION_RUNTIME_DATASETS)
+            or not isinstance(dataset_hashes, dict)
+            or tuple(dataset_hashes) != OUTER_PROJECTION_RUNTIME_DATASETS
+            or provenance.get("dataset_binding_digest") != expected_dataset_binding
+        ):
+            codes.append("outer_dataset_binding_mismatch")
+        try:
+            locked = validate_locked_runtime_inputs(
+                provenance.get("locked_runtime_inputs_digest"),
+                repo_root or find_repo_root(),
+                dataset_ids=OUTER_PROJECTION_RUNTIME_DATASETS,
+            )
+            if dataset_hashes != locked.source_hashes:
+                codes.append("outer_dataset_hash_mismatch")
+        except LockedRuntimeInputError:
+            codes.append("locked_runtime_input_mismatch")
     runtime_codes: list[str] = []
     state = _read_json(run_dir / "authorization_runtime.json", runtime_codes)
     if runtime_codes or not state:
@@ -547,9 +592,10 @@ def _validate_persisted_target_contract(
         "generation",
         "state_digest",
     }
-    if set(state) != required_state_fields or state.get(
-        "schema_version"
-    ) != RUNTIME_STATE_SCHEMA_VERSION:
+    if (
+        set(state) != required_state_fields
+        or state.get("schema_version") != RUNTIME_STATE_SCHEMA_VERSION
+    ):
         codes.append("runtime_state_invalid")
         return codes
     expected_binding = {
@@ -558,9 +604,7 @@ def _validate_persisted_target_contract(
         "proposal_digest": provenance.get("proposal_digest"),
         "target_environment_digest": provenance.get("target_environment_digest"),
         "plan_digest": provenance.get("plan_digest"),
-        "normalized_output_directory": provenance.get(
-            "normalized_output_directory"
-        ),
+        "normalized_output_directory": provenance.get("normalized_output_directory"),
         "maximum_runtime_hours": provenance.get("maximum_runtime_hours"),
         "maximum_monetary_budget": provenance.get("maximum_monetary_budget"),
         "hourly_price": provenance.get("hourly_price"),
@@ -801,9 +845,7 @@ def _persist_runtime_state(
         float(state["accumulated_elapsed_seconds"]), elapsed
     )
     rate = Decimal(str(state["hourly_price"])) * Decimal(state["vm_count"])
-    consumed = rate * Decimal(str(state["accumulated_elapsed_seconds"])) / Decimal(
-        3600
-    )
+    consumed = rate * Decimal(str(state["accumulated_elapsed_seconds"])) / Decimal(3600)
     state["consumed_monetary_budget"] = format(consumed, "f")
     state["last_accounted_at"] = wall_now.astimezone(timezone.utc).isoformat()
     state["generation"] += 1
@@ -825,9 +867,7 @@ def _deadline(
     elapsed = _validate_runtime_state(state, manifest, provenance, wall_now)
     maximum_seconds = float(provenance["maximum_runtime_hours"]) * 3600.0
     runtime_remaining = maximum_seconds - elapsed
-    hourly = Decimal(str(provenance["hourly_price"])) * Decimal(
-        provenance["vm_count"]
-    )
+    hourly = Decimal(str(provenance["hourly_price"])) * Decimal(provenance["vm_count"])
     budget = Decimal(str(provenance["maximum_monetary_budget"]))
     monetary_seconds = float(budget / hourly * Decimal(3600))
     monetary_remaining = monetary_seconds - elapsed
@@ -894,7 +934,14 @@ def _execute_task(
             raise P7C4B2CError("task_authorization_context_invalid")
         try:
             locked_runtime_inputs = validate_locked_runtime_inputs(
-                provenance.get("locked_runtime_inputs_digest"), repo_root
+                provenance.get("locked_runtime_inputs_digest"),
+                repo_root,
+                dataset_ids=(
+                    OUTER_PROJECTION_RUNTIME_DATASETS
+                    if provenance.get("execution_stage")
+                    == TARGET_PROJECTION_PREFLIGHT_STAGE
+                    else ("AC", "GMC")
+                ),
             )
         except LockedRuntimeInputError as exc:
             raise P7C4B2CError("locked_runtime_input_mismatch") from exc
@@ -1042,7 +1089,9 @@ def _task_process_entry(result_queue: Any, kwargs: dict[str, Any]) -> None:
 def _aggregate_process_tree_rss(root_pid: int) -> int:
     try:
         root = psutil.Process(root_pid)
-        processes = {process.pid: process for process in [root, *root.children(recursive=True)]}
+        processes = {
+            process.pid: process for process in [root, *root.children(recursive=True)]
+        }
         return sum(process.memory_info().rss for process in processes.values())
     except (psutil.Error, OSError):
         raise P7C4B2CError("memory_sampler_failure") from None
@@ -1108,7 +1157,11 @@ def _persist_supervisor_failure(
     task: dict[str, Any],
     reason_code: str,
 ) -> None:
-    identity = {"sample_id": task["sample_id"], "attempt": 1, "run_id": manifest["run_id"]}
+    identity = {
+        "sample_id": task["sample_id"],
+        "attempt": 1,
+        "run_id": manifest["run_id"],
+    }
     attempt_id = sha256_canonical(identity)
     failure = {
         **identity,
@@ -1158,10 +1211,8 @@ def _run_supervised_projection_phase(
     maximum_in_flight = policy.get("maximum_in_flight_tasks")
     if (
         provenance.get("execution_stage") != TARGET_PROJECTION_PREFLIGHT_STAGE
-        or policy.get("maximum_runtime_hours")
-        != PROJECTION_MAXIMUM_RUNTIME_HOURS
-        or policy.get("maximum_monetary_budget")
-        != PROJECTION_MAXIMUM_MONETARY_BUDGET
+        or policy.get("maximum_runtime_hours") != PROJECTION_MAXIMUM_RUNTIME_HOURS
+        or policy.get("maximum_monetary_budget") != PROJECTION_MAXIMUM_MONETARY_BUDGET
         or maximum_in_flight != manifest.get("worker_count")
         or not isinstance(maximum_in_flight, int)
         or isinstance(maximum_in_flight, bool)
@@ -1229,7 +1280,9 @@ def _run_supervised_projection_phase(
                 "authorization_deadline_monotonic": authorization_deadline(),
                 "commit_artifact": False,
             }
-            process = ctx.Process(target=_task_process_entry, args=(result_queue, kwargs))
+            process = ctx.Process(
+                target=_task_process_entry, args=(result_queue, kwargs)
+            )
             process.start()
             active.append(
                 {
@@ -1590,7 +1643,7 @@ def _resume_impl(
         and not initial_authorization_validated
         and (run_dir / "COMPLETED.json").exists()
     ):
-        final_report = validate_artifacts(run_dir)
+        final_report = validate_artifacts(run_dir, repo_root=root)
         return {
             "run_id": manifest["run_id"],
             "executed": 0,
@@ -1651,7 +1704,7 @@ def _resume_impl(
                 continue
         pending.append(task)
     if not initial_authorization_validated and not pending:
-        final_report = validate_artifacts(run_dir)
+        final_report = validate_artifacts(run_dir, repo_root=root)
         return {
             "run_id": manifest["run_id"],
             "executed": 0,
@@ -1667,8 +1720,7 @@ def _resume_impl(
             continue
         if (
             provenance is not None
-            and provenance.get("execution_stage")
-            == TARGET_PROJECTION_PREFLIGHT_STAGE
+            and provenance.get("execution_stage") == TARGET_PROJECTION_PREFLIGHT_STAGE
             and runtime_state is not None
         ):
             phase_records = _run_supervised_projection_phase(
@@ -1718,7 +1770,10 @@ def _resume_impl(
     _atomic_json(run_dir / "coverage.json", coverage)
     _atomic_json(run_dir / "stratum_summary.json", stratum_summary)
     preliminary = _validate_artifacts(
-        run_dir, allow_missing_derived=True, allow_missing_marker=True
+        run_dir,
+        allow_missing_derived=True,
+        allow_missing_marker=True,
+        repo_root=root,
     )
     projection = project_validated(
         records,
@@ -1735,7 +1790,7 @@ def _resume_impl(
             "reason_codes": projection["reason_codes"],
         },
     )
-    report = _validate_artifacts(run_dir, allow_missing_marker=True)
+    report = _validate_artifacts(run_dir, allow_missing_marker=True, repo_root=root)
     _atomic_json(run_dir / "validation.json", report)
     if report["valid"] and report["completed"] == report["expected"]:
         _atomic_json(
@@ -1745,7 +1800,7 @@ def _resume_impl(
                 "run_id": manifest["run_id"],
             },
         )
-        report = validate_artifacts(run_dir)
+        report = validate_artifacts(run_dir, repo_root=root)
     return {
         "run_id": manifest["run_id"],
         "executed": executed,
@@ -1759,6 +1814,7 @@ def _validate_artifacts(
     *,
     allow_missing_derived: bool = False,
     allow_missing_marker: bool = False,
+    repo_root: Path | None = None,
 ) -> dict[str, Any]:
     run_dir = run_dir.resolve()
     codes: list[str] = []
@@ -1792,7 +1848,11 @@ def _validate_artifacts(
     if not isinstance(expected, list):
         codes.append("canonical_task_manifest_mismatch")
         expected = []
-    codes.extend(_validate_persisted_target_contract(run_dir, manifest, plan, expected))
+    codes.extend(
+        _validate_persisted_target_contract(
+            run_dir, manifest, plan, expected, repo_root=repo_root
+        )
+    )
     expected_ids = [task.get("sample_id") for task in expected]
     if len(expected_ids) != len(set(expected_ids)):
         codes.append("duplicate_sample_identity")
@@ -1824,6 +1884,15 @@ def _validate_artifacts(
         codes.extend(
             validate_sample(record, task_by_id.get(directory.name, {}), manifest)
         )
+        provenance = manifest.get("authorization_provenance") or {}
+        if provenance.get("execution_stage") == TARGET_PROJECTION_PREFLIGHT_STAGE:
+            task = task_by_id.get(directory.name, {})
+            dataset_id = task.get("dataset_id")
+            expected_hash = (provenance.get("dataset_hashes") or {}).get(dataset_id)
+            if (record.get("input_identity") or {}).get("dataset_id") != dataset_id or (
+                record.get("input_identity") or {}
+            ).get("dataset_checksum") != expected_hash:
+                codes.append("outer_dataset_hash_mismatch")
     identities = [record.get("sample_id") for record in records]
     if len(identities) != len(set(identities)):
         codes.append("duplicate_sample_identity")
@@ -1865,8 +1934,10 @@ def _validate_artifacts(
             codes.append("invalid_true_eligibility")
     if (run_dir / "failures").exists() and any((run_dir / "failures").glob("*.json")):
         codes.append("failed_attempt_present")
-    if is_target_canary and (run_dir / "quarantine").exists() and any(
-        (run_dir / "quarantine").iterdir()
+    if (
+        is_target_canary
+        and (run_dir / "quarantine").exists()
+        and any((run_dir / "quarantine").iterdir())
     ):
         codes.append("quarantined_attempt_present")
     completion = (
@@ -1914,6 +1985,8 @@ def _validate_artifacts(
     }
 
 
-def validate_artifacts(run_dir: Path) -> dict[str, Any]:
+def validate_artifacts(
+    run_dir: Path, *, repo_root: Path | None = None
+) -> dict[str, Any]:
     """Validate a persisted run; completed runs always require their run marker."""
-    return _validate_artifacts(run_dir)
+    return _validate_artifacts(run_dir, repo_root=repo_root)

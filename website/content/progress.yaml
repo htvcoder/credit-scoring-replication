@@ -3,8 +3,8 @@ project:
   last_completed_phase: 6
   current_phase: 7
   next_phase: 7
-  updated_at: "2026-08-14"
-  current_status_summary: "P7C.3: Completed — canonical feasibility pilot accepted. Canonical vm-run-003 xác nhận CPU feasibility PASS, memory feasibility PASS và execution stability PASS; đây là evidence engineering non-publishable, không phải kết quả hiệu năng dự báo hoặc kết quả khoa học cuối cùng, và scientific execution chưa bắt đầu. Fresh P7C.4B.2 target canary `p7c4b2d-target-rerun-01` đã operationally accepted 4/4. B2b target-inner implementation đã qua final independent review cho runtime/attempt ledgers, supervisor/RSS, pre-promotion/finalization, control/path identity và typed operational submission records; target workload chưa chạy. Target projection-preflight vẫn là hai self-contained 162-task mode với exact combined coverage và typed runtime/cost input. Scientific projection và canonical scientific execution vẫn chưa eligible/authorized, canonical execution tiếp tục NO-GO."
+  updated_at: "2026-08-15"
+  current_status_summary: "P7C.3: Completed — canonical feasibility pilot accepted. Canonical vm-run-003 xác nhận CPU feasibility PASS, memory feasibility PASS và execution stability PASS; đây là evidence engineering non-publishable, không phải kết quả hiệu năng dự báo hoặc kết quả khoa học cuối cùng, và scientific execution chưa bắt đầu. Fresh P7C.4B.2 target canary `p7c4b2d-target-rerun-01` đã operationally accepted 4/4. B2b target-inner workload chưa chạy. Outer P1 target projection-preflight trên source `aac4504...` đã dừng fail-closed sau 9 AC task vì environment chỉ bind AC/GMC; failed evidence được giữ nguyên, không có valid outer projection result và không được resume/promote. Hotfix yêu cầu fresh post-merge B2b P1/P2 và outer evidence trên common source SHA. Scientific projection và canonical scientific execution vẫn chưa eligible/authorized; canonical execution tiếp tục pending/NO-GO."
 status_enum:
   - planned
   - next
@@ -192,7 +192,7 @@ phases:
     numeric_id: 7
     title: "Core replication run"
     status: "in_progress"
-    summary: "P7C.3 và fresh P7C.4B.2 target canary đã operationally accepted ở phạm vi engineering non-publishable. Target projection-preflight contract tiếp theo đã được triển khai để review, nhưng target inner-fit/outer-refit workload chưa chạy. Scientific coverage/projection và canonical execution vẫn NO-GO/chưa authorized; chưa có scientific result mới."
+    summary: "P7C.3 và fresh P7C.4B.2 target canary đã operationally accepted ở phạm vi engineering non-publishable. Target inner-fit chưa chạy. Outer P1 projection-preflight cũ đã fail-closed vì partial AC/GMC dataset binding; failed evidence được giữ nguyên và không phải scientific result. Fresh post-merge common-SHA evidence là bắt buộc. Scientific coverage/projection và canonical execution vẫn NO-GO/chưa authorized; chưa có scientific result mới."
     tasks:
       - "P7A: khóa protocol/candidate manifest và kiểm tra integrity trước pilot."
       - "P7B: chạy feasibility pilot non-publishable; không dùng predictive performance để quyết định inclusion."
@@ -245,7 +245,7 @@ phases:
         summary: "Completed — independent operational readiness review, artifact read-back, full B1 regression, operator checklist and go/no-go policy completed."
       - id: "P7C.4B.2"
         status: "in_progress"
-        summary: "Fresh target canary đã operationally accepted. Target projection-preflight implementation tiếp theo đã sẵn sàng review: hai self-contained full-mode scope 162 task, per-run 12h/USD5/20-minute-task/12GiB/zero-failure supervision, closed combined inner/outer identity và typed overhead/price projection. Canary khác source SHA không được dùng làm residual. Chưa chạy target workload; scientific projection và canonical execution vẫn pending/NO-GO."
+        summary: "Fresh target canary đã operationally accepted. Outer P1 projection-preflight trên source `aac4504...` đã fail-closed sau 9 AC task do environment chỉ bind AC/GMC; failed evidence được giữ nguyên, không có valid outer projection result và không được resume/promote. Hotfix closed-world six-dataset/typed receipt cần fresh post-merge common-SHA B2b P1/P2 và outer evidence. Scientific projection và canonical execution vẫn pending/NO-GO."
       - id: "P7C.4B.2a"
         status: "completed"
         summary: "Completed — balanced MLP-1/3/5 scientific scope 24/48/48 generated deterministically from seed 42, validated and digest-locked; workload 54,270 fits, execution guard and static multi-VM sharding readiness contract added. No execution occurred."
@@ -254,7 +254,7 @@ phases:
         summary: "Final-reviewed executable bounded-preflight harness ready — deterministic plan/CLI, distinct typed profile/environment → proposal → effective-authorization chain per P1/P2, append-only runtime generations, per-task attempt history, bounded process-tree cleanup, fail-closed RSS sampling, unique temporary attempts, pre-promotion/finalization guards, canonical control/path revalidation và typed launch/submission records pass controlled regression. Existing B2b safety limits remain unchanged; boolean-only authorization is rejected. No target workload ran; target preflight remains pending."
       - id: "P7C.4B.2c"
         status: "completed"
-        summary: "Implementation completed / target execution pending — process-isolated run/resume, canonical timing instrumentation, atomic artifact lifecycle, validator, stratified projection and fail-closed eligibility/CLI contracts pass controlled validation. Target outer-refit/overhead preflight has not run; canonical execution remains NO-GO."
+        summary: "Implementation completed / valid target result pending — historical outer P1 attempt failed after 9 AC tasks because its environment bound only AC/GMC. Failed evidence is retained and terminal-invalid; there is no valid projection result. Closed-world six-dataset binding and transient-unit receipt recovery hotfix is under review; fresh post-merge evidence is required and canonical execution remains NO-GO."
       - id: "P7C.4B.2d"
         status: "completed"
         summary: "Fresh target environment, proposal và effective authorization cho canary `p7c4b2d-target-rerun-01` đã cross-validate với Git/source, AC/GMC input identity, locked runtime inputs, mode, resource scope và bốn task. Authorization đã hết scope tại canary và không authorize canonical scientific execution; canonical execution vẫn NO-GO."
