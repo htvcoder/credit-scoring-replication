@@ -18,6 +18,7 @@ from creditrep.experiments.p7c4b2e_operations_cli import (
     create_submission_claim,
     create_submission_receipt,
     create_submission_result,
+    main,
     resume_precheck,
 )
 
@@ -48,7 +49,7 @@ def _runbook_argv(command):
     return tokens[5:]
 
 
-def test_b2b_runbook_jq_argv_matches_exact_submitted_commands():
+def test_b2b_runbook_uses_canonical_submission_and_preserves_exact_argv():
     commands = list(_logical_shell_commands(RUNBOOK.read_text(encoding="utf-8")))
     constructions = {
         command.split("=", 1)[0]: _runbook_argv(command)
@@ -82,13 +83,10 @@ def test_b2b_runbook_jq_argv_matches_exact_submitted_commands():
         "RESUME_ARGV_P1": expected_resume,
     }
 
-    submitted = {}
-    for command in commands:
-        if command.startswith("systemd-run ") and "p7c4b2b_cli" in command:
-            tokens = shlex.split(command)
-            argv = tokens[tokens.index("$PYTHON") :]
-            submitted[argv[3]] = argv
-    assert submitted == {"run": expected_run, "resume": expected_resume}
+    runbook_text = RUNBOOK.read_text(encoding="utf-8")
+    assert runbook_text.count("submit-systemd-run ") == 2
+    assert "\nsystemd-run --user" not in runbook_text
+    assert "systemctl --output=json" not in runbook_text
     assert not {"--fixture", "--max-tasks", "--timeout-seconds"}.intersection(
         token for argv in constructions.values() for token in argv
     )
@@ -317,9 +315,12 @@ def _typed_inner_launch(
     output_directory="/srv/repo/artifacts/p7c4b2b-compute-preflight/run-01",
     authorized_output_directory=None,
     run_id="run-01",
+    log_path=None,
+    unit=None,
 ):
     commit = "b" * 40
     authorized_output_directory = authorized_output_directory or output_directory
+    log_path = log_path or f"/secure/{run_id}.log"
 
     def typed(value, field):
         encoded = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
@@ -398,12 +399,12 @@ def _typed_inner_launch(
         environment_path=environment,
         proposal_path=proposal,
         machine_profile_path=profile,
-        unit=f"p7c4b2b-inner-p1-{run_id}",
+        unit=unit or f"p7c4b2b-inner-p1-{run_id}",
         argv=argv,
         working_directory=working_directory,
         python_executable=python_executable,
         output_directory=output_directory,
-        log_path="/secure/run-01.log",
+        log_path=log_path,
         execution_stage="target-inner-preflight",
     )
     return launch_path, tmp_path / "inner-receipt.json", launch, profile_value
@@ -585,42 +586,32 @@ def test_typed_launch_rejects_real_parent_symlink_retarget(tmp_path, monkeypatch
         )
 
 
-def test_typed_inner_preflight_launch_and_receipt(tmp_path):
+def test_typed_inner_preflight_receipt_requires_durable_result(tmp_path, monkeypatch):
     launch_path, receipt_path, launch, profile_value = _typed_inner_launch(tmp_path)
+    monkeypatch.setattr(operations, "_working_tree_git_head", lambda _path: launch["source_git_commit"])
     assert launch["record_digest"]
     assert (
         launch["machine_profile"]["artifact_digest"] == profile_value["profile_digest"]
     )
-    snapshot = {field: "" for field in UNIT_SNAPSHOT_FIELDS}
-    snapshot["InvocationID"] = "invocation-01"
     claim = create_submission_claim(
         launch_record_path=launch_path,
         receipt_path=receipt_path,
     )
     assert claim["submission_state"] == "claimed_not_submitted"
-    receipt = create_submission_receipt(
-        receipt_path=receipt_path,
-        launch_record_path=launch_path,
-        unit_snapshot=snapshot,
-        systemd_run_exit_code=0,
-        observed_unit="p7c4b2b-inner-p1-run-01",
-    )
-    assert receipt["submission_state"] == "submitted"
-    assert receipt["invocation_id"] == "invocation-01"
-    assert receipt["receipt_digest"]
-    assert receipt["submission_claim_digest"] == claim["claim_digest"]
-    with pytest.raises(Exception, match="duplicate_submission"):
+    assert claim["submission_state"] == "claimed_not_submitted"
+    with pytest.raises(OperationsError, match="^submission_result_missing$"):
         create_submission_receipt(
-            receipt_path=tmp_path / "second-inner-receipt.json",
+            receipt_path=receipt_path,
             launch_record_path=launch_path,
-            unit_snapshot=snapshot,
+            unit_snapshot={field: "" for field in UNIT_SNAPSHOT_FIELDS},
             systemd_run_exit_code=0,
             observed_unit="p7c4b2b-inner-p1-run-01",
         )
 
 
-def test_typed_submission_claim_has_one_concurrent_winner(tmp_path):
-    launch_path, receipt_path, _launch, _profile = _typed_inner_launch(tmp_path)
+def test_typed_submission_claim_has_one_concurrent_winner(tmp_path, monkeypatch):
+    launch_path, receipt_path, launch, _profile = _typed_inner_launch(tmp_path)
+    monkeypatch.setattr(operations, "_working_tree_git_head", lambda _path: launch["source_git_commit"])
 
     def claim():
         try:
@@ -642,23 +633,52 @@ def test_typed_submission_claim_has_one_concurrent_winner(tmp_path):
         )
 
 
-def test_typed_failed_submission_receipt_is_deterministic(tmp_path):
-    launch_path, receipt_path, _launch, _profile = _typed_inner_launch(tmp_path)
+def test_typed_failed_inner_receipt_requires_durable_result(tmp_path, monkeypatch):
+    launch_path, receipt_path, launch, _profile = _typed_inner_launch(tmp_path)
+    monkeypatch.setattr(operations, "_working_tree_git_head", lambda _path: launch["source_git_commit"])
     claim = create_submission_claim(
         launch_record_path=launch_path,
         receipt_path=receipt_path,
     )
-    snapshot = {field: "" for field in UNIT_SNAPSHOT_FIELDS}
-    receipt = create_submission_receipt(
-        receipt_path=receipt_path,
-        launch_record_path=launch_path,
-        unit_snapshot=snapshot,
-        systemd_run_exit_code=1,
-        observed_unit="p7c4b2b-inner-p1-run-01",
-    )
-    assert receipt["submission_state"] == "submission_failed"
-    assert receipt["invocation_id"] == ""
-    assert receipt["submission_claim_digest"] == claim["claim_digest"]
+    assert claim["submission_state"] == "claimed_not_submitted"
+    with pytest.raises(OperationsError, match="^submission_result_missing$"):
+        create_submission_receipt(
+            receipt_path=receipt_path,
+            launch_record_path=launch_path,
+            unit_snapshot={field: "" for field in UNIT_SNAPSHOT_FIELDS},
+            systemd_run_exit_code=1,
+            observed_unit="p7c4b2b-inner-p1-run-01",
+        )
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda launch: launch["argv"].__setitem__(3, "resume"),
+        lambda launch: (
+            launch.__setitem__("python_executable", "/srv/other/.venv/bin/python"),
+            launch["argv"].__setitem__(0, "/srv/other/.venv/bin/python"),
+        ),
+        lambda launch: (
+            launch.__setitem__("output_directory", "/srv/repo/artifacts/p7c4b2b-compute-preflight/other"),
+            launch["argv"].__setitem__(-1, "/srv/repo/artifacts/p7c4b2b-compute-preflight/other"),
+        ),
+        lambda launch: launch.__setitem__("log_path", "/secure/other.log"),
+        lambda launch: launch["machine_profile"].__setitem__("artifact_digest", "0" * 64),
+        lambda launch: launch.__setitem__("run_id", "other-run"),
+        lambda launch: launch.__setitem__("source_git_commit", "c" * 40),
+    ],
+)
+def test_b2b_claim_rejects_redigested_semantic_launch_mutation(
+    tmp_path, monkeypatch, mutation
+):
+    launch_path, receipt_path, launch, _profile = _typed_inner_launch(tmp_path)
+    monkeypatch.setattr(operations, "_working_tree_git_head", lambda _path: "b" * 40)
+    mutation(launch)
+    launch["record_digest"] = operations._record_digest(launch, "record_digest")
+    launch_path.write_text(json.dumps(launch), encoding="utf-8")
+    with pytest.raises(OperationsError):
+        create_submission_claim(launch_record_path=launch_path, receipt_path=receipt_path)
 
 
 def test_typed_resume_launch_is_bound_to_resume_command(tmp_path):
@@ -897,10 +917,13 @@ def _typed_outer_launch(
 
 
 def _outer_submission_result(
-    tmp_path, launch_path, launch, *, exit_code=0, stdout=None
+    tmp_path, launch_path, launch, *, exit_code=0, stdout=None, stderr=""
 ):
     operations._create_submission_attempt(launch_path)
     invocation_id = "09c753f133ac4a3fae89ba13ec21b3fe"
+    reported_unit = operations._expected_systemd_reported_unit(
+        launch.get("execution_stage"), launch["systemd_unit"]
+    )
     stdout_path = tmp_path / "systemd-run.stdout"
     stderr_path = tmp_path / "systemd-run.stderr"
     stdout_path.parent.mkdir(parents=True, exist_ok=True)
@@ -908,16 +931,23 @@ def _outer_submission_result(
         stdout
         if stdout is not None
         else (
-            f"Running as unit: {launch['systemd_unit']}; invocation ID: "
+            f"Running as unit: {reported_unit}; invocation ID: "
             f"{invocation_id}\n"
             if exit_code == 0
             else "Failed to start transient unit\n"
         ),
         encoding="utf-8",
     )
-    stderr_path.write_text("", encoding="utf-8")
+    stderr_path.write_text(stderr, encoding="utf-8")
     exit_code_path = tmp_path / "systemd-run.exit-code"
     exit_code_path.write_bytes(f"{exit_code}\n".encode("ascii"))
+    operations._create_submission_capture(
+        launch_record_path=launch_path,
+        stdout_path=stdout_path,
+        stderr_path=stderr_path,
+        exit_code_path=exit_code_path,
+        systemd_run_exit_code=exit_code,
+    )
     result_path = tmp_path / "submission-result.json"
     result = create_submission_result(
         result_path=result_path,
@@ -1141,9 +1171,303 @@ def test_exact_incident_systemd_output_with_service_suffix_parses():
         f"Running as unit: {unit}; invocation ID: 09c753f133ac4a3fae89ba13ec21b3fe\n"
     )
     assert (
-        operations._parse_systemd_run_output(output, unit)
+        operations._parse_systemd_run_output(
+            output, "", unit, "target-outer-projection-preflight"
+        )
         == "09c753f133ac4a3fae89ba13ec21b3fe"
     )
+
+
+@pytest.mark.parametrize(
+    "stdout,stderr,expected",
+    [
+        (
+            "",
+            "Running as unit: p7c4b2b-inner-p1-run-01.service; invocation ID: "
+            "09c753f133ac4a3fae89ba13ec21b3fe\n",
+            "09c753f133ac4a3fae89ba13ec21b3fe",
+        ),
+        (
+            "Running as unit: p7c4b2b-inner-p1-run-01.service; invocation ID: "
+            "09c753f133ac4a3fae89ba13ec21b3fe\n",
+            "",
+            "09c753f133ac4a3fae89ba13ec21b3fe",
+        ),
+    ],
+)
+def test_b2b_systemd_parser_accepts_one_identity_from_either_channel(
+    stdout, stderr, expected
+):
+    assert operations._parse_systemd_run_output(
+        stdout, stderr, "p7c4b2b-inner-p1-run-01", "target-inner-preflight"
+    ) == expected
+
+
+def test_systemd_parser_allows_only_identical_cross_channel_duplicate():
+    identity = (
+        "Running as unit: p7c4b2b-inner-p1-run-01.service; invocation ID: "
+        "09c753f133ac4a3fae89ba13ec21b3fe\n"
+    )
+    assert operations._parse_systemd_run_output(
+        identity, identity, "p7c4b2b-inner-p1-run-01", "target-inner-preflight"
+    ) == "09c753f133ac4a3fae89ba13ec21b3fe"
+
+
+@pytest.mark.parametrize(
+    "stdout,stderr,reason",
+    [
+        (
+            "Running as unit: p7c4b2b-inner-p1-run-01.service; invocation ID: "
+            "09c753f133ac4a3fae89ba13ec21b3fe\n",
+            "Running as unit: p7c4b2b-inner-p1-run-01.service; invocation ID: "
+            "19c753f133ac4a3fae89ba13ec21b3fe\n",
+            "systemd_run_output_conflict",
+        ),
+        (
+            "",
+            "Running as unit: p7c4b2b-inner-p1-run-01.service; invocation ID: "
+            "09c753f133ac4a3fae89ba13ec21b3fe\n"
+            "Running as unit: p7c4b2b-inner-p1-run-01.service; invocation ID: "
+            "19c753f133ac4a3fae89ba13ec21b3fe\n",
+            "systemd_run_invocation_id_count_invalid",
+        ),
+        (
+            "",
+            "Running as unit: p7c4b2b-inner-p1-run-01.service; invocation ID: nope\n",
+            "invocation_id_malformed",
+        ),
+        (
+            "",
+            "Running as unit: wrong.service; invocation ID: "
+            "09c753f133ac4a3fae89ba13ec21b3fe\n",
+            "systemd_unit_mismatch",
+        ),
+    ],
+)
+def test_b2b_systemd_parser_fails_closed_for_ambiguous_or_invalid_evidence(
+    stdout, stderr, reason
+):
+    with pytest.raises(OperationsError, match=f"^{reason}$"):
+        operations._parse_systemd_run_output(
+            stdout, stderr, "p7c4b2b-inner-p1-run-01", "target-inner-preflight"
+        )
+
+
+@pytest.mark.parametrize(
+    "stdout,stderr",
+    [
+        (
+            "Running as unit: p7c4b2b-inner-p1-run-01.service; invocation ID: "
+            "09c753f133ac4a3fae89ba13ec21b3fe\n",
+            "Running as unit: foo.service\n",
+        ),
+        (
+            "Running as unit: p7c4b2b-inner-p1-run-01.service; invocation ID: "
+            "09c753f133ac4a3fae89ba13ec21b3fe\n",
+            "invocation ID: 19c753f133ac4a3fae89ba13ec21b3fe\n",
+        ),
+        ("", "Running as unit:\n"),
+        (
+            "Running as unit: p7c4b2b-inner-p1-run-01.service; invocation ID: "
+            "09c753f133ac4a3fae89ba13ec21b3fe\n",
+            "Running as unit: foo.service; invocation ID: nope\n",
+        ),
+        (
+            "Running as unit: p7c4b2b-inner-p1-run-01.service; invocation ID: "
+            "09c753f133ac4a3fae89ba13ec21b3fe\nRunning as unit: foo.service\n",
+            "",
+        ),
+    ],
+)
+def test_b2b_systemd_parser_rejects_unaccounted_identity_markers(stdout, stderr):
+    with pytest.raises(
+        OperationsError,
+        match="^(systemd_run_invocation_id_count_invalid|invocation_id_malformed)$",
+    ):
+        operations._parse_systemd_run_output(
+            stdout, stderr, "p7c4b2b-inner-p1-run-01", "target-inner-preflight"
+        )
+
+
+def test_b2b_systemd_parser_allows_unrelated_stderr_noise():
+    assert operations._parse_systemd_run_output(
+        "Running as unit: p7c4b2b-inner-p1-run-01.service; invocation ID: "
+        "09c753f133ac4a3fae89ba13ec21b3fe\n",
+        "notice: user manager diagnostic\n",
+        "p7c4b2b-inner-p1-run-01",
+        "target-inner-preflight",
+    ) == "09c753f133ac4a3fae89ba13ec21b3fe"
+
+
+def test_typed_inner_launch_rejects_service_suffixed_logical_unit(tmp_path):
+    with pytest.raises(OperationsError, match="^systemd_unit_mismatch$"):
+        _typed_inner_launch(tmp_path, unit="p7c4b2b-inner-p1-run-01.service")
+
+
+def test_b2b_cli_reconstructs_real_systemd_evidence_without_resubmission(
+    tmp_path, monkeypatch
+):
+    launch_path, receipt_path, launch, _profile = _typed_inner_launch(tmp_path)
+    monkeypatch.setattr(
+        operations, "_working_tree_git_head", lambda _path: launch["source_git_commit"]
+    )
+    create_submission_claim(launch_record_path=launch_path, receipt_path=receipt_path)
+    operations._create_submission_attempt(launch_path)
+    stdout_path = tmp_path / "systemd-run.stdout"
+    stderr_path = tmp_path / "systemd-run.stderr"
+    exit_path = tmp_path / "systemd-run.exit"
+    result_path = tmp_path / "submission-result.json"
+    stdout_path.write_bytes(b"")
+    stderr_path.write_bytes(
+        f"Running as unit: {launch['systemd_unit']}.service; invocation ID: "
+        "09c753f133ac4a3fae89ba13ec21b3fe\n".encode("ascii")
+    )
+    exit_path.write_bytes(b"0\n")
+    operations._create_submission_capture(
+        launch_record_path=launch_path,
+        stdout_path=stdout_path,
+        stderr_path=stderr_path,
+        exit_code_path=exit_path,
+        systemd_run_exit_code=0,
+    )
+    monkeypatch.setattr(
+        operations.subprocess,
+        "run",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("systemd-run must not be called during reconstruction")
+        ),
+    )
+    assert main([
+        "create-submission-result", "--submission-result", str(result_path),
+        "--launch-record", str(launch_path), "--systemd-run-stdout", str(stdout_path),
+        "--systemd-run-stderr", str(stderr_path), "--systemd-run-exit-code-file", str(exit_path),
+        "--systemd-run-exit-code", "0",
+    ]) == 0
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    assert result["artifact_type"] == "p7c4b2b_target_inner_preflight_submission_result"
+    assert result["invocation_id"] == "09c753f133ac4a3fae89ba13ec21b3fe"
+    assert result["stdout_sha256"] == hashlib.sha256(stdout_path.read_bytes()).hexdigest()
+    assert result["stderr_sha256"] == hashlib.sha256(stderr_path.read_bytes()).hexdigest()
+    assert result["exit_code_sha256"] == hashlib.sha256(exit_path.read_bytes()).hexdigest()
+    assert main([
+        "create-submission-receipt", "--receipt", str(receipt_path),
+        "--launch-record", str(launch_path), "--unit", launch["systemd_unit"],
+        "--submission-result", str(result_path), "--systemd-run-exit-code", "0",
+    ]) == 0
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    assert receipt["schema_version"] == 2
+    assert receipt["invocation_id"] == result["invocation_id"]
+    assert receipt["unit_snapshot_status"] == "recovered_from_immutable_submission_result"
+    with pytest.raises(OperationsError, match="^submission_already_attempted$"):
+        operations.submit_systemd_run(
+            result_path=tmp_path / "retry-result.json", launch_record_path=launch_path,
+            stdout_path=tmp_path / "retry.stdout", stderr_path=tmp_path / "retry.stderr",
+            exit_code_path=tmp_path / "retry.exit",
+        )
+
+
+@pytest.mark.parametrize("files", [("stdout",), ("stdout", "stderr")])
+def test_b2b_partial_raw_evidence_fails_closed_and_blocks_resubmit(
+    tmp_path, monkeypatch, files
+):
+    launch_path, receipt_path, launch, _profile = _typed_inner_launch(tmp_path)
+    monkeypatch.setattr(
+        operations, "_working_tree_git_head", lambda _path: launch["source_git_commit"]
+    )
+    create_submission_claim(launch_record_path=launch_path, receipt_path=receipt_path)
+    operations._create_submission_attempt(launch_path)
+    paths = {
+        "stdout": tmp_path / "stdout", "stderr": tmp_path / "stderr", "exit": tmp_path / "exit",
+    }
+    for name in files:
+        paths[name].write_bytes(b"")
+    with pytest.raises(OperationsError):
+        create_submission_result(
+            result_path=tmp_path / "result.json", launch_record_path=launch_path,
+            stdout_path=paths["stdout"], stderr_path=paths["stderr"],
+            exit_code_path=paths["exit"], systemd_run_exit_code=0,
+        )
+    with pytest.raises(OperationsError, match="^submission_already_attempted$"):
+        operations.submit_systemd_run(
+            result_path=tmp_path / "retry-result.json", launch_record_path=launch_path,
+            stdout_path=tmp_path / "retry.stdout", stderr_path=tmp_path / "retry.stderr",
+            exit_code_path=tmp_path / "retry.exit",
+        )
+
+
+@pytest.mark.parametrize("tampered", ["stdout", "stderr", "exit"])
+def test_b2b_capture_rejects_pre_result_raw_evidence_tampering(
+    tmp_path, monkeypatch, tampered
+):
+    launch_path, receipt_path, launch, _profile = _typed_inner_launch(tmp_path)
+    monkeypatch.setattr(
+        operations, "_working_tree_git_head", lambda _path: launch["source_git_commit"]
+    )
+    create_submission_claim(launch_record_path=launch_path, receipt_path=receipt_path)
+    operations._create_submission_attempt(launch_path)
+    paths = {
+        "stdout": tmp_path / "stdout", "stderr": tmp_path / "stderr", "exit": tmp_path / "exit",
+    }
+    paths["stdout"].write_bytes(b"")
+    paths["stderr"].write_bytes((
+        f"Running as unit: {launch['systemd_unit']}.service; invocation ID: "
+        "701a0197010141c8b3a1aa97857576b7\n"
+    ).encode("ascii"))
+    paths["exit"].write_bytes(b"0\n")
+    capture = operations._create_submission_capture(
+        launch_record_path=launch_path,
+        stdout_path=paths["stdout"],
+        stderr_path=paths["stderr"],
+        exit_code_path=paths["exit"],
+        systemd_run_exit_code=0,
+    )
+    assert capture["artifact_type"] == "p7c4b2b_target_inner_preflight_submission_capture"
+    if tampered == "stdout":
+        paths[tampered].write_bytes(b"altered\n")
+    elif tampered == "stderr":
+        paths[tampered].write_bytes((
+            f"Running as unit: {launch['systemd_unit']}.service; invocation ID: "
+            "09c753f133ac4a3fae89ba13ec21b3fe\n"
+        ).encode("ascii"))
+    else:
+        paths[tampered].write_bytes(b"1\n")
+    with pytest.raises(
+        OperationsError,
+        match="^(submission_capture_invalid|systemd_run_exit_code_evidence_mismatch)$",
+    ):
+        create_submission_result(
+            result_path=tmp_path / "result.json", launch_record_path=launch_path,
+            stdout_path=paths["stdout"], stderr_path=paths["stderr"],
+            exit_code_path=paths["exit"], systemd_run_exit_code=0,
+        )
+
+
+def test_b2b_complete_raw_evidence_without_capture_cannot_reconstruct(tmp_path, monkeypatch):
+    launch_path, receipt_path, launch, _profile = _typed_inner_launch(tmp_path)
+    monkeypatch.setattr(
+        operations, "_working_tree_git_head", lambda _path: launch["source_git_commit"]
+    )
+    create_submission_claim(launch_record_path=launch_path, receipt_path=receipt_path)
+    operations._create_submission_attempt(launch_path)
+    stdout_path, stderr_path, exit_path = tmp_path / "stdout", tmp_path / "stderr", tmp_path / "exit"
+    stdout_path.write_bytes(b"")
+    stderr_path.write_bytes((
+        f"Running as unit: {launch['systemd_unit']}.service; invocation ID: "
+        "701a0197010141c8b3a1aa97857576b7\n"
+    ).encode("ascii"))
+    exit_path.write_bytes(b"0\n")
+    with pytest.raises(OperationsError, match="^evidence_input_missing$"):
+        create_submission_result(
+            result_path=tmp_path / "result.json", launch_record_path=launch_path,
+            stdout_path=stdout_path, stderr_path=stderr_path,
+            exit_code_path=exit_path, systemd_run_exit_code=0,
+        )
+    with pytest.raises(OperationsError, match="^submission_already_attempted$"):
+        operations.submit_systemd_run(
+            result_path=tmp_path / "retry-result.json", launch_record_path=launch_path,
+            stdout_path=tmp_path / "retry-stdout", stderr_path=tmp_path / "retry-stderr",
+            exit_code_path=tmp_path / "retry-exit",
+        )
 
 
 def test_outer_submit_wrapper_atomically_captures_exact_systemd_result(
@@ -1188,6 +1512,312 @@ def test_outer_submit_wrapper_atomically_captures_exact_systemd_result(
     ]
     assert result["submission_state"] == "submitted"
     assert Path(result["exit_code_path"]).read_text(encoding="ascii") == "0\n"
+
+
+def test_b2b_submit_wrapper_creates_durable_result_and_recovers_collected_unit(
+    tmp_path, monkeypatch
+):
+    launch_path, receipt_path, launch, _profile = _typed_inner_launch(tmp_path)
+    monkeypatch.setattr(operations, "_working_tree_git_head", lambda _path: launch["source_git_commit"])
+    create_submission_claim(launch_record_path=launch_path, receipt_path=receipt_path)
+
+    def fake_run(command, **kwargs):
+        return subprocess.CompletedProcess(
+            command, 0,
+            stdout=(f"Running as unit: {launch['systemd_unit']}.service; invocation ID: "
+                    "09c753f133ac4a3fae89ba13ec21b3fe\n").encode(),
+            stderr=b"",
+        )
+
+    monkeypatch.setattr(operations.subprocess, "run", fake_run)
+    result_path = tmp_path / "b2b-submission-result.json"
+    result = operations.submit_systemd_run(
+        result_path=result_path, launch_record_path=launch_path,
+        stdout_path=tmp_path / "b2b.stdout", stderr_path=tmp_path / "b2b.stderr",
+        exit_code_path=tmp_path / "b2b.exit",
+    )
+    receipt = create_submission_receipt(
+        receipt_path=receipt_path, launch_record_path=launch_path,
+        unit_snapshot=None, systemd_run_exit_code=0,
+        observed_unit=launch["systemd_unit"], submission_result_path=result_path,
+    )
+    assert result["artifact_type"] == "p7c4b2b_target_inner_preflight_submission_result"
+    capture_path = operations._submission_capture_path(launch_path)
+    capture = json.loads(capture_path.read_text(encoding="utf-8"))
+    assert capture["artifact_type"] == "p7c4b2b_target_inner_preflight_submission_capture"
+    assert result["submission_capture_path"] == str(capture_path.resolve())
+    assert result["submission_capture_sha256"] == hashlib.sha256(capture_path.read_bytes()).hexdigest()
+    assert capture["stdout_sha256"] == result["stdout_sha256"]
+    assert capture["stderr_sha256"] == result["stderr_sha256"]
+    assert capture["exit_code_sha256"] == result["exit_code_sha256"]
+    assert receipt["invocation_id"] == result["invocation_id"]
+    assert receipt["unit_snapshot_status"] == "recovered_from_immutable_submission_result"
+
+
+def test_submission_capture_is_no_clobber_and_receipt_rejects_swapped_capture(
+    tmp_path, monkeypatch
+):
+    (tmp_path / "first").mkdir()
+    (tmp_path / "second").mkdir()
+    first_path, first_receipt, first, _profile = _typed_inner_launch(tmp_path / "first")
+    second_path, second_receipt, second, _profile = _typed_inner_launch(tmp_path / "second")
+    monkeypatch.setattr(operations, "_working_tree_git_head", lambda _path: "b" * 40)
+    create_submission_claim(launch_record_path=first_path, receipt_path=first_receipt)
+    create_submission_claim(launch_record_path=second_path, receipt_path=second_receipt)
+    first_result_path, first_result = _outer_submission_result(tmp_path / "first", first_path, first)
+    second_result_path, second_result = _outer_submission_result(tmp_path / "second", second_path, second)
+    with pytest.raises(OperationsError, match="^operational_evidence_collision$"):
+        operations._create_submission_capture(
+            launch_record_path=first_path,
+            stdout_path=Path(first_result["stdout_path"]),
+            stderr_path=Path(first_result["stderr_path"]),
+            exit_code_path=Path(first_result["exit_code_path"]),
+            systemd_run_exit_code=0,
+        )
+    first_capture_path = operations._submission_capture_path(first_path)
+    first_capture = json.loads(first_capture_path.read_text(encoding="utf-8"))
+    second_result["submission_capture_path"] = str(first_capture_path.resolve())
+    second_result["submission_capture_sha256"] = hashlib.sha256(first_capture_path.read_bytes()).hexdigest()
+    second_result["submission_capture_digest"] = first_capture["capture_digest"]
+    second_result["result_digest"] = operations._record_digest(second_result, "result_digest")
+    second_result_path.write_text(json.dumps(second_result), encoding="utf-8")
+    with pytest.raises(OperationsError, match="^submission_result_mismatch$"):
+        create_submission_receipt(
+            receipt_path=second_receipt, launch_record_path=second_path,
+            unit_snapshot=None, systemd_run_exit_code=0,
+            observed_unit=second["systemd_unit"], submission_result_path=second_result_path,
+        )
+
+
+def test_b2b_cli_e2e_creates_and_recovers_durable_submission_evidence(
+    tmp_path, monkeypatch, capsys
+):
+    launch_path, receipt_path, template, _profile = _typed_inner_launch(tmp_path)
+    launch_path.unlink()
+    monkeypatch.setattr(
+        operations, "_working_tree_git_head", lambda _path: template["source_git_commit"]
+    )
+
+    def fake_run(command, **_kwargs):
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=(f"Running as unit: {template['systemd_unit']}.service; invocation ID: "
+                    "09c753f133ac4a3fae89ba13ec21b3fe\n").encode(),
+            stderr=b"synthetic stderr\n",
+        )
+
+    monkeypatch.setattr(operations.subprocess, "run", fake_run)
+    assert main([
+        "create-launch-record", "--record", str(launch_path),
+        "--git-commit", template["source_git_commit"],
+        "--operator-identity", template["operator_identity"],
+        "--execution-stage", "target-inner-preflight",
+        "--machine-profile", template["machine_profile"]["path"],
+        "--authorization", template["authorization"]["path"],
+        "--environment", template["environment"]["path"],
+        "--proposal", template["proposal"]["path"],
+        "--unit", template["systemd_unit"],
+        "--argv-json", json.dumps(template["argv"]),
+        "--working-directory", template["working_directory"],
+        "--python-executable", template["python_executable"],
+        "--output-directory", template["output_directory"],
+        "--log-path", template["log_path"],
+    ]) == 0
+    assert main([
+        "create-submission-claim", "--launch-record", str(launch_path),
+        "--receipt", str(receipt_path),
+    ]) == 0
+    result_path = tmp_path / "submission-result.json"
+    stdout_path = tmp_path / "systemd-run.stdout"
+    stderr_path = tmp_path / "systemd-run.stderr"
+    exit_path = tmp_path / "systemd-run.exit"
+    assert main([
+        "submit-systemd-run", "--submission-result", str(result_path),
+        "--launch-record", str(launch_path),
+        "--systemd-run-stdout", str(stdout_path),
+        "--systemd-run-stderr", str(stderr_path),
+        "--systemd-run-exit-code-file", str(exit_path),
+    ]) == 0
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    assert main([
+        "create-submission-receipt", "--receipt", str(receipt_path),
+        "--launch-record", str(launch_path), "--unit", template["systemd_unit"],
+        "--submission-result", str(result_path),
+        "--systemd-run-exit-code", str(result["systemd_run_exit_code"]),
+    ]) == 0
+    capsys.readouterr()
+    launch = json.loads(launch_path.read_text(encoding="utf-8"))
+    claim = json.loads(operations._submission_claim_path(launch_path).read_text(encoding="utf-8"))
+    attempt = json.loads(operations._submission_attempt_path(launch_path).read_text(encoding="utf-8"))
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    assert launch["artifact_type"] == "p7c4b2b_target_inner_preflight_launch_record"
+    assert claim["artifact_type"] == "p7c4b2b_target_inner_preflight_submission_claim"
+    assert attempt["artifact_type"] == "p7c4b2b_target_inner_preflight_submission_attempt"
+    assert result["artifact_type"] == "p7c4b2b_target_inner_preflight_submission_result"
+    assert receipt["schema_version"] == 2
+    assert receipt["invocation_id"] == result["invocation_id"]
+    assert receipt["unit_snapshot_status"] == "recovered_from_immutable_submission_result"
+    assert result["stdout_sha256"] == hashlib.sha256(stdout_path.read_bytes()).hexdigest()
+    assert result["stderr_sha256"] == hashlib.sha256(stderr_path.read_bytes()).hexdigest()
+    assert result["exit_code_sha256"] == hashlib.sha256(exit_path.read_bytes()).hexdigest()
+
+
+def test_b2b_cli_receipt_rejects_missing_durable_result(tmp_path, monkeypatch):
+    launch_path, receipt_path, launch, _profile = _typed_inner_launch(tmp_path)
+    monkeypatch.setattr(operations, "_working_tree_git_head", lambda _path: launch["source_git_commit"])
+    create_submission_claim(launch_record_path=launch_path, receipt_path=receipt_path)
+    assert main([
+        "create-submission-receipt", "--receipt", str(receipt_path),
+        "--launch-record", str(launch_path), "--unit", launch["systemd_unit"],
+        "--systemd-run-exit-code", "0",
+    ]) == 2
+
+
+@pytest.mark.parametrize(
+    "stage,expected",
+    [
+        ("target-inner-preflight", "p7c4b2b_target_inner_preflight_submission_result"),
+        ("target-outer-projection-preflight", "p7c4b2c_target_outer_projection_preflight_submission_result"),
+    ],
+)
+def test_submission_artifact_type_is_closed_and_stage_exact(stage, expected):
+    assert operations._submission_artifact_type(stage, "result") == expected
+    with pytest.raises(OperationsError, match="^launch_record_state_invalid$"):
+        operations._submission_artifact_type("unsupported-stage", "result")
+
+
+def test_b2b_receipt_rejects_outer_result_artifact_family(tmp_path, monkeypatch):
+    launch_path, receipt_path, launch, _profile = _typed_inner_launch(tmp_path)
+    monkeypatch.setattr(operations, "_working_tree_git_head", lambda _path: launch["source_git_commit"])
+    create_submission_claim(launch_record_path=launch_path, receipt_path=receipt_path)
+    result_path, result = _outer_submission_result(tmp_path, launch_path, launch)
+    result["artifact_type"] = "p7c4b2c_target_outer_projection_preflight_submission_result"
+    result["result_digest"] = operations._record_digest(result, "result_digest")
+    result_path.write_text(json.dumps(result), encoding="utf-8")
+    with pytest.raises(OperationsError, match="^submission_result_mismatch$"):
+        create_submission_receipt(
+            receipt_path=receipt_path,
+            launch_record_path=launch_path,
+            unit_snapshot=None,
+            systemd_run_exit_code=0,
+            observed_unit=launch["systemd_unit"],
+            submission_result_path=result_path,
+        )
+
+
+def test_b2b_receipt_fails_closed_for_cross_invocation_snapshot(tmp_path, monkeypatch):
+    launch_path, receipt_path, launch, _profile = _typed_inner_launch(tmp_path)
+    monkeypatch.setattr(operations, "_working_tree_git_head", lambda _path: launch["source_git_commit"])
+    create_submission_claim(launch_record_path=launch_path, receipt_path=receipt_path)
+    result_path, _result = _outer_submission_result(tmp_path, launch_path, launch)
+    # The helper above creates the same durable evidence; only the live identity is adversarial.
+    snapshot = {field: "" for field in UNIT_SNAPSHOT_FIELDS}
+    snapshot.update({"LoadState": "loaded", "InvocationID": "1" * 32})
+    with pytest.raises(OperationsError, match="^unit_snapshot_invocation_id_mismatch$"):
+        create_submission_receipt(
+            receipt_path=receipt_path, launch_record_path=launch_path,
+            unit_snapshot=snapshot, systemd_run_exit_code=0,
+            observed_unit=launch["systemd_unit"], submission_result_path=result_path,
+        )
+
+
+def test_b2b_result_cannot_cross_bind_or_recover_another_invocation(tmp_path, monkeypatch):
+    (tmp_path / "first").mkdir()
+    (tmp_path / "second").mkdir()
+    first_path, first_receipt, first, _profile = _typed_inner_launch(
+        tmp_path / "first", run_id="first", working_directory="/srv/repo-a",
+        python_executable="/srv/repo-a/.venv/bin/python",
+        output_directory="/srv/repo-a/artifacts/p7c4b2b-compute-preflight/first",
+    )
+    second_path, second_receipt, second, _profile = _typed_inner_launch(
+        tmp_path / "second", run_id="second", working_directory="/srv/repo-b",
+        python_executable="/srv/repo-b/.venv/bin/python",
+        output_directory="/srv/repo-b/artifacts/p7c4b2b-compute-preflight/second",
+    )
+    monkeypatch.setattr(operations, "_working_tree_git_head", lambda _path: "b" * 40)
+    create_submission_claim(launch_record_path=first_path, receipt_path=first_receipt)
+    create_submission_claim(launch_record_path=second_path, receipt_path=second_receipt)
+    first_result_path, first_result = _outer_submission_result(
+        tmp_path / "first", first_path, first
+    )
+    second_result_path, second_result = _outer_submission_result(
+        tmp_path / "second", second_path, second
+    )
+    assert first_result["invocation_id"] == second_result["invocation_id"]
+    # Identical parsed IDs are still scoped to their immutable launch/claim/attempt
+    # chain; a result from A cannot be used to recover B.
+    with pytest.raises(OperationsError, match="^submission_result_mismatch$"):
+        create_submission_receipt(
+            receipt_path=second_receipt,
+            launch_record_path=second_path,
+            unit_snapshot=None,
+            systemd_run_exit_code=0,
+            observed_unit=second["systemd_unit"],
+            submission_result_path=first_result_path,
+        )
+    receipt = create_submission_receipt(
+        receipt_path=second_receipt,
+        launch_record_path=second_path,
+        unit_snapshot=None,
+        systemd_run_exit_code=0,
+        observed_unit=second["systemd_unit"],
+        submission_result_path=second_result_path,
+    )
+    assert receipt["submission_result_digest"] == second_result["result_digest"]
+
+
+def test_b2b_recovery_fails_closed_when_immutable_output_is_tampered(tmp_path, monkeypatch):
+    launch_path, receipt_path, launch, _profile = _typed_inner_launch(tmp_path)
+    monkeypatch.setattr(operations, "_working_tree_git_head", lambda _path: launch["source_git_commit"])
+    create_submission_claim(launch_record_path=launch_path, receipt_path=receipt_path)
+    result_path, result = _outer_submission_result(tmp_path, launch_path, launch)
+    Path(result["stderr_path"]).write_text("tampered\n", encoding="utf-8")
+    with pytest.raises(OperationsError, match="^submission_result_mismatch$"):
+        create_submission_receipt(
+            receipt_path=receipt_path,
+            launch_record_path=launch_path,
+            unit_snapshot=None,
+            systemd_run_exit_code=0,
+            observed_unit=launch["systemd_unit"],
+            submission_result_path=result_path,
+        )
+
+
+def test_b2b_crash_after_systemd_submission_blocks_duplicate_invocation(tmp_path, monkeypatch):
+    launch_path, receipt_path, launch, _profile = _typed_inner_launch(tmp_path)
+    monkeypatch.setattr(operations, "_working_tree_git_head", lambda _path: launch["source_git_commit"])
+    create_submission_claim(launch_record_path=launch_path, receipt_path=receipt_path)
+    monkeypatch.setattr(
+        operations.subprocess,
+        "run",
+        lambda command, **_kwargs: subprocess.CompletedProcess(
+            command, 0,
+            stdout=(f"Running as unit: {launch['systemd_unit']}; invocation ID: "
+                    "09c753f133ac4a3fae89ba13ec21b3fe\n").encode(),
+            stderr=b"",
+        ),
+    )
+    monkeypatch.setattr(
+        operations, "_atomic_bytes_create",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("simulated crash")),
+    )
+    with pytest.raises(OSError, match="simulated crash"):
+        operations.submit_systemd_run(
+            result_path=tmp_path / "result.json",
+            launch_record_path=launch_path,
+            stdout_path=tmp_path / "stdout",
+            stderr_path=tmp_path / "stderr",
+            exit_code_path=tmp_path / "exit",
+        )
+    with pytest.raises(OperationsError, match="^submission_already_attempted$"):
+        operations.submit_systemd_run(
+            result_path=tmp_path / "retry-result.json",
+            launch_record_path=launch_path,
+            stdout_path=tmp_path / "retry-stdout",
+            stderr_path=tmp_path / "retry-stderr",
+            exit_code_path=tmp_path / "retry-exit",
+        )
 
 
 def test_outer_submit_attempt_is_one_winner_and_blocks_retry_after_capture_crash(
@@ -1398,6 +2028,21 @@ def test_outer_nonzero_exit_rejects_created_unit_or_invocation_evidence(tmp_path
             launch,
             exit_code=1,
             stdout=successful_output,
+        )
+
+    stderr_path, stderr_receipt, stderr_launch, _argv = _typed_outer_launch(
+        tmp_path / "stderr-evidence"
+    )
+    create_submission_claim(
+        launch_record_path=stderr_path, receipt_path=stderr_receipt
+    )
+    with pytest.raises(OperationsError, match="^systemd_run_exit_code_mismatch$"):
+        _outer_submission_result(
+            tmp_path / "stderr-evidence", stderr_path, stderr_launch,
+            exit_code=1, stdout="", stderr=(
+                f"Running as unit: {stderr_launch['systemd_unit']}; invocation ID: "
+                "09c753f133ac4a3fae89ba13ec21b3fe\n"
+            ),
         )
 
     second_path, second_receipt, second, _argv = _typed_outer_launch(tmp_path / "live")

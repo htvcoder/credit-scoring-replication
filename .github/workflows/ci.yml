@@ -72,6 +72,25 @@ jobs:
       - name: Run non-raw-data Phase 0 tests
         run: python -m pytest tests/test_verify_credit_datasets.py -m "not raw_data"
 
+  phase7-operations:
+    name: Phase 7 operations contract checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Run hardened submission-contract regressions
+        run: python -m pytest tests/test_p7c4b2e_operations_cli.py -q
+
   docker:
     name: Docker image check
     runs-on: ubuntu-latest

@@ -30,8 +30,10 @@ SUBMISSION_RECEIPT_SCHEMA_VERSION = 1
 SUBMISSION_CLAIM_SCHEMA_VERSION = 1
 OUTER_LAUNCH_RECORD_SCHEMA_VERSION = 2
 OUTER_SUBMISSION_CLAIM_SCHEMA_VERSION = 2
-OUTER_SUBMISSION_RESULT_SCHEMA_VERSION = 1
+OUTER_SUBMISSION_RESULT_SCHEMA_VERSION = 2
 OUTER_SUBMISSION_RECEIPT_SCHEMA_VERSION = 2
+B2B_SUBMISSION_RESULT_SCHEMA_VERSION = 2
+B2B_SUBMISSION_RECEIPT_SCHEMA_VERSION = 2
 UNIT_SNAPSHOT_FIELDS = frozenset(
     {
         "LoadState",
@@ -69,6 +71,12 @@ SUBMISSION_CLAIM_ARTIFACT_TYPES = {
     "target-inner-preflight": "p7c4b2b_target_inner_preflight_submission_claim",
     "target-outer-projection-preflight": (
         "p7c4b2c_target_outer_projection_preflight_submission_claim"
+    ),
+}
+SUBMISSION_STAGE_PREFIXES = {
+    "target-inner-preflight": "p7c4b2b_target_inner_preflight",
+    "target-outer-projection-preflight": (
+        "p7c4b2c_target_outer_projection_preflight"
     ),
 }
 OUTER_MODES = frozenset({"cpu_parallel_1", "cpu_parallel_2"})
@@ -135,6 +143,9 @@ OUTER_SUBMISSION_RESULT_FIELDS = frozenset(
         "submission_attempt_sha256",
         "submission_attempt_digest",
         "systemd_unit",
+        "submission_capture_path",
+        "submission_capture_sha256",
+        "submission_capture_digest",
         "stdout_path",
         "stdout_sha256",
         "stderr_path",
@@ -163,6 +174,73 @@ OUTER_SUBMISSION_ATTEMPT_FIELDS = frozenset(
         "attempt_digest",
     }
 )
+SUBMISSION_CAPTURE_FIELDS = frozenset(
+    {
+        "schema_version", "artifact_type", "created_at", "execution_stage",
+        "launch_record_path", "launch_record_sha256", "launch_record_digest",
+        "submission_claim_path", "submission_claim_sha256", "submission_claim_digest",
+        "submission_attempt_path", "submission_attempt_sha256", "submission_attempt_digest",
+        "systemd_unit", "stdout_path", "stdout_sha256", "stderr_path", "stderr_sha256",
+        "exit_code_path", "exit_code_sha256", "systemd_run_exit_code", "capture_digest",
+    }
+)
+B2B_LAUNCH_RECORD_FIELDS = frozenset(
+    {
+        "schema_version", "artifact_type", "source_git_commit", "created_at",
+        "operator_identity", "authorization", "environment", "proposal",
+        "systemd_unit", "argv", "working_directory", "python_executable",
+        "output_directory", "log_path", "execution_class", "submission_state",
+        "execution_stage", "runner_command", "run_id", "machine_profile",
+        "record_digest",
+    }
+)
+B2B_SUBMISSION_CLAIM_FIELDS = frozenset(
+    {
+        "schema_version", "artifact_type", "execution_stage", "claimed_at",
+        "launch_record_path", "launch_record_sha256", "receipt_path",
+        "systemd_unit", "submission_state", "claim_digest",
+    }
+)
+B2B_SUBMISSION_ATTEMPT_FIELDS = frozenset(
+    {
+        "schema_version", "artifact_type", "attempted_at", "launch_record_path",
+        "launch_record_sha256", "launch_record_digest", "submission_claim_path",
+        "submission_claim_sha256", "submission_claim_digest", "systemd_unit",
+        "attempt_state", "attempt_digest",
+    }
+)
+B2B_SUBMISSION_RESULT_FIELDS = frozenset(
+    {
+        "schema_version", "artifact_type", "created_at", "launch_record_path",
+        "launch_record_sha256", "launch_record_digest", "submission_claim_path",
+        "submission_claim_sha256", "submission_claim_digest", "submission_attempt_path",
+        "submission_attempt_sha256", "submission_attempt_digest", "systemd_unit",
+        "submission_capture_path", "submission_capture_sha256", "submission_capture_digest",
+        "stdout_path", "stdout_sha256", "stderr_path", "stderr_sha256",
+        "systemd_run_exit_code", "exit_code_path", "exit_code_sha256",
+        "invocation_id", "submission_state", "result_digest",
+    }
+)
+SUBMISSION_STAGE_POLICIES = {
+    "target-inner-preflight": {
+        "claim_fields": B2B_SUBMISSION_CLAIM_FIELDS,
+        "claim_schema": SUBMISSION_CLAIM_SCHEMA_VERSION,
+        "attempt_fields": B2B_SUBMISSION_ATTEMPT_FIELDS,
+        "capture_fields": SUBMISSION_CAPTURE_FIELDS,
+        "result_fields": B2B_SUBMISSION_RESULT_FIELDS,
+        "result_schema": B2B_SUBMISSION_RESULT_SCHEMA_VERSION,
+        "receipt_schema": B2B_SUBMISSION_RECEIPT_SCHEMA_VERSION,
+    },
+    "target-outer-projection-preflight": {
+        "claim_fields": OUTER_SUBMISSION_CLAIM_FIELDS,
+        "claim_schema": OUTER_SUBMISSION_CLAIM_SCHEMA_VERSION,
+        "attempt_fields": OUTER_SUBMISSION_ATTEMPT_FIELDS,
+        "capture_fields": SUBMISSION_CAPTURE_FIELDS,
+        "result_fields": OUTER_SUBMISSION_RESULT_FIELDS,
+        "result_schema": OUTER_SUBMISSION_RESULT_SCHEMA_VERSION,
+        "receipt_schema": OUTER_SUBMISSION_RECEIPT_SCHEMA_VERSION,
+    },
+}
 INVOCATION_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 
 
@@ -505,6 +583,7 @@ def create_launch_record(
         python_path = Path(python_executable)
         output_path = Path(output_directory)
         authorized_output_path = Path(authorized_output)
+        log_file_path = Path(log_path)
         expected_python = working_path / ".venv" / "bin" / "python"
         expected_output_root = working_path / "artifacts" / "p7c4b2b-compute-preflight"
         if (
@@ -515,6 +594,7 @@ def create_launch_record(
                     python_executable,
                     output_directory,
                     authorized_output,
+                    log_path,
                 )
             )
             or any(
@@ -524,6 +604,7 @@ def create_launch_record(
                     python_path,
                     output_path,
                     authorized_output_path,
+                    log_file_path,
                 )
             )
             or output_path.is_symlink()
@@ -536,6 +617,7 @@ def create_launch_record(
             "output": output_path,
             "authorized_output": authorized_output_path,
             "output_root": expected_output_root,
+            "log": log_file_path,
         }
         resolved_paths = _resolved_operational_paths(operational_paths)
         if resolved_paths["output"] != resolved_paths["authorized_output"]:
@@ -544,12 +626,15 @@ def create_launch_record(
             resolved_paths["output"].relative_to(resolved_paths["output_root"])
         except ValueError as exc:
             raise OperationsError("operational_working_directory_mismatch") from exc
-        if resolved_paths["python"] != resolved_paths[
-            "expected_python"
-        ] or output_path.name != authorization.get("run_id"):
+        if (
+            resolved_paths["python"] != resolved_paths["expected_python"]
+            or output_path.name != authorization.get("run_id")
+            or log_file_path.name != f"{authorization.get('run_id')}.log"
+        ):
             raise OperationsError("operational_working_directory_mismatch")
         if (
             not unit.startswith("p7c4b2b-inner-")
+            or unit.endswith(".service")
             or authorization.get("run_id") not in unit
         ):
             raise OperationsError("systemd_unit_mismatch")
@@ -803,6 +888,12 @@ def _submission_attempt_path(launch_record_path: Path) -> Path:
     )
 
 
+def _submission_capture_path(launch_record_path: Path) -> Path:
+    return launch_record_path.with_name(
+        f".{launch_record_path.name}.submission-capture.json"
+    )
+
+
 def _validate_outer_launch_for_submission(record: dict[str, Any]) -> None:
     """Revalidate a fresh outer launch independently at the submit boundary."""
     expected_fields = OUTER_LAUNCH_RECORD_FIELDS | (
@@ -973,16 +1064,198 @@ def _validate_outer_launch_for_submission(record: dict[str, Any]) -> None:
         raise OperationsError("launch_record_state_invalid") from exc
 
 
+def _validate_b2b_launch_for_submission(record: dict[str, Any]) -> None:
+    """Revalidate the typed B2b launch at the same submit boundary as outer."""
+    if (
+        set(record) != B2B_LAUNCH_RECORD_FIELDS
+        or record.get("schema_version") != LAUNCH_RECORD_SCHEMA_VERSION
+        or record.get("artifact_type")
+        != EXECUTION_ARTIFACT_TYPES["target-inner-preflight"][0]
+        or record.get("execution_stage") != "target-inner-preflight"
+        or record.get("execution_class") != "target_preflight"
+        or record.get("submission_state") != "prepared_not_submitted"
+        or record.get("runner_command") not in {"run", "resume"}
+        or not isinstance(record.get("source_git_commit"), str)
+        or GIT_COMMIT_RE.fullmatch(record["source_git_commit"]) is None
+        or record.get("record_digest") != _record_digest(record, "record_digest")
+        or not isinstance(record.get("systemd_unit"), str)
+        or not record["systemd_unit"].startswith("p7c4b2b-inner-")
+        or record["systemd_unit"].endswith(".service")
+        or record.get("run_id") not in record["systemd_unit"]
+    ):
+        raise OperationsError("launch_record_state_invalid")
+    try:
+        profile_binding = record["machine_profile"]
+        environment_binding = record["environment"]
+        proposal_binding = record["proposal"]
+        authorization_binding = record["authorization"]
+        if not all(
+            isinstance(binding, dict)
+            for binding in (
+                profile_binding,
+                environment_binding,
+                proposal_binding,
+                authorization_binding,
+            )
+        ):
+            raise OperationsError("launch_record_state_invalid")
+        profile_path = Path(profile_binding["path"])
+        environment_path = Path(environment_binding["path"])
+        proposal_path = Path(proposal_binding["path"])
+        authorization_path = Path(authorization_binding["path"])
+        profile, _ = _json_input(profile_path)
+        environment, _ = _json_input(environment_path)
+        proposal, _ = _json_input(proposal_path)
+        authorization, _ = _json_input(authorization_path)
+        if (
+            profile_binding != _typed_input(profile_path, "profile_digest")
+            or environment_binding != _typed_input(environment_path, "environment_digest")
+            or proposal_binding != _typed_input(proposal_path, "proposal_digest")
+            or authorization_binding
+            != _typed_input(authorization_path, "authorization_digest")
+            or authorization.get("execution_stage")
+            != AUTHORIZATION_STAGE_BY_OPERATION_STAGE["target-inner-preflight"]
+            or environment.get("execution_stage")
+            != AUTHORIZATION_STAGE_BY_OPERATION_STAGE["target-inner-preflight"]
+            or proposal.get("execution_stage")
+            != AUTHORIZATION_STAGE_BY_OPERATION_STAGE["target-inner-preflight"]
+            or authorization.get("source_git_commit") != record["source_git_commit"]
+            or environment.get("source_git_commit") != record["source_git_commit"]
+            or profile.get("git_commit") != record["source_git_commit"]
+            or profile.get("profile_digest")
+            != authorization.get("machine_profile_digest")
+            or not isinstance(authorization.get("normalized_output_directory"), str)
+            or not authorization.get("normalized_output_directory")
+        ):
+            raise OperationsError("operational_identity_mismatch")
+        working_path = Path(record["working_directory"])
+        python_path = Path(record["python_executable"])
+        output_path = Path(record["output_directory"])
+        authorized_output_path = Path(authorization["normalized_output_directory"])
+        log_path = Path(record["log_path"])
+        paths = {
+            "working": working_path,
+            "python": python_path,
+            "expected_python": working_path / ".venv" / "bin" / "python",
+            "output": output_path,
+            "authorized_output": authorized_output_path,
+            "output_root": working_path / "artifacts" / "p7c4b2b-compute-preflight",
+            "log": log_path,
+        }
+        raw_path_values = (
+            record["working_directory"],
+            record["python_executable"],
+            record["output_directory"],
+            authorization["normalized_output_directory"],
+            record["log_path"],
+        )
+        if (
+            not all(_is_absolute_operational_path(value) for value in raw_path_values)
+            or any(".." in PurePosixPath(value).parts for value in raw_path_values)
+            or output_path.is_symlink()
+        ):
+            raise OperationsError("operational_working_directory_mismatch")
+        resolved = _resolved_operational_paths(paths)
+        if (
+            resolved["python"] != resolved["expected_python"]
+            or resolved["output"] != resolved["authorized_output"]
+            or record.get("run_id") != output_path.name
+            or log_path.name != f"{record.get('run_id')}.log"
+        ):
+            raise OperationsError("operational_identity_mismatch")
+        resolved["output"].relative_to(resolved["output_root"])
+        expected_argv = [
+            record["python_executable"],
+            "-m",
+            "creditrep.experiments.p7c4b2b_cli",
+            record["runner_command"],
+            "--mode",
+            authorization.get("mode"),
+            "--profile",
+            str(profile_path),
+            "--target-machine-asserted",
+            "--target-environment",
+            str(environment_path),
+            "--authorization-proposal",
+            str(proposal_path),
+            "--effective-authorization",
+            str(authorization_path),
+            "--output-dir",
+            record["output_directory"],
+        ]
+        if record.get("argv") != expected_argv:
+            raise OperationsError("operational_argv_mismatch")
+        if _working_tree_git_head(resolved["working"]) != record["source_git_commit"]:
+            raise OperationsError("operational_git_provenance_mismatch")
+        _revalidate_operational_paths(paths, resolved)
+    except (KeyError, TypeError, ValueError) as exc:
+        if isinstance(exc, OperationsError):
+            raise
+        raise OperationsError("launch_record_state_invalid") from exc
+
+
+def _hardened_submission_stage(record: dict[str, Any]) -> str:
+    stage = record.get("execution_stage")
+    if stage == "target-outer-projection-preflight":
+        _validate_outer_launch_for_submission(record)
+    elif stage == "target-inner-preflight":
+        _validate_b2b_launch_for_submission(record)
+    else:
+        raise OperationsError("launch_record_state_invalid")
+    return stage
+
+
+def _submission_artifact_type(stage: str, role: str) -> str:
+    if role not in {"attempt", "capture", "result"}:
+        raise OperationsError("submission_artifact_role_invalid")
+    try:
+        prefix = SUBMISSION_STAGE_PREFIXES[stage]
+    except KeyError as exc:
+        raise OperationsError("launch_record_state_invalid") from exc
+    return f"{prefix}_submission_{role}"
+
+
+def _submission_stage_policy(stage: str) -> dict[str, Any]:
+    try:
+        return SUBMISSION_STAGE_POLICIES[stage]
+    except KeyError as exc:
+        raise OperationsError("launch_record_state_invalid") from exc
+
+
+def _submission_claim_is_valid(
+    *, record: dict[str, Any], launch_record_path: Path, launch_hash: str, claim: dict[str, Any]
+) -> bool:
+    stage = record["execution_stage"]
+    policy = _submission_stage_policy(stage)
+    fields = policy["claim_fields"]
+    schema = policy["claim_schema"]
+    return (
+        set(claim) == fields
+        and claim.get("schema_version") == schema
+        and claim.get("artifact_type") == SUBMISSION_CLAIM_ARTIFACT_TYPES[stage]
+        and claim.get("execution_stage") == stage
+        and claim.get("launch_record_path") == str(launch_record_path.resolve())
+        and claim.get("launch_record_sha256") == launch_hash
+        and (stage != "target-outer-projection-preflight" or claim.get("launch_record_digest") == record.get("record_digest"))
+        and claim.get("systemd_unit") == record.get("systemd_unit")
+        and claim.get("submission_state") == "claimed_not_submitted"
+        and claim.get("claim_digest") == _record_digest(claim, "claim_digest")
+    )
+
+
 def _create_submission_attempt(launch_record_path: Path) -> dict[str, Any]:
-    """Atomically consume one outer claim before invoking systemd-run."""
+    """Atomically record the one permitted systemd invocation."""
     record, launch_hash = _json_input(launch_record_path)
+    stage = _hardened_submission_stage(record)
     claim_path = _submission_claim_path(launch_record_path)
     claim, claim_hash = _json_input(claim_path)
+    if not _submission_claim_is_valid(
+        record=record, launch_record_path=launch_record_path, launch_hash=launch_hash, claim=claim
+    ):
+        raise OperationsError("submission_claim_invalid")
     value = {
         "schema_version": 1,
-        "artifact_type": (
-            "p7c4b2c_target_outer_projection_preflight_submission_attempt"
-        ),
+        "artifact_type": _submission_artifact_type(stage, "attempt"),
         "attempted_at": _utc_now(),
         "launch_record_path": str(launch_record_path.resolve()),
         "launch_record_sha256": launch_hash,
@@ -1000,6 +1273,71 @@ def _create_submission_attempt(launch_record_path: Path) -> dict[str, Any]:
         if str(exc) == "operational_evidence_collision":
             raise OperationsError("submission_already_attempted") from exc
         raise
+    return value
+
+
+def _create_submission_capture(
+    *,
+    launch_record_path: Path,
+    stdout_path: Path,
+    stderr_path: Path,
+    exit_code_path: Path,
+    systemd_run_exit_code: int,
+) -> dict[str, Any]:
+    """Atomically bind the raw bytes captured by the committed invocation."""
+    saved_exit_code, exit_code_hash = _read_exit_code_evidence(exit_code_path)
+    if saved_exit_code != systemd_run_exit_code:
+        raise OperationsError("systemd_run_exit_code_evidence_mismatch")
+    record, launch_hash = _json_input(launch_record_path)
+    stage = _hardened_submission_stage(record)
+    claim_path = _submission_claim_path(launch_record_path)
+    claim, claim_hash = _json_input(claim_path)
+    if not _submission_claim_is_valid(
+        record=record, launch_record_path=launch_record_path, launch_hash=launch_hash, claim=claim
+    ):
+        raise OperationsError("submission_claim_invalid")
+    attempt_path = _submission_attempt_path(launch_record_path)
+    attempt, attempt_hash = _json_input(attempt_path)
+    if (
+        set(attempt) != _submission_stage_policy(stage)["attempt_fields"]
+        or attempt.get("schema_version") != 1
+        or attempt.get("artifact_type") != _submission_artifact_type(stage, "attempt")
+        or attempt.get("launch_record_path") != str(launch_record_path.resolve())
+        or attempt.get("launch_record_sha256") != launch_hash
+        or attempt.get("launch_record_digest") != record.get("record_digest")
+        or attempt.get("submission_claim_path") != str(claim_path.resolve())
+        or attempt.get("submission_claim_sha256") != claim_hash
+        or attempt.get("submission_claim_digest") != claim.get("claim_digest")
+        or attempt.get("systemd_unit") != record.get("systemd_unit")
+        or attempt.get("attempt_state") != "submission_invocation_committed"
+        or attempt.get("attempt_digest") != _record_digest(attempt, "attempt_digest")
+    ):
+        raise OperationsError("submission_attempt_invalid")
+    value = {
+        "schema_version": 1,
+        "artifact_type": _submission_artifact_type(stage, "capture"),
+        "created_at": _utc_now(),
+        "execution_stage": stage,
+        "launch_record_path": str(launch_record_path.resolve()),
+        "launch_record_sha256": launch_hash,
+        "launch_record_digest": record["record_digest"],
+        "submission_claim_path": str(claim_path.resolve()),
+        "submission_claim_sha256": claim_hash,
+        "submission_claim_digest": claim["claim_digest"],
+        "submission_attempt_path": str(attempt_path.resolve()),
+        "submission_attempt_sha256": attempt_hash,
+        "submission_attempt_digest": attempt["attempt_digest"],
+        "systemd_unit": record["systemd_unit"],
+        "stdout_path": str(stdout_path.resolve()),
+        "stdout_sha256": _sha256_file(stdout_path),
+        "stderr_path": str(stderr_path.resolve()),
+        "stderr_sha256": _sha256_file(stderr_path),
+        "exit_code_path": str(exit_code_path.resolve()),
+        "exit_code_sha256": exit_code_hash,
+        "systemd_run_exit_code": systemd_run_exit_code,
+    }
+    value["capture_digest"] = _record_digest(value, "capture_digest")
+    _atomic_create(_submission_capture_path(launch_record_path), value)
     return value
 
 
@@ -1021,7 +1359,9 @@ def create_submission_claim(
         or record.get("record_digest") != _record_digest(record, "record_digest")
     ):
         raise OperationsError("launch_record_state_invalid")
-    if stage == "target-outer-projection-preflight":
+    if stage == "target-inner-preflight":
+        _validate_b2b_launch_for_submission(record)
+    elif stage == "target-outer-projection-preflight":
         expected_fields = OUTER_LAUNCH_RECORD_FIELDS | (
             {"resume_of_launch_record"}
             if record.get("runner_command") == "resume"
@@ -1059,18 +1399,53 @@ def create_submission_claim(
     return value
 
 
-def _parse_systemd_run_output(output: str, expected_unit: str) -> str:
-    matches = re.findall(
-        r"Running as unit:\s*([^;\r\n]+);\s*invocation ID:\s*([^\s\r\n]+)",
-        output,
+def _expected_systemd_reported_unit(execution_stage: str, stored_unit: str) -> str:
+    """Map the persisted project identity to systemd's reported identity."""
+    if execution_stage == "target-inner-preflight":
+        if stored_unit.endswith(".service"):
+            raise OperationsError("systemd_unit_mismatch")
+        return f"{stored_unit}.service"
+    if execution_stage == "target-outer-projection-preflight":
+        return stored_unit
+    raise OperationsError("launch_record_state_invalid")
+
+
+def _parse_systemd_run_output(
+    stdout: str, stderr: str, expected_unit: str, execution_stage: str
+) -> str:
+    """Resolve one unambiguous systemd submission identity from both channels.
+
+    One valid observation in either channel is sufficient.  The same valid
+    identity may be echoed once in each channel; different identities, or more
+    than one identity in one channel, are rejected rather than guessed.
+    """
+    pattern = re.compile(
+        r"Running as unit:\s*([^;\r\n]+);\s*invocation ID:\s*([^\s\r\n]+)"
     )
-    if output.count("invocation ID:") != 1 or len(matches) != 1:
+    observations: list[tuple[str, str]] = []
+    for channel in (stdout, stderr):
+        matches = pattern.findall(channel)
+        # Every identity-looking marker must be consumed by one complete
+        # observation.  This rejects truncated or orphaned competing evidence
+        # without treating unrelated stderr diagnostics as identity evidence.
+        if (
+            channel.count("Running as unit:") != len(matches)
+            or channel.count("invocation ID:") != len(matches)
+            or len(matches) > 1
+        ):
+            raise OperationsError("systemd_run_invocation_id_count_invalid")
+        if matches:
+            unit, invocation_id = (item.strip() for item in matches[0])
+            if INVOCATION_ID_RE.fullmatch(invocation_id) is None:
+                raise OperationsError("invocation_id_malformed")
+            observations.append((unit, invocation_id))
+    if not observations:
         raise OperationsError("systemd_run_invocation_id_count_invalid")
-    unit, invocation_id = (item.strip() for item in matches[0])
-    if unit != expected_unit:
+    if len(set(observations)) != 1:
+        raise OperationsError("systemd_run_output_conflict")
+    unit, invocation_id = observations[0]
+    if unit != _expected_systemd_reported_unit(execution_stage, expected_unit):
         raise OperationsError("systemd_unit_mismatch")
-    if INVOCATION_ID_RE.fullmatch(invocation_id) is None:
-        raise OperationsError("invocation_id_malformed")
     return invocation_id
 
 
@@ -1125,31 +1500,21 @@ def submit_systemd_run(
     stderr_path: Path,
     exit_code_path: Path,
 ) -> dict[str, Any]:
-    """Submit one claimed outer launch and durably capture its process result."""
+    """Submit one claimed hardened launch and durably capture its process result."""
     record, launch_hash = _json_input(launch_record_path)
-    _validate_outer_launch_for_submission(record)
+    _hardened_submission_stage(record)
     claim_path = _submission_claim_path(launch_record_path)
     claim, _claim_hash = _json_input(claim_path)
-    if (
-        record.get("execution_stage") != "target-outer-projection-preflight"
-        or record.get("schema_version") != OUTER_LAUNCH_RECORD_SCHEMA_VERSION
-        or record.get("record_digest") != _record_digest(record, "record_digest")
-        or claim.get("schema_version") != OUTER_SUBMISSION_CLAIM_SCHEMA_VERSION
-        or set(claim) != OUTER_SUBMISSION_CLAIM_FIELDS
-        or claim.get("artifact_type")
-        != SUBMISSION_CLAIM_ARTIFACT_TYPES["target-outer-projection-preflight"]
-        or claim.get("execution_stage") != "target-outer-projection-preflight"
-        or claim.get("launch_record_path") != str(launch_record_path.resolve())
-        or claim.get("launch_record_sha256") != launch_hash
-        or claim.get("launch_record_digest") != record.get("record_digest")
-        or claim.get("systemd_unit") != record.get("systemd_unit")
-        or claim.get("submission_state") != "claimed_not_submitted"
-        or claim.get("claim_digest") != _record_digest(claim, "claim_digest")
-        or _working_tree_git_head(Path(record.get("working_directory", "")))
-        != record.get("source_git_commit")
+    if not _submission_claim_is_valid(
+        record=record, launch_record_path=launch_record_path, launch_hash=launch_hash, claim=claim
     ):
         raise OperationsError("submission_claim_invalid")
-    evidence_paths = (result_path, stdout_path, stderr_path, exit_code_path)
+    if _submission_attempt_path(launch_record_path).exists():
+        raise OperationsError("submission_already_attempted")
+    evidence_paths = (
+        result_path, stdout_path, stderr_path, exit_code_path,
+        _submission_capture_path(launch_record_path),
+    )
     if any(path.exists() for path in evidence_paths):
         raise OperationsError("operational_evidence_collision")
     command = [
@@ -1178,6 +1543,13 @@ def submit_systemd_run(
         _atomic_bytes_create(stderr_path, completed.stderr)
         _atomic_bytes_create(
             exit_code_path, f"{completed.returncode}\n".encode("ascii")
+        )
+        _create_submission_capture(
+            launch_record_path=launch_record_path,
+            stdout_path=stdout_path,
+            stderr_path=stderr_path,
+            exit_code_path=exit_code_path,
+            systemd_run_exit_code=completed.returncode,
         )
         return create_submission_result(
             result_path=result_path,
@@ -1212,35 +1584,19 @@ def create_submission_result(
     if saved_exit_code != systemd_run_exit_code:
         raise OperationsError("systemd_run_exit_code_evidence_mismatch")
     record, launch_hash = _json_input(launch_record_path)
-    if (
-        record.get("execution_stage") != "target-outer-projection-preflight"
-        or record.get("schema_version") != OUTER_LAUNCH_RECORD_SCHEMA_VERSION
-        or record.get("record_digest") != _record_digest(record, "record_digest")
-    ):
-        raise OperationsError("launch_record_state_invalid")
+    stage = _hardened_submission_stage(record)
     claim_path = _submission_claim_path(launch_record_path)
     claim, claim_hash = _json_input(claim_path)
-    if (
-        set(claim) != OUTER_SUBMISSION_CLAIM_FIELDS
-        or claim.get("schema_version") != OUTER_SUBMISSION_CLAIM_SCHEMA_VERSION
-        or claim.get("artifact_type")
-        != SUBMISSION_CLAIM_ARTIFACT_TYPES["target-outer-projection-preflight"]
-        or claim.get("execution_stage") != "target-outer-projection-preflight"
-        or claim.get("launch_record_path") != str(launch_record_path.resolve())
-        or claim.get("launch_record_sha256") != launch_hash
-        or claim.get("launch_record_digest") != record.get("record_digest")
-        or claim.get("systemd_unit") != record.get("systemd_unit")
-        or claim.get("submission_state") != "claimed_not_submitted"
-        or claim.get("claim_digest") != _record_digest(claim, "claim_digest")
+    if not _submission_claim_is_valid(
+        record=record, launch_record_path=launch_record_path, launch_hash=launch_hash, claim=claim
     ):
         raise OperationsError("submission_claim_invalid")
     attempt_path = _submission_attempt_path(launch_record_path)
     attempt, attempt_hash = _json_input(attempt_path)
     if (
-        set(attempt) != OUTER_SUBMISSION_ATTEMPT_FIELDS
+        set(attempt) != _submission_stage_policy(stage)["attempt_fields"]
         or attempt.get("schema_version") != 1
-        or attempt.get("artifact_type")
-        != "p7c4b2c_target_outer_projection_preflight_submission_attempt"
+        or attempt.get("artifact_type") != _submission_artifact_type(stage, "attempt")
         or attempt.get("launch_record_path") != str(launch_record_path.resolve())
         or attempt.get("launch_record_sha256") != launch_hash
         or attempt.get("launch_record_digest") != record.get("record_digest")
@@ -1252,19 +1608,50 @@ def create_submission_result(
         or attempt.get("attempt_digest") != _record_digest(attempt, "attempt_digest")
     ):
         raise OperationsError("submission_attempt_invalid")
+    capture_path = _submission_capture_path(launch_record_path)
+    capture, capture_hash = _json_input(capture_path)
+    if (
+        set(capture) != _submission_stage_policy(stage)["capture_fields"]
+        or capture.get("schema_version") != 1
+        or capture.get("artifact_type") != _submission_artifact_type(stage, "capture")
+        or capture.get("capture_digest") != _record_digest(capture, "capture_digest")
+        or capture.get("execution_stage") != stage
+        or capture.get("launch_record_path") != str(launch_record_path.resolve())
+        or capture.get("launch_record_sha256") != launch_hash
+        or capture.get("launch_record_digest") != record.get("record_digest")
+        or capture.get("submission_claim_path") != str(claim_path.resolve())
+        or capture.get("submission_claim_sha256") != claim_hash
+        or capture.get("submission_claim_digest") != claim.get("claim_digest")
+        or capture.get("submission_attempt_path") != str(attempt_path.resolve())
+        or capture.get("submission_attempt_sha256") != attempt_hash
+        or capture.get("submission_attempt_digest") != attempt.get("attempt_digest")
+        or capture.get("systemd_unit") != record.get("systemd_unit")
+        or capture.get("stdout_path") != str(stdout_path.resolve())
+        or capture.get("stdout_sha256") != _sha256_file(stdout_path)
+        or capture.get("stderr_path") != str(stderr_path.resolve())
+        or capture.get("stderr_sha256") != _sha256_file(stderr_path)
+        or capture.get("exit_code_path") != str(exit_code_path.resolve())
+        or capture.get("exit_code_sha256") != exit_code_hash
+        or capture.get("systemd_run_exit_code") != systemd_run_exit_code
+    ):
+        raise OperationsError("submission_capture_invalid")
     try:
         stdout = stdout_path.read_text(encoding="utf-8")
-        stderr_path.read_text(encoding="utf-8")
+        stderr = stderr_path.read_text(encoding="utf-8")
     except (FileNotFoundError, OSError, UnicodeDecodeError) as exc:
         raise OperationsError("submission_output_invalid") from exc
     invocation_id = None
     if systemd_run_exit_code == 0:
-        invocation_id = _parse_systemd_run_output(stdout, record["systemd_unit"])
-    elif "Running as unit:" in stdout or "invocation ID:" in stdout:
+        invocation_id = _parse_systemd_run_output(
+            stdout, stderr, record["systemd_unit"], stage
+        )
+    elif any(marker in channel for channel in (stdout, stderr) for marker in (
+        "Running as unit:", "invocation ID:"
+    )):
         raise OperationsError("systemd_run_exit_code_mismatch")
     value = {
-        "schema_version": OUTER_SUBMISSION_RESULT_SCHEMA_VERSION,
-        "artifact_type": "p7c4b2c_target_outer_projection_preflight_submission_result",
+        "schema_version": _submission_stage_policy(stage)["result_schema"],
+        "artifact_type": _submission_artifact_type(stage, "result"),
         "created_at": _utc_now(),
         "launch_record_path": str(launch_record_path.resolve()),
         "launch_record_sha256": launch_hash,
@@ -1276,6 +1663,9 @@ def create_submission_result(
         "submission_attempt_sha256": attempt_hash,
         "submission_attempt_digest": attempt["attempt_digest"],
         "systemd_unit": record["systemd_unit"],
+        "submission_capture_path": str(capture_path.resolve()),
+        "submission_capture_sha256": capture_hash,
+        "submission_capture_digest": capture["capture_digest"],
         "stdout_path": str(stdout_path.resolve()),
         "stdout_sha256": _sha256_file(stdout_path),
         "stderr_path": str(stderr_path.resolve()),
@@ -1315,6 +1705,11 @@ def create_submission_receipt(
         stage == "target-outer-projection-preflight"
         and record.get("schema_version") == OUTER_LAUNCH_RECORD_SCHEMA_VERSION
     )
+    fresh_b2b = (
+        stage == "target-inner-preflight"
+        and record.get("schema_version") == LAUNCH_RECORD_SCHEMA_VERSION
+        and record.get("record_digest") == _record_digest(record, "record_digest")
+    )
     expected_launch_schema = (
         OUTER_LAUNCH_RECORD_SCHEMA_VERSION
         if fresh_outer
@@ -1327,7 +1722,10 @@ def create_submission_receipt(
         or record.get("submission_state") != "prepared_not_submitted"
     ):
         raise OperationsError("launch_record_state_invalid")
-    if fresh_outer:
+    if fresh_b2b and submission_result_path is None:
+        raise OperationsError("submission_result_missing")
+    if fresh_outer or fresh_b2b:
+        hardened_stage = _hardened_submission_stage(record)
         if submission_result_path is None:
             raise OperationsError("submission_result_missing")
         result, result_hash = _json_input(submission_result_path)
@@ -1336,11 +1734,12 @@ def create_submission_receipt(
         )
         attempt_path = _submission_attempt_path(launch_record_path)
         attempt, attempt_hash = _json_input(attempt_path)
+        capture_path = _submission_capture_path(launch_record_path)
+        capture, capture_hash = _json_input(capture_path)
         if (
-            set(result) != OUTER_SUBMISSION_RESULT_FIELDS
-            or result.get("schema_version") != OUTER_SUBMISSION_RESULT_SCHEMA_VERSION
-            or result.get("artifact_type")
-            != "p7c4b2c_target_outer_projection_preflight_submission_result"
+            set(result) != _submission_stage_policy(hardened_stage)["result_fields"]
+            or result.get("schema_version") != _submission_stage_policy(hardened_stage)["result_schema"]
+            or result.get("artifact_type") != _submission_artifact_type(hardened_stage, "result")
             or result.get("result_digest") != _record_digest(result, "result_digest")
             or result.get("launch_record_path") != str(launch_record_path.resolve())
             or result.get("launch_record_sha256") != launch_hash
@@ -1352,10 +1751,12 @@ def create_submission_receipt(
             != str(_submission_claim_path(launch_record_path).resolve())
             or result.get("submission_attempt_path") != str(attempt_path.resolve())
             or attempt_hash != result.get("submission_attempt_sha256")
-            or set(attempt) != OUTER_SUBMISSION_ATTEMPT_FIELDS
+            or result.get("submission_capture_path") != str(capture_path.resolve())
+            or result.get("submission_capture_sha256") != capture_hash
+            or result.get("submission_capture_digest") != capture.get("capture_digest")
+            or set(attempt) != _submission_stage_policy(hardened_stage)["attempt_fields"]
             or attempt.get("schema_version") != 1
-            or attempt.get("artifact_type")
-            != "p7c4b2c_target_outer_projection_preflight_submission_attempt"
+            or attempt.get("artifact_type") != _submission_artifact_type(hardened_stage, "attempt")
             or attempt.get("launch_record_path") != str(launch_record_path.resolve())
             or attempt.get("launch_record_sha256") != launch_hash
             or attempt.get("launch_record_digest") != record.get("record_digest")
@@ -1370,6 +1771,28 @@ def create_submission_receipt(
             or attempt.get("attempt_digest")
             != _record_digest(attempt, "attempt_digest")
             or result.get("submission_attempt_digest") != attempt.get("attempt_digest")
+            or set(capture) != _submission_stage_policy(hardened_stage)["capture_fields"]
+            or capture.get("schema_version") != 1
+            or capture.get("artifact_type") != _submission_artifact_type(hardened_stage, "capture")
+            or capture.get("capture_digest") != _record_digest(capture, "capture_digest")
+            or capture.get("execution_stage") != hardened_stage
+            or capture.get("launch_record_path") != str(launch_record_path.resolve())
+            or capture.get("launch_record_sha256") != launch_hash
+            or capture.get("launch_record_digest") != record.get("record_digest")
+            or capture.get("submission_claim_path") != str(_submission_claim_path(launch_record_path).resolve())
+            or capture.get("submission_claim_sha256") != result.get("submission_claim_sha256")
+            or capture.get("submission_claim_digest") != result.get("submission_claim_digest")
+            or capture.get("submission_attempt_path") != str(attempt_path.resolve())
+            or capture.get("submission_attempt_sha256") != attempt_hash
+            or capture.get("submission_attempt_digest") != attempt.get("attempt_digest")
+            or capture.get("systemd_unit") != record.get("systemd_unit")
+            or capture.get("stdout_path") != result.get("stdout_path")
+            or capture.get("stdout_sha256") != result.get("stdout_sha256")
+            or capture.get("stderr_path") != result.get("stderr_path")
+            or capture.get("stderr_sha256") != result.get("stderr_sha256")
+            or capture.get("exit_code_path") != result.get("exit_code_path")
+            or capture.get("exit_code_sha256") != result.get("exit_code_sha256")
+            or capture.get("systemd_run_exit_code") != systemd_run_exit_code
             or current_exit_code_hash != result.get("exit_code_sha256")
             or _sha256_file(Path(result.get("stdout_path", "")))
             != result.get("stdout_sha256")
@@ -1380,8 +1803,9 @@ def create_submission_receipt(
         invocation_id = result.get("invocation_id")
         if systemd_run_exit_code == 0:
             stdout = Path(result["stdout_path"]).read_text(encoding="utf-8")
+            stderr = Path(result["stderr_path"]).read_text(encoding="utf-8")
             if invocation_id != _parse_systemd_run_output(
-                stdout, record["systemd_unit"]
+                stdout, stderr, record["systemd_unit"], stage
             ):
                 raise OperationsError("submission_result_mismatch")
             if result.get("submission_state") != "submitted":
@@ -1393,9 +1817,17 @@ def create_submission_receipt(
             raise OperationsError("submission_result_mismatch")
         if observed_unit != record.get("systemd_unit"):
             raise OperationsError("systemd_unit_mismatch")
-        if unit_snapshot is None and snapshot_attempt_path is None:
+        # The durable submit result is the authoritative recovery evidence for
+        # B2b.  A collected transient unit is expected to be unavailable, so a
+        # post-submit systemctl lookup must not be required to make a receipt.
+        # Outer preflight retains its existing snapshot-evidence contract.
+        if unit_snapshot is None and snapshot_attempt_path is None and not fresh_b2b:
             raise OperationsError("unit_snapshot_evidence_missing")
-        snapshot_status = "unavailable_empty_attempt"
+        snapshot_status = (
+            "recovered_from_immutable_submission_result"
+            if fresh_b2b and unit_snapshot is None and snapshot_attempt_path is None
+            else "unavailable_empty_attempt"
+        )
         snapshot_binding = None
         if snapshot_attempt_path is not None:
             snapshot_binding = {
@@ -1429,14 +1861,13 @@ def create_submission_receipt(
         claim, claim_hash = _json_input(claim_path)
         if claim.get("receipt_path") != str(receipt_path.resolve()):
             raise OperationsError("duplicate_submission")
-        if (
-            claim.get("schema_version") != OUTER_SUBMISSION_CLAIM_SCHEMA_VERSION
-            or claim.get("claim_digest") != result.get("submission_claim_digest")
-            or claim_hash != result.get("submission_claim_sha256")
-        ):
+        if (not _submission_claim_is_valid(
+            record=record, launch_record_path=launch_record_path, launch_hash=launch_hash, claim=claim
+        ) or claim.get("claim_digest") != result.get("submission_claim_digest")
+            or claim_hash != result.get("submission_claim_sha256")):
             raise OperationsError("submission_claim_invalid")
         value = {
-            "schema_version": OUTER_SUBMISSION_RECEIPT_SCHEMA_VERSION,
+            "schema_version": _submission_stage_policy(hardened_stage)["receipt_schema"],
             "artifact_type": EXECUTION_ARTIFACT_TYPES[stage][1],
             "submitted_at": result["created_at"],
             "receipt_created_at": _utc_now(),

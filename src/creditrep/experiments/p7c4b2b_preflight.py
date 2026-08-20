@@ -251,6 +251,22 @@ def _is_within(path: Path, root: Path) -> bool:
         return False
 
 
+def _existing_filesystem_anchor(path: Path) -> Path:
+    """Return the nearest existing ancestor without mutating the filesystem."""
+    candidate = path
+    while True:
+        try:
+            candidate.stat()
+            return candidate
+        except FileNotFoundError:
+            parent = candidate.parent
+            if parent == candidate:
+                raise PreflightError("live_disk_lookup_failed")
+            candidate = parent
+        except OSError as exc:
+            raise PreflightError("live_disk_lookup_failed") from exc
+
+
 def _resolved_output_identity(output: Path, repo_root: Path) -> dict[str, str]:
     authorized_root = (repo_root / ARTIFACT_ROOT).resolve(strict=False)
     physical = output.resolve(strict=False)
@@ -727,7 +743,10 @@ def capture_machine_profile(
     repo_root: Path | None = None,
 ) -> dict[str, Any]:
     root = (repo_root or find_repo_root()).resolve()
-    disk = shutil.disk_usage(root / "artifacts")
+    try:
+        disk = shutil.disk_usage(_existing_filesystem_anchor(root / "artifacts"))
+    except (OSError, AttributeError) as exc:
+        raise PreflightError("live_disk_lookup_failed") from exc
     command = [
         "git",
         "-c",
@@ -1002,13 +1021,17 @@ def execution_guard(
         or Path(output_identity["physical_output_directory"]).parent != expected
     ):
         codes.append("invalid_artifact_namespace")
-    if not fixture:
-        disk_parent = expected if expected.exists() else expected.parent
-        if (
-            shutil.disk_usage(disk_parent).free
-            < plan["limits"]["minimum_free_disk_bytes"]["value"]
-        ):
-            codes.append("insufficient_free_disk")
+    if not fixture and output_identity is not None:
+        try:
+            disk_anchor = _existing_filesystem_anchor(
+                Path(output_identity["physical_output_directory"])
+            )
+            free_disk = shutil.disk_usage(disk_anchor).free
+        except (PreflightError, OSError, AttributeError):
+            codes.append("live_disk_lookup_failed")
+        else:
+            if free_disk < plan["limits"]["minimum_free_disk_bytes"]["value"]:
+                codes.append("insufficient_free_disk")
         vm = psutil.virtual_memory()
         if vm.available < plan["limits"]["minimum_system_available_ram_bytes"]["value"]:
             codes.append("insufficient_available_ram")

@@ -103,8 +103,8 @@ ps -fu "$USER"
 systemctl --user list-units 'p7c4b2b-inner-*' --all --no-pager
 systemctl --user list-unit-files 'p7c4b2b-inner-*' --no-pager
 test -x "$PYTHON"
-test -d "$REPO/artifacts"
-df -B1 "$REPO/artifacts"
+test -d "$REPO"
+df -B1 "$REPO"
 free -b
 ulimit -a
 "$PYTHON" -m creditrep.experiments.p7c4b2b_cli validate-plan
@@ -129,7 +129,10 @@ UNIT_P1="p7c4b2b-inner-p1-$RUN_P1"
 LAUNCH_P1="$CONTROL/$RUN_P1-launch.json"
 CLAIM_P1="$CONTROL/.$RUN_P1-launch.json.submission-claim.json"
 RECEIPT_P1="$CONTROL/$RUN_P1-receipt.json"
-SNAPSHOT_P1="$CONTROL/$RUN_P1-unit-snapshot.json"
+SUBMISSION_RESULT_P1="$CONTROL/$RUN_P1-submission-result.json"
+SYSTEMD_STDOUT_P1="$CONTROL/$RUN_P1-systemd-run.stdout"
+SYSTEMD_STDERR_P1="$CONTROL/$RUN_P1-systemd-run.stderr"
+SYSTEMD_EXIT_P1="$CONTROL/$RUN_P1-systemd-run.exit-code"
 LOG_P1="$CONTROL/$RUN_P1.log"
 test ! -e "$OUT_P1"
 test ! -e "$PROFILE_P1"
@@ -139,7 +142,8 @@ test ! -e "$AUTH_P1"
 test ! -e "$LAUNCH_P1"
 test ! -e "$CLAIM_P1"
 test ! -e "$RECEIPT_P1"
-test ! -e "$SNAPSHOT_P1"
+test ! -e "$SUBMISSION_RESULT_P1" && test ! -e "$SYSTEMD_STDOUT_P1"
+test ! -e "$SYSTEMD_STDERR_P1" && test ! -e "$SYSTEMD_EXIT_P1"
 test ! -e "$LOG_P1"
 test "$(dirname "$OUT_P1")" = "$REPO/artifacts/p7c4b2b-compute-preflight"
 test "$UNIT_P1" = "p7c4b2b-inner-p1-$RUN_P1"
@@ -217,6 +221,7 @@ test ! -e "$OUT_P1"
 test ! -e "$LAUNCH_P1"
 test ! -e "$CLAIM_P1"
 test ! -e "$RECEIPT_P1"
+test ! -e "$SUBMISSION_RESULT_P1"
 systemctl --user is-active --quiet "$UNIT_P1" && exit 4 || true
 ps -fu "$USER"
 echo 'STOP: B2B_P1_COMPUTE_SUBMISSION_BOUNDARY'
@@ -263,27 +268,59 @@ systemctl --user is-active --quiet "$UNIT_P1" && exit 4 || true
 "$PYTHON" -m creditrep.experiments.p7c4b2e_operations_cli create-submission-claim \
   --launch-record "$LAUNCH_P1" --receipt "$RECEIPT_P1"
 test -s "$CLAIM_P1"
-set +e
-systemd-run --user --unit="$UNIT_P1" --collect --working-directory="$REPO" \
-  --property="StandardOutput=append:$LOG_P1" --property="StandardError=append:$LOG_P1" \
-  "$PYTHON" -m creditrep.experiments.p7c4b2b_cli run \
-  --mode cpu_parallel_1 --profile "$PROFILE_P1" --target-machine-asserted \
-  --target-environment "$ENV_P1" --authorization-proposal "$PROPOSAL_P1" \
-  --effective-authorization "$AUTH_P1" --output-dir "$OUT_P1"
-SUBMIT_RC=$?
-set -e
-SNAPSHOT_JSON=$(systemctl --user show "$UNIT_P1" --output=json \
-  -p LoadState -p ActiveState -p SubState -p MainPID -p ExecMainCode \
-  -p ExecMainStatus -p Result -p InvocationID -p ExecMainStartTimestamp \
-  -p ExecMainExitTimestamp | jq '.[0] | with_entries(.value |= tostring)' || \
-  jq -cn '{LoadState:"",ActiveState:"",SubState:"",MainPID:"",ExecMainCode:"",ExecMainStatus:"",Result:"",InvocationID:"",ExecMainStartTimestamp:"",ExecMainExitTimestamp:""}')
-printf '%s\n' "$SNAPSHOT_JSON" > "$SNAPSHOT_P1"
+"$PYTHON" -m creditrep.experiments.p7c4b2e_operations_cli submit-systemd-run \
+  --submission-result "$SUBMISSION_RESULT_P1" --launch-record "$LAUNCH_P1" \
+  --systemd-run-stdout "$SYSTEMD_STDOUT_P1" --systemd-run-stderr "$SYSTEMD_STDERR_P1" \
+  --systemd-run-exit-code-file "$SYSTEMD_EXIT_P1"
+SUBMIT_RC=$(jq -r '.systemd_run_exit_code' "$SUBMISSION_RESULT_P1")
 "$PYTHON" -m creditrep.experiments.p7c4b2e_operations_cli create-submission-receipt \
   --receipt "$RECEIPT_P1" --launch-record "$LAUNCH_P1" \
-  --unit "$UNIT_P1" \
-  --unit-snapshot-json "$(cat "$SNAPSHOT_P1")" --systemd-run-exit-code "$SUBMIT_RC"
+  --unit "$UNIT_P1" --submission-result "$SUBMISSION_RESULT_P1" \
+  --systemd-run-exit-code "$SUBMIT_RC"
 test -s "$RECEIPT_P1"
 test "$SUBMIT_RC" -eq 0
+```
+
+`submit-systemd-run` is the sole submission path. It atomically commits the
+submission attempt before invoking systemd and writes immutable stdout, stderr,
+exit-code and submission-result evidence before it returns. The result binds the
+launch, claim, attempt, unit and canonical InvocationID; receipt creation
+rechecks every binding and recovers a collected unit directly from that result.
+Do not use `systemctl show`, JSON output, terminal output, or journal output as
+the authoritative B2b result source. They are diagnostics only.
+
+After an interruption, do not submit again. The immutable submission capture
+created by `submit-systemd-run` binds the exact stdout, stderr, and exit-code
+bytes. Raw files alone are not sufficient reconstruction authority;
+`systemctl show`, `journalctl`, and current unit state are diagnostics only.
+
+| Durable state | Required action |
+| --- | --- |
+| R1: result exists, receipt missing | Rerun only `create-submission-receipt` with the same `--launch-record`, `--submission-result`, `--receipt`, and recorded exit code. |
+| R2: capture exists, result missing | Verify the saved raw files remain present, then reconstruct the result and create the receipt. Do **not** resubmit. |
+| R3: attempt exists but capture missing, even if raw evidence appears complete | STOP for operator review. Do **not** resubmit and do **not** post-hoc bless the files. |
+| R4: claim exists, attempt absent | Preserve the existing claim-only handling: STOP and obtain operator review before any action; do not infer that submission is safe. |
+
+For R2, run the following exact reconstruction path. `create-submission-result`
+derives and revalidates the capture path from the launch record; it does not
+invoke systemd, systemctl, or journalctl:
+
+```bash
+set -euo pipefail
+test -s "$CLAIM_P1"
+test -s "$LAUNCH_P1"
+test -s "$SYSTEMD_STDOUT_P1" || true  # stdout may legitimately be empty
+test -f "$SYSTEMD_STDOUT_P1"
+test -f "$SYSTEMD_STDERR_P1"
+test -f "$SYSTEMD_EXIT_P1"
+SUBMIT_RC=$(tr -d '\n' < "$SYSTEMD_EXIT_P1")
+"$PYTHON" -m creditrep.experiments.p7c4b2e_operations_cli create-submission-result \
+  --submission-result "$SUBMISSION_RESULT_P1" --launch-record "$LAUNCH_P1" \
+  --systemd-run-stdout "$SYSTEMD_STDOUT_P1" --systemd-run-stderr "$SYSTEMD_STDERR_P1" \
+  --systemd-run-exit-code-file "$SYSTEMD_EXIT_P1" --systemd-run-exit-code "$SUBMIT_RC"
+"$PYTHON" -m creditrep.experiments.p7c4b2e_operations_cli create-submission-receipt \
+  --receipt "$RECEIPT_P1" --launch-record "$LAUNCH_P1" --unit "$UNIT_P1" \
+  --submission-result "$SUBMISSION_RESULT_P1" --systemd-run-exit-code "$SUBMIT_RC"
 ```
 
 Block 8 — read-only monitoring; never submit `run` again:
@@ -347,12 +384,14 @@ RESUME_UNIT_P1="p7c4b2b-inner-p1-$RUN_P1-resume-$RESUME_ID"
 RESUME_LAUNCH_P1="$CONTROL/$RUN_P1-resume-$RESUME_ID-launch.json"
 RESUME_CLAIM_P1="$CONTROL/.$RUN_P1-resume-$RESUME_ID-launch.json.submission-claim.json"
 RESUME_RECEIPT_P1="$CONTROL/$RUN_P1-resume-$RESUME_ID-receipt.json"
-RESUME_SNAPSHOT_P1="$CONTROL/$RUN_P1-resume-$RESUME_ID-unit-snapshot.json"
+RESUME_SUBMISSION_RESULT_P1="$CONTROL/$RUN_P1-resume-$RESUME_ID-submission-result.json"
+RESUME_SYSTEMD_STDOUT_P1="$CONTROL/$RUN_P1-resume-$RESUME_ID-systemd-run.stdout"
+RESUME_SYSTEMD_STDERR_P1="$CONTROL/$RUN_P1-resume-$RESUME_ID-systemd-run.stderr"
+RESUME_SYSTEMD_EXIT_P1="$CONTROL/$RUN_P1-resume-$RESUME_ID-systemd-run.exit-code"
 RESUME_LOG_P1="$CONTROL/$RUN_P1-resume-$RESUME_ID.log"
 test ! -e "$RESUME_LAUNCH_P1"
 test ! -e "$RESUME_CLAIM_P1"
 test ! -e "$RESUME_RECEIPT_P1"
-test ! -e "$RESUME_SNAPSHOT_P1"
 systemctl --user is-active --quiet "$RESUME_UNIT_P1" && exit 4 || true
 RESUME_ARGV_P1=$(jq -cn --args '$ARGS.positional' -- \
   "$PYTHON" -m creditrep.experiments.p7c4b2b_cli resume \
@@ -378,25 +417,14 @@ test -s "$RESUME_LAUNCH_P1"
 test -s "$RESUME_CLAIM_P1"
 test ! -e "$RESUME_RECEIPT_P1"
 systemctl --user is-active --quiet "$RESUME_UNIT_P1" && exit 4 || true
-set +e
-systemd-run --user --unit="$RESUME_UNIT_P1" --collect --working-directory="$REPO" \
-  --property="StandardOutput=append:$RESUME_LOG_P1" \
-  --property="StandardError=append:$RESUME_LOG_P1" \
-  "$PYTHON" -m creditrep.experiments.p7c4b2b_cli resume \
-  --mode cpu_parallel_1 --profile "$PROFILE_P1" --target-machine-asserted \
-  --target-environment "$ENV_P1" --authorization-proposal "$PROPOSAL_P1" \
-  --effective-authorization "$AUTH_P1" --output-dir "$OUT_P1"
-RESUME_SUBMIT_RC=$?
-set -e
-RESUME_SNAPSHOT_JSON=$(systemctl --user show "$RESUME_UNIT_P1" --output=json \
-  -p LoadState -p ActiveState -p SubState -p MainPID -p ExecMainCode \
-  -p ExecMainStatus -p Result -p InvocationID -p ExecMainStartTimestamp \
-  -p ExecMainExitTimestamp | jq '.[0] | with_entries(.value |= tostring)' || \
-  jq -cn '{LoadState:"",ActiveState:"",SubState:"",MainPID:"",ExecMainCode:"",ExecMainStatus:"",Result:"",InvocationID:"",ExecMainStartTimestamp:"",ExecMainExitTimestamp:""}')
-printf '%s\n' "$RESUME_SNAPSHOT_JSON" > "$RESUME_SNAPSHOT_P1"
+"$PYTHON" -m creditrep.experiments.p7c4b2e_operations_cli submit-systemd-run \
+  --submission-result "$RESUME_SUBMISSION_RESULT_P1" --launch-record "$RESUME_LAUNCH_P1" \
+  --systemd-run-stdout "$RESUME_SYSTEMD_STDOUT_P1" --systemd-run-stderr "$RESUME_SYSTEMD_STDERR_P1" \
+  --systemd-run-exit-code-file "$RESUME_SYSTEMD_EXIT_P1"
+RESUME_SUBMIT_RC=$(jq -r '.systemd_run_exit_code' "$RESUME_SUBMISSION_RESULT_P1")
 "$PYTHON" -m creditrep.experiments.p7c4b2e_operations_cli create-submission-receipt \
   --receipt "$RESUME_RECEIPT_P1" --launch-record "$RESUME_LAUNCH_P1" \
-  --unit "$RESUME_UNIT_P1" --unit-snapshot-json "$(cat "$RESUME_SNAPSHOT_P1")" \
+  --unit "$RESUME_UNIT_P1" --submission-result "$RESUME_SUBMISSION_RESULT_P1" \
   --systemd-run-exit-code "$RESUME_SUBMIT_RC"
 test "$RESUME_SUBMIT_RC" -eq 0
 ```
@@ -408,7 +436,6 @@ set -euo pipefail
 test -s "$RESUME_LAUNCH_P1"
 test -s "$RESUME_CLAIM_P1"
 test -s "$RESUME_RECEIPT_P1"
-test -s "$RESUME_SNAPSHOT_P1"
 jq -e --arg unit "$RESUME_UNIT_P1" \
   '.systemd_unit == $unit and .runner_command == "resume"' "$RESUME_LAUNCH_P1"
 jq -e --arg unit "$RESUME_UNIT_P1" \
@@ -432,7 +459,6 @@ Block 13 — resume closeout uses the same public validator:
 set -euo pipefail
 systemctl --user is-active --quiet "$RESUME_UNIT_P1" && exit 4 || true
 test -f "$OUT_P1/COMPLETED.json" || exit 3
-test -s "$RESUME_SNAPSHOT_P1"
 jq -e --arg unit "$RESUME_UNIT_P1" \
   '.systemd_unit == $unit and .runner_command == "resume"' "$RESUME_LAUNCH_P1"
 jq -e --arg unit "$RESUME_UNIT_P1" \
@@ -451,7 +477,7 @@ git status --short --untracked-files=all
 echo 'B2B_P1_RESUME_CLOSEOUT_VALIDATED_NON_SCIENTIFIC_PREFLIGHT_ONLY'
 ```
 
-If a process crashes after a claim is created but before `systemd-run`, stop for
+If a process crashes after a claim is created but before canonical submission, stop for
 explicit operator review. The immutable claim deliberately blocks blind
 resubmission; do not delete or replace it. Execute P2 only through its distinct
 reviewed chain and identities.

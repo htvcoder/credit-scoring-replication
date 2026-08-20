@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import subprocess
+from types import SimpleNamespace
 
 import pytest
 
@@ -15,6 +16,7 @@ from creditrep.protocols.p7c4b2b import (
     PreflightError,
 )
 from creditrep.experiments.p7c4b2b_preflight import execution_guard, load_default_plan
+import creditrep.experiments.p7c4b2b_preflight as runner
 from creditrep.experiments.p7c4b2b_cli import main as cli_main
 from creditrep.protocols.p7c4b2b_authorization import (
     APPROVAL_PHRASE,
@@ -338,6 +340,147 @@ def test_valid_typed_chain_authorizes_only_its_fresh_target_identity(tmp_path, m
         effective_authorization=authorization,
     )
     assert report == {"authorized": True, "reason_codes": []}
+
+
+@pytest.mark.parametrize("create_artifacts", [False, True])
+def test_execution_guard_uses_nearest_existing_anchor_with_missing_hierarchy(
+    tmp_path, monkeypatch, create_artifacts
+):
+    repo = tmp_path / "clean-repo"
+    repo.mkdir()
+    if create_artifacts:
+        (repo / "artifacts").mkdir()
+    output = repo / runner.ARTIFACT_ROOT / "fresh-run"
+    source_root = Path(__file__).resolve().parents[1]
+    plan = load_default_plan(source_root)
+    profile = _profile(source_root)
+    profile["git_commit"] = "a" * 40
+    profile["profile_digest"] = machine_profile_digest(profile)
+    environment = render_target_environment(
+        plan, profile, mode="cpu_parallel_1", output_directory=output, captured_at=NOW
+    )
+    proposal = render_authorization_proposal(
+        environment, plan, profile, run_id=output.name, created_at=NOW
+    )
+    authorization = create_effective_authorization(
+        proposal,
+        environment,
+        plan,
+        profile,
+        operator_identity="operator",
+        operator_approval=APPROVAL_PHRASE,
+        created_at=NOW,
+        expires_at=EXPIRY,
+    )
+    observed = []
+    monkeypatch.setattr(runner.subprocess, "check_output", lambda *_a, **_k: "a" * 40)
+    monkeypatch.setattr(
+        runner.shutil,
+        "disk_usage",
+        lambda path: observed.append(path) or SimpleNamespace(free=64 * 1024**3),
+    )
+
+    report = execution_guard(
+        plan=plan,
+        profile=profile,
+        output_dir=output,
+        mode="cpu_parallel_1",
+        fixture=False,
+        bounded_authorized=False,
+        repo_root=repo,
+        target_environment=environment,
+        authorization_proposal=proposal,
+        effective_authorization=authorization,
+    )
+
+    assert report == {"authorized": True, "reason_codes": []}
+    assert observed == [repo / "artifacts" if create_artifacts else repo]
+    assert (repo / "artifacts").exists() is create_artifacts
+
+
+def test_existing_filesystem_anchor_walks_all_missing_ancestors(tmp_path):
+    repo = tmp_path / "clean-repo"
+    repo.mkdir()
+
+    anchor = runner._existing_filesystem_anchor(repo / "artifacts" / "stage" / "run")
+
+    assert anchor == repo
+    assert not (repo / "artifacts").exists()
+
+
+def test_execution_guard_missing_hierarchy_keeps_disk_guard_fail_closed(
+    tmp_path, monkeypatch
+):
+    repo = tmp_path / "clean-repo"
+    repo.mkdir()
+    output = repo / runner.ARTIFACT_ROOT / "fresh-run"
+    source_root = Path(__file__).resolve().parents[1]
+    plan = load_default_plan(source_root)
+    profile = _profile(source_root)
+    profile["git_commit"] = "a" * 40
+    profile["profile_digest"] = machine_profile_digest(profile)
+    environment = render_target_environment(
+        plan, profile, mode="cpu_parallel_1", output_directory=output, captured_at=NOW
+    )
+    proposal = render_authorization_proposal(
+        environment, plan, profile, run_id=output.name, created_at=NOW
+    )
+    authorization = create_effective_authorization(
+        proposal,
+        environment,
+        plan,
+        profile,
+        operator_identity="operator",
+        operator_approval=APPROVAL_PHRASE,
+        created_at=NOW,
+        expires_at=EXPIRY,
+    )
+    monkeypatch.setattr(runner.subprocess, "check_output", lambda *_a, **_k: "a" * 40)
+    monkeypatch.setattr(
+        runner.shutil,
+        "disk_usage",
+        lambda _path: SimpleNamespace(free=0),
+    )
+
+    report = execution_guard(
+        plan=plan,
+        profile=profile,
+        output_dir=output,
+        mode="cpu_parallel_1",
+        fixture=False,
+        bounded_authorized=False,
+        repo_root=repo,
+        target_environment=environment,
+        authorization_proposal=proposal,
+        effective_authorization=authorization,
+    )
+
+    assert "insufficient_free_disk" in report["reason_codes"]
+    assert not (repo / "artifacts").exists()
+
+
+def test_capture_machine_profile_uses_repo_anchor_without_artifacts_root(
+    tmp_path, monkeypatch
+):
+    repo = tmp_path / "clean-repo"
+    repo.mkdir()
+    observed = []
+
+    def fake_check_output(command, **_kwargs):
+        return "a" * 40 if command[0] == "git" else "package==1\n"
+
+    monkeypatch.setattr(runner.subprocess, "check_output", fake_check_output)
+    monkeypatch.setattr(
+        runner.shutil,
+        "disk_usage",
+        lambda path: observed.append(path) or SimpleNamespace(free=64 * 1024**3),
+    )
+
+    profile = runner.capture_machine_profile(repo_root=repo)
+
+    assert profile["disk_free_bytes"] == 64 * 1024**3
+    assert observed == [repo]
+    assert not (repo / "artifacts").exists()
 
 
 def test_typed_cli_validation_commands_emit_machine_json(tmp_path, capsys):
