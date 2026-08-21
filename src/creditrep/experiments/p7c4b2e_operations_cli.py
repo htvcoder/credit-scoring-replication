@@ -897,8 +897,13 @@ def _submission_capture_path(launch_record_path: Path) -> Path:
     )
 
 
-def _validate_outer_launch_for_submission(record: dict[str, Any]) -> None:
-    """Revalidate a fresh outer launch independently at the submit boundary."""
+def _validate_outer_launch(
+    record: dict[str, Any],
+    *,
+    require_fresh_run_output: bool,
+    require_live_git_provenance: bool,
+) -> None:
+    """Validate an outer launch at either submit or receipt boundary."""
     expected_fields = OUTER_LAUNCH_RECORD_FIELDS | (
         {"resume_of_launch_record"}
         if record.get("runner_command") == "resume"
@@ -1028,7 +1033,9 @@ def _validate_outer_launch_for_submission(record: dict[str, Any]) -> None:
         ):
             raise OperationsError("systemd_unit_mismatch")
         if record["runner_command"] == "run":
-            if output_path.exists() or "resume_of_launch_record" in record:
+            if "resume_of_launch_record" in record:
+                raise OperationsError("output_collision")
+            if require_fresh_run_output and output_path.exists():
                 raise OperationsError("output_collision")
         elif record["runner_command"] == "resume":
             original = record["resume_of_launch_record"]
@@ -1058,7 +1065,11 @@ def _validate_outer_launch_for_submission(record: dict[str, Any]) -> None:
                 raise OperationsError("resume_launch_identity_mismatch")
         else:
             raise OperationsError("operational_argv_mismatch")
-        if _working_tree_git_head(resolved["working"]) != record["source_git_commit"]:
+        if (
+            require_live_git_provenance
+            and _working_tree_git_head(resolved["working"])
+            != record["source_git_commit"]
+        ):
             raise OperationsError("operational_git_provenance_mismatch")
         _revalidate_operational_paths(paths, resolved)
     except (KeyError, TypeError, ValueError) as exc:
@@ -1067,8 +1078,28 @@ def _validate_outer_launch_for_submission(record: dict[str, Any]) -> None:
         raise OperationsError("launch_record_state_invalid") from exc
 
 
-def _validate_b2b_launch_for_submission(record: dict[str, Any]) -> None:
-    """Revalidate the typed B2b launch at the same submit boundary as outer."""
+def _validate_outer_launch_for_submission(record: dict[str, Any]) -> None:
+    """Revalidate a fresh outer launch independently at the submit boundary."""
+    _validate_outer_launch(
+        record,
+        require_fresh_run_output=True,
+        require_live_git_provenance=True,
+    )
+
+
+def _validate_outer_launch_for_post_submission_evidence(record: dict[str, Any]) -> None:
+    """Validate immutable outer submission evidence without fresh-run assumptions."""
+    _validate_outer_launch(
+        record,
+        require_fresh_run_output=False,
+        require_live_git_provenance=False,
+    )
+
+
+def _validate_b2b_launch(
+    record: dict[str, Any], *, require_live_git_provenance: bool
+) -> None:
+    """Validate a typed B2b launch at either submit or receipt boundary."""
     if (
         set(record) != B2B_LAUNCH_RECORD_FIELDS
         or record.get("schema_version") != LAUNCH_RECORD_SCHEMA_VERSION
@@ -1188,7 +1219,11 @@ def _validate_b2b_launch_for_submission(record: dict[str, Any]) -> None:
         ]
         if record.get("argv") != expected_argv:
             raise OperationsError("operational_argv_mismatch")
-        if _working_tree_git_head(resolved["working"]) != record["source_git_commit"]:
+        if (
+            require_live_git_provenance
+            and _working_tree_git_head(resolved["working"])
+            != record["source_git_commit"]
+        ):
             raise OperationsError("operational_git_provenance_mismatch")
         _revalidate_operational_paths(paths, resolved)
     except (KeyError, TypeError, ValueError) as exc:
@@ -1197,12 +1232,34 @@ def _validate_b2b_launch_for_submission(record: dict[str, Any]) -> None:
         raise OperationsError("launch_record_state_invalid") from exc
 
 
+def _validate_b2b_launch_for_submission(record: dict[str, Any]) -> None:
+    """Revalidate the typed B2b launch at the submit boundary."""
+    _validate_b2b_launch(record, require_live_git_provenance=True)
+
+
+def _validate_b2b_launch_for_post_submission_evidence(record: dict[str, Any]) -> None:
+    """Validate immutable B2b submission evidence without live Git dependency."""
+    _validate_b2b_launch(record, require_live_git_provenance=False)
+
+
 def _hardened_submission_stage(record: dict[str, Any]) -> str:
     stage = record.get("execution_stage")
     if stage == "target-outer-projection-preflight":
         _validate_outer_launch_for_submission(record)
     elif stage == "target-inner-preflight":
         _validate_b2b_launch_for_submission(record)
+    else:
+        raise OperationsError("launch_record_state_invalid")
+    return stage
+
+
+def _post_submission_evidence_stage(record: dict[str, Any]) -> str:
+    """Validate launch identity for read-only receipt recovery."""
+    stage = record.get("execution_stage")
+    if stage == "target-outer-projection-preflight":
+        _validate_outer_launch_for_post_submission_evidence(record)
+    elif stage == "target-inner-preflight":
+        _validate_b2b_launch_for_post_submission_evidence(record)
     else:
         raise OperationsError("launch_record_state_invalid")
     return stage
@@ -1728,7 +1785,11 @@ def create_submission_receipt(
     if fresh_b2b and submission_result_path is None:
         raise OperationsError("submission_result_missing")
     if fresh_outer or fresh_b2b:
-        hardened_stage = _hardened_submission_stage(record)
+        # Receipt creation is post-submit recovery.  It binds the immutable
+        # launch/claim/attempt/capture/result chain, but must not treat a
+        # runner-created authorized output directory (or a later checkout)
+        # as evidence that the already-submitted launch was unsafe.
+        hardened_stage = _post_submission_evidence_stage(record)
         if submission_result_path is None:
             raise OperationsError("submission_result_missing")
         result, result_hash = _json_input(submission_result_path)

@@ -1285,6 +1285,115 @@ def test_outer_receipt_live_and_collected_recovery_are_submission_only(tmp_path)
     assert recovered["invocation_id"] == "09c753f133ac4a3fae89ba13ec21b3fe"
 
 
+def test_outer_submit_rejects_output_created_before_submission_attempt(tmp_path):
+    launch_path, receipt_path, launch, _argv = _typed_outer_launch(tmp_path)
+    create_submission_claim(launch_record_path=launch_path, receipt_path=receipt_path)
+    Path(launch["output_directory"]).mkdir()
+
+    with pytest.raises(OperationsError, match="^output_collision$"):
+        operations._create_submission_attempt(launch_path)
+
+
+def test_outer_receipt_accepts_runner_created_authorized_output_after_submission(
+    tmp_path, monkeypatch
+):
+    """Reproduce launch -> claim -> submit -> output -> receipt ordering."""
+    launch_path, receipt_path, launch, _argv = _typed_outer_launch(tmp_path)
+    create_submission_claim(launch_record_path=launch_path, receipt_path=receipt_path)
+    result_path, result = _outer_submission_result(tmp_path, launch_path, launch)
+
+    output = Path(launch["output_directory"])
+    output.mkdir()
+    (output / "partial-run-artifact.json").write_text("partial\n", encoding="utf-8")
+    # A receipt validates immutable execution evidence, not the mutable HEAD
+    # after a hotfix checkout.
+    monkeypatch.setattr(operations, "_working_tree_git_head", lambda _path: "b" * 40)
+    collected = {field: "" for field in UNIT_SNAPSHOT_FIELDS}
+    collected["LoadState"] = "not-found"
+
+    receipt = create_submission_receipt(
+        receipt_path=receipt_path,
+        launch_record_path=launch_path,
+        unit_snapshot=collected,
+        systemd_run_exit_code=0,
+        observed_unit=launch["systemd_unit"],
+        submission_result_path=result_path,
+    )
+
+    assert receipt["invocation_id"] == result["invocation_id"]
+    assert receipt["unit_snapshot_status"] == "unavailable_unit_collected"
+    assert receipt["evidence_scope"] == "submission_outcome_only_not_compute_success"
+
+
+def test_outer_receipt_still_rejects_substituted_output_identity(tmp_path):
+    launch_path, receipt_path, launch, _argv = _typed_outer_launch(tmp_path)
+    create_submission_claim(launch_record_path=launch_path, receipt_path=receipt_path)
+    result_path, _result = _outer_submission_result(tmp_path, launch_path, launch)
+    launch["output_directory"] = str(tmp_path / "other-output")
+    launch["record_digest"] = operations._record_digest(launch, "record_digest")
+    launch_path.write_text(json.dumps(launch), encoding="utf-8")
+    collected = {field: "" for field in UNIT_SNAPSHOT_FIELDS}
+    collected["LoadState"] = "not-found"
+
+    with pytest.raises(OperationsError, match="^operational_identity_mismatch$"):
+        create_submission_receipt(
+            receipt_path=receipt_path,
+            launch_record_path=launch_path,
+            unit_snapshot=collected,
+            systemd_run_exit_code=0,
+            observed_unit=launch["systemd_unit"],
+            submission_result_path=result_path,
+        )
+
+
+def test_b2b_receipt_recovery_does_not_depend_on_current_git_head(tmp_path, monkeypatch):
+    launch_path, receipt_path, launch, _profile = _typed_inner_launch(tmp_path)
+    monkeypatch.setattr(
+        operations, "_working_tree_git_head", lambda _path: launch["source_git_commit"]
+    )
+    create_submission_claim(launch_record_path=launch_path, receipt_path=receipt_path)
+    result_path, _result = _outer_submission_result(tmp_path, launch_path, launch)
+    monkeypatch.setattr(operations, "_working_tree_git_head", lambda _path: "b" * 40)
+
+    receipt = create_submission_receipt(
+        receipt_path=receipt_path,
+        launch_record_path=launch_path,
+        unit_snapshot=None,
+        systemd_run_exit_code=0,
+        observed_unit=launch["systemd_unit"],
+        submission_result_path=result_path,
+    )
+
+    assert receipt["unit_snapshot_status"] == "recovered_from_immutable_submission_result"
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [("mode", "cpu_parallel_2"), ("source_git_commit", "c" * 40)],
+)
+def test_outer_receipt_still_rejects_modified_launch_control_binding(
+    tmp_path, field, value
+):
+    launch_path, receipt_path, launch, _argv = _typed_outer_launch(tmp_path)
+    create_submission_claim(launch_record_path=launch_path, receipt_path=receipt_path)
+    result_path, _result = _outer_submission_result(tmp_path, launch_path, launch)
+    launch[field] = value
+    launch["record_digest"] = operations._record_digest(launch, "record_digest")
+    launch_path.write_text(json.dumps(launch), encoding="utf-8")
+    collected = {field: "" for field in UNIT_SNAPSHOT_FIELDS}
+    collected["LoadState"] = "not-found"
+
+    with pytest.raises(OperationsError, match="^operational_identity_mismatch$"):
+        create_submission_receipt(
+            receipt_path=receipt_path,
+            launch_record_path=launch_path,
+            unit_snapshot=collected,
+            systemd_run_exit_code=0,
+            observed_unit=launch["systemd_unit"],
+            submission_result_path=result_path,
+        )
+
+
 def test_exact_incident_systemd_output_with_service_suffix_parses():
     unit = "p7c4b2c-outer-p1-target-outer-p1-20260815-01.service"
     output = (
