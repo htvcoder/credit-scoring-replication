@@ -725,6 +725,7 @@ def _typed_outer_launch(
     working_directory=None,
     unit=None,
     advance_git_head=False,
+    sort_control_json=False,
 ):
     repo = Path(working_directory) if working_directory else tmp_path / "repo"
     (repo / ".venv" / "bin").mkdir(parents=True, exist_ok=True)
@@ -815,11 +816,16 @@ def _typed_outer_launch(
         "authorization_digest",
     )
     environment = _input(
-        tmp_path / f"environment-{mode}.json", json.dumps(environment_value)
+        tmp_path / f"environment-{mode}.json",
+        json.dumps(environment_value, sort_keys=sort_control_json),
     )
-    proposal = _input(tmp_path / f"proposal-{mode}.json", json.dumps(proposal_value))
+    proposal = _input(
+        tmp_path / f"proposal-{mode}.json",
+        json.dumps(proposal_value, sort_keys=sort_control_json),
+    )
     authorization = _input(
-        tmp_path / f"authorization-{mode}.json", json.dumps(authorization_value)
+        tmp_path / f"authorization-{mode}.json",
+        json.dumps(authorization_value, sort_keys=sort_control_json),
     )
     controls = [
         "--target-environment",
@@ -970,6 +976,120 @@ def test_typed_outer_projection_run_launch_is_exact_and_bound(tmp_path, mode):
     assert launch["resolved_output_directory"] == str(
         Path(launch["output_directory"]).resolve()
     )
+
+
+@pytest.mark.parametrize("runner_command", ["run", "resume"])
+def test_typed_outer_projection_accepts_sorted_control_json(tmp_path, runner_command):
+    _path, _receipt, launch, _argv = _typed_outer_launch(
+        tmp_path,
+        runner_command=runner_command,
+        sort_control_json=True,
+    )
+    assert launch["protocol_stage"] == "target_projection_preflight"
+    assert launch["mode"] == "cpu_parallel_1"
+    assert len(launch["task_ids"]) == 162
+
+
+def _outer_identity_controls():
+    dataset_ids = ["AC", "GC", "TH02", "HMEQ", "TC", "GMC"]
+    dataset_hashes = {
+        dataset_id: f"{index + 1:064x}" for index, dataset_id in enumerate(dataset_ids)
+    }
+    task_ids = [f"task-{index:03d}" for index in range(162)]
+    environment = {
+        "git_commit": "a" * 40,
+        "execution_mode": "cpu_parallel_1",
+        "environment_digest": "e" * 64,
+        "dataset_ids": dataset_ids,
+        "dataset_hashes": dataset_hashes,
+        "dataset_binding_digest": "d" * 64,
+    }
+    proposal = {
+        "execution_stage": "target_projection_preflight",
+        "git_commit": "a" * 40,
+        "execution_mode": "cpu_parallel_1",
+        "target_environment_digest": environment["environment_digest"],
+        "proposal_digest": "p" * 64,
+        "task_ids": task_ids,
+        "maximum_task_count": 162,
+        "dataset_ids": dataset_ids,
+        "dataset_hashes": dataset_hashes,
+        "dataset_binding_digest": "d" * 64,
+    }
+    authorization = {
+        **proposal,
+        "authorization_digest": "b" * 64,
+    }
+    return environment, proposal, authorization
+
+
+def test_outer_control_identity_accepts_json_round_trip_and_reordered_hash_mapping():
+    environment, proposal, authorization = _outer_identity_controls()
+    environment, proposal, authorization = (
+        json.loads(json.dumps(value, sort_keys=True))
+        for value in (environment, proposal, authorization)
+    )
+    mode, _task_set_digest, task_ids = operations._outer_control_identity(
+        authorization=authorization,
+        environment=environment,
+        proposal=proposal,
+        git_commit="a" * 40,
+    )
+    assert (mode, len(task_ids)) == ("cpu_parallel_1", 162)
+
+    reordered = dict(reversed(list(authorization["dataset_hashes"].items())))
+    for control in (environment, proposal, authorization):
+        control["dataset_hashes"] = reordered
+    assert operations._outer_control_identity(
+        authorization=authorization,
+        environment=environment,
+        proposal=proposal,
+        git_commit="a" * 40,
+    )[0] == "cpu_parallel_1"
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["missing", "extra", "malformed", "reordered_ids", "hash_disagreement", "binding_disagreement"],
+)
+def test_outer_control_identity_keeps_dataset_contract_strict(mutation):
+    environment, proposal, authorization = _outer_identity_controls()
+    if mutation == "missing":
+        for control in (environment, proposal, authorization):
+            control["dataset_hashes"] = {
+                key: value
+                for key, value in control["dataset_hashes"].items()
+                if key != "AC"
+            }
+    elif mutation == "extra":
+        for control in (environment, proposal, authorization):
+            control["dataset_hashes"] = {
+                **control["dataset_hashes"],
+                "EXTRA": "0" * 64,
+            }
+    elif mutation == "malformed":
+        for control in (environment, proposal, authorization):
+            control["dataset_hashes"] = {
+                **control["dataset_hashes"],
+                "AC": "not-a-sha256",
+            }
+    elif mutation == "reordered_ids":
+        for control in (environment, proposal, authorization):
+            control["dataset_ids"] = list(reversed(control["dataset_ids"]))
+    elif mutation == "hash_disagreement":
+        proposal["dataset_hashes"] = {
+            **proposal["dataset_hashes"],
+            "AC": "0" * 64,
+        }
+    else:
+        proposal["dataset_binding_digest"] = "c" * 64
+    with pytest.raises(OperationsError, match="^operational_identity_mismatch$"):
+        operations._outer_control_identity(
+            authorization=authorization,
+            environment=environment,
+            proposal=proposal,
+            git_commit="a" * 40,
+        )
 
 
 def test_typed_outer_projection_rejects_stale_control_source_sha(tmp_path):

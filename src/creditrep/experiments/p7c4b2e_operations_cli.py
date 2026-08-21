@@ -412,7 +412,10 @@ def _outer_control_identity(
             for value in (environment, proposal, authorization)
         )
         or not isinstance(dataset_hashes, dict)
-        or tuple(dataset_hashes) != OUTER_DATASET_IDS
+        # dataset_hashes is a semantic mapping.  CLI control files are
+        # serialized with sort_keys=True, so JSON member order is not part of
+        # this identity contract; dataset_ids remains ordered above.
+        or set(dataset_hashes) != set(OUTER_DATASET_IDS)
         or any(
             not isinstance(item, str) or re.fullmatch(r"[A-Fa-f0-9]{64}", item) is None
             for item in dataset_hashes.values()
