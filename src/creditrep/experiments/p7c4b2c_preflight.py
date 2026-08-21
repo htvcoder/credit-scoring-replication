@@ -557,7 +557,9 @@ def _validate_persisted_target_contract(
         if (
             dataset_ids != list(OUTER_PROJECTION_RUNTIME_DATASETS)
             or not isinstance(dataset_hashes, dict)
-            or tuple(dataset_hashes) != OUTER_PROJECTION_RUNTIME_DATASETS
+            # Dataset hashes are a mapping: JSON serialization may reorder
+            # its keys, while dataset_ids deliberately remains ordered.
+            or set(dataset_hashes) != set(OUTER_PROJECTION_RUNTIME_DATASETS)
             or provenance.get("dataset_binding_digest") != expected_dataset_binding
         ):
             codes.append("outer_dataset_binding_mismatch")

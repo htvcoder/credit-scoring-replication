@@ -476,6 +476,85 @@ def test_outer_environment_inventory_and_hash_mutations_fail_closed(
     }
 
 
+def test_projection_dataset_hash_inventory_survives_json_key_reordering(
+    tmp_path, monkeypatch
+):
+    plan, root = _plan(), _repo(tmp_path)
+    environment = _as_projection_environment(
+        _environment(plan, root, monkeypatch), plan, root
+    )
+
+    # This is the CLI persistence boundary: its JSON output uses sort_keys=True.
+    persisted = json.loads(json.dumps(environment, sort_keys=True))
+    assert list(persisted["dataset_hashes"]) != list(OUTER_PROJECTION_RUNTIME_DATASETS)
+    report = validate_target_environment(
+        persisted,
+        plan,
+        execution_stage=TARGET_PROJECTION_PREFLIGHT_STAGE,
+        repo_root=root,
+        spawn_probe=_pass_probe,
+    )
+    assert report["valid"]
+
+    reordered = dict(reversed(list(environment["dataset_hashes"].items())))
+    environment["dataset_hashes"] = reordered
+    environment["environment_digest"] = environment_digest(environment)
+    assert validate_target_environment(
+        environment,
+        plan,
+        execution_stage=TARGET_PROJECTION_PREFLIGHT_STAGE,
+        repo_root=root,
+        spawn_probe=_pass_probe,
+    )["valid"]
+
+
+@pytest.mark.parametrize(
+    "mutation,expected_code",
+    [
+        ("missing", "outer_dataset_inventory_mismatch"),
+        ("extra", "outer_dataset_inventory_mismatch"),
+        ("wrong_hash", "outer_dataset_hash_mismatch"),
+        ("malformed_hash", "outer_dataset_inventory_mismatch"),
+        ("wrong_locked_digest", "locked_runtime_input_mismatch"),
+        ("reordered_ids", "outer_dataset_inventory_mismatch"),
+    ],
+)
+def test_projection_dataset_inventory_contract_remains_strict(
+    tmp_path, monkeypatch, mutation, expected_code
+):
+    plan, root = _plan(), _repo(tmp_path)
+    environment = _as_projection_environment(
+        _environment(plan, root, monkeypatch), plan, root
+    )
+    if mutation == "missing":
+        environment["dataset_hashes"].pop("AC")
+    elif mutation == "extra":
+        environment["dataset_hashes"]["EXTRA"] = "A" * 64
+    elif mutation == "wrong_hash":
+        environment["dataset_hashes"]["AC"] = "0" * 64
+    elif mutation == "malformed_hash":
+        environment["dataset_hashes"]["AC"] = "not-a-sha256"
+    elif mutation == "wrong_locked_digest":
+        environment["locked_runtime_inputs_digest"] = "0" * 64
+    else:
+        environment["dataset_ids"] = list(reversed(environment["dataset_ids"]))
+    environment["dataset_binding_digest"] = dataset_binding_digest(
+        dataset_ids=environment["dataset_ids"],
+        dataset_hashes=environment["dataset_hashes"],
+        locked_runtime_inputs_digest=environment["locked_runtime_inputs_digest"],
+        plan_digest=environment["plan_digest"],
+    )
+    environment["environment_digest"] = environment_digest(environment)
+    report = validate_target_environment(
+        environment,
+        plan,
+        execution_stage=TARGET_PROJECTION_PREFLIGHT_STAGE,
+        repo_root=root,
+        spawn_probe=_pass_probe,
+    )
+    assert expected_code in report["reason_codes"]
+
+
 def test_outer_partial_historical_binding_fails_before_output_or_fit(
     tmp_path, monkeypatch
 ):
@@ -1161,6 +1240,80 @@ def test_collector_measures_cpu_ram_and_merges_only_operator_fields(
     assert value["environment_digest"] == environment_digest(value)
 
 
+@pytest.mark.parametrize(
+    "relative_output,prepare,expected_anchor",
+    [
+        ("artifacts/existing-target", "target", "artifacts/existing-target"),
+        ("artifacts/existing-parent/target", "parent", "artifacts/existing-parent"),
+        ("artifacts/missing/a/b/target", "none", "artifacts"),
+    ],
+)
+def test_collector_uses_nearest_existing_filesystem_anchor_without_creating_output(
+    tmp_path, monkeypatch, relative_output, prepare, expected_anchor
+):
+    plan, root = _plan(), _repo(tmp_path)
+    target = root / relative_output
+    if prepare == "target":
+        target.mkdir()
+    elif prepare == "parent":
+        target.parent.mkdir()
+    observed = []
+    monkeypatch.setattr(
+        "creditrep.protocols.p7c4b2d.shutil.disk_usage",
+        lambda path: (observed.append(Path(path)) or SimpleNamespace(free=123456)),
+    )
+    value = collect_target_environment(
+        plan,
+        mode="cpu_parallel_1",
+        output_directory=relative_output,
+        repo_root=root,
+    )
+    assert value["free_disk_bytes"] == 123456
+    assert observed == [root / expected_anchor]
+    assert target.exists() is (prepare == "target")
+
+
+def test_collector_filesystem_probe_error_fails_closed(tmp_path, monkeypatch):
+    plan, root = _plan(), _repo(tmp_path)
+    target = root / "artifacts" / "missing" / "target"
+    monkeypatch.setattr(
+        "creditrep.protocols.p7c4b2d.shutil.disk_usage",
+        lambda _path: (_ for _ in ()).throw(OSError("fixture failure")),
+    )
+    value = collect_target_environment(
+        plan,
+        mode="cpu_parallel_1",
+        output_directory=str(target),
+        repo_root=root,
+    )
+    assert value["free_disk_bytes"] is None
+    assert not target.exists()
+
+
+def test_collector_uses_symlinked_filesystem_anchor(tmp_path, monkeypatch):
+    plan, root = _plan(), _repo(tmp_path)
+    link = tmp_path / "artifact-link"
+    try:
+        link.symlink_to(root / "artifacts", target_is_directory=True)
+    except OSError:
+        pytest.skip("symlink creation is unavailable on this platform")
+    observed = []
+    monkeypatch.setattr(
+        "creditrep.protocols.p7c4b2d.shutil.disk_usage",
+        lambda path: (observed.append(Path(path)) or SimpleNamespace(free=123456)),
+    )
+    value = collect_target_environment(
+        plan,
+        mode="cpu_parallel_1",
+        output_directory=str(link / "missing" / "target"),
+        repo_root=root,
+    )
+    assert value["free_disk_bytes"] == 123456
+    assert len(observed) == 1
+    assert observed[0].resolve() == (root / "artifacts").resolve()
+    assert not (link / "missing" / "target").exists()
+
+
 def test_cli_collect_metadata_and_complete_evidence_review_remain_non_effective(
     tmp_path, monkeypatch, capsys
 ):
@@ -1200,6 +1353,80 @@ def test_cli_collect_metadata_and_complete_evidence_review_remain_non_effective(
     assert cli.main(["review-plan", "--environment", str(evidence_path)]) == 0
     review = json.loads(capsys.readouterr().out)
     assert review["execution_plan_eligible"] is False
+
+
+def test_projection_preflight_cli_json_round_trip_reaches_non_effective_proposal(
+    tmp_path, monkeypatch, capsys
+):
+    plan, root = _plan(), _repo(tmp_path)
+    metadata_path = tmp_path / "operator-metadata.json"
+    metadata = _operator_metadata()
+    metadata.update(
+        {
+            "maximum_runtime_hours": 12,
+            "maximum_monetary_budget": "5.0",
+            "hourly_price": "0.26",
+        }
+    )
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+    collected = _as_projection_environment(
+        _environment(plan, root, monkeypatch), plan, root
+    )
+    monkeypatch.setattr(cli, "find_repo_root", lambda: root)
+    monkeypatch.setattr(cli, "_plan", lambda _: plan)
+    monkeypatch.setattr(
+        cli,
+        "collect_target_environment",
+        lambda *_args, **kwargs: merge_operator_metadata(
+            collected, kwargs["operator_metadata"]
+        ),
+    )
+    monkeypatch.setattr("creditrep.protocols.p7c4b2d.probe_process_spawn", _pass_probe)
+
+    assert cli.main(
+        [
+            "collect-target-environment",
+            "--mode",
+            "cpu_parallel_1",
+            "--stage",
+            TARGET_PROJECTION_PREFLIGHT_STAGE,
+            "--output-directory",
+            "artifacts/projection-preflight-fixture",
+            "--operator-metadata",
+            str(metadata_path),
+        ]
+    ) == EXIT_REVIEW_BLOCKED
+    environment_path = tmp_path / "environment.json"
+    environment_path.write_text(capsys.readouterr().out, encoding="utf-8")
+
+    assert cli.main(["inspect-target-requirements", "--environment", str(environment_path)]) == 0
+    inspection = json.loads(capsys.readouterr().out)
+    assert inspection["valid"]
+
+    assert cli.main(
+        [
+            "render-authorization-proposal",
+            "--stage",
+            TARGET_PROJECTION_PREFLIGHT_STAGE,
+            "--environment",
+            str(environment_path),
+        ]
+    ) == 0
+    proposal = json.loads(capsys.readouterr().out)
+    proposal_path = tmp_path / "proposal.json"
+    proposal_path.write_text(json.dumps(proposal, sort_keys=True), encoding="utf-8")
+    assert proposal["maximum_task_count"] == 162
+    assert proposal["authorization_effective"] is False
+    assert cli.main(
+        [
+            "validate-authorization-proposal",
+            "--environment",
+            str(environment_path),
+            "--proposal",
+            str(proposal_path),
+        ]
+    ) == 0
+    assert json.loads(capsys.readouterr().out)["valid"]
 
 
 def test_effective_authorization_is_explicit_scoped_and_valid(tmp_path, monkeypatch):

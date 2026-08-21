@@ -537,7 +537,15 @@ def collect_target_environment(
     if not target.is_absolute():
         target = root / target
     try:
-        disk = shutil.disk_usage(target if target.exists() else target.parent)
+        # The output namespace intentionally need not exist during collection.
+        # Walk to an existing ancestor so disk probing remains read-only even
+        # when several output parents have not yet been created.
+        anchor = target
+        while not anchor.exists() and anchor != anchor.parent:
+            anchor = anchor.parent
+        if not anchor.exists():
+            raise OSError("no existing filesystem anchor")
+        disk = shutil.disk_usage(anchor)
         free_disk = disk.free
     except OSError:
         free_disk = None
@@ -889,7 +897,9 @@ def validate_target_environment(
         supplied = environment.get("dataset_hashes")
         if (
             not isinstance(supplied, dict)
-            or tuple(supplied) != expected_dataset_ids
+            # JSON object member order is not part of the dataset-hash
+            # contract.  Inventory membership and values remain strict.
+            or set(supplied) != set(expected_dataset_ids)
             or not all(_sha256(value) for value in supplied.values())
         ):
             codes.append(

@@ -320,6 +320,11 @@ not a projection compatibility path. Runner run/resume and final validation
 recheck the same binding before output creation/dispatch and in persisted
 provenance.
 
+`dataset_ids` is the ordered contract sequence. `dataset_hashes` is a strict
+dataset-ID-to-SHA-256 mapping: membership and hashes must match exactly, but
+JSON object key order is not semantically meaningful and may change at the CLI
+serialization boundary.
+
 Outer operator evidence uses the distinct closed operations stage
 `target-outer-projection-preflight`, mapped exactly to protocol stage
 `target_projection_preflight`. Its typed launch/claim/submission-result/receipt chain binds the
