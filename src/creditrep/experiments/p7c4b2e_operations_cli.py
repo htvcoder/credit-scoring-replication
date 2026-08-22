@@ -2110,37 +2110,19 @@ def resume_precheck(
     # Import only after the cheap structural fail-closed checks. Launch-record
     # creation and malformed-run rejection must remain usable before the target
     # ML runtime is imported or validated.
-    from creditrep.experiments.p7c4b2c_preflight import validate_artifacts
+    from creditrep.experiments.p7c4b2c_preflight import validate_resume_state
 
-    report = validate_artifacts(run_dir)
-    unsafe_report_codes = [
-        code
-        for code in report.get("reason_codes", [])
-        if any(
-            marker in code
-            for marker in (
-                "corrupt",
-                "invalid",
-                "malformed",
-                "mismatch",
-                "rollback",
-                "runtime_state",
-                "failure",
-            )
-        )
-    ]
+    # B2c owns the persistence contract.  Do not classify its reason-code text:
+    # an unfinished run can legitimately have stale derived artifacts while an
+    # identity mismatch is terminal.  `resume_safe` captures that distinction.
+    report = validate_resume_state(run_dir)
     completed, expected = report.get("completed"), report.get("expected")
     incomplete = (
         isinstance(completed, int)
         and isinstance(expected, int)
         and 0 <= completed < expected
     )
-    eligible = (
-        incomplete
-        and not (run_dir / "COMPLETED.json").exists()
-        and not operational_codes
-        and not unsafe_report_codes
-    )
+    eligible = bool(report.get("resume_safe")) and not operational_codes
     return {
         "valid": eligible,
         "reason_codes": sorted(

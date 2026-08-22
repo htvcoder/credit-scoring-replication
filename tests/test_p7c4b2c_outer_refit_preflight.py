@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from copy import deepcopy
 from pathlib import Path
 
@@ -12,7 +13,9 @@ from creditrep.experiments.p7c4b2c_preflight import (
     resume,
     run,
     validate_artifacts,
+    validate_resume_state,
 )
+from creditrep.experiments import p7c4b2c_preflight as outer_runner
 from creditrep.experiments.p7c4b2c_cli import main as cli_main
 from creditrep.protocols.p7c4b2a import load_manifest
 from creditrep.protocols.p7c4b2b import (
@@ -228,6 +231,48 @@ def test_run_has_no_overwrite_and_resume_skips_valid_samples(tmp_path):
     result = resume(output)
     assert result["executed"] == 0
     assert result["skipped"] == 4
+
+
+def test_resume_state_accepts_structurally_valid_incomplete_run(tmp_path):
+    output = _synthetic_run(tmp_path)
+    sample = next((output / "samples").iterdir())
+    for path in (sample, output / "COMPLETED.json"):
+        if path.is_dir():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+    state = validate_resume_state(output)
+    assert state["valid"] is True
+    assert state["completion_state"] == "incomplete"
+    assert state["resume_safe"] is True
+
+
+def test_resume_state_rejects_completed_sample_integrity_failure(tmp_path):
+    output = _synthetic_run(tmp_path)
+    sample = next((output / "samples").iterdir())
+    (sample / "COMPLETED.json").unlink()
+    (output / "COMPLETED.json").unlink()
+    state = validate_resume_state(output)
+    assert state["resume_safe"] is False
+    assert "complete_marker_integrity_failure" in state["reason_codes"]
+
+
+def test_outer_rss_sampler_tolerates_only_verified_child_disappearance(monkeypatch):
+    class Process:
+        pid = 9
+
+        def children(self, recursive):
+            return []
+
+        def memory_info(self):
+            raise outer_runner.psutil.NoSuchProcess(9)
+
+    monkeypatch.setattr(outer_runner.psutil, "Process", lambda _pid: Process())
+    monkeypatch.setattr(outer_runner.psutil, "pid_exists", lambda _pid: False)
+    assert outer_runner._aggregate_process_tree_rss(9) == 0
+    monkeypatch.setattr(outer_runner.psutil, "pid_exists", lambda _pid: True)
+    with pytest.raises(P7C4B2CError, match="memory_sampler_failure"):
+        outer_runner._aggregate_process_tree_rss(9)
 
 
 def test_resume_quarantines_corrupt_sample_and_stale_temp(tmp_path):

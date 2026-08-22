@@ -1095,14 +1095,26 @@ def _task_process_entry(result_queue: Any, kwargs: dict[str, Any]) -> None:
 
 
 def _aggregate_process_tree_rss(root_pid: int) -> int:
+    """Return an exact deduplicated RSS sample, failing closed when uncertain."""
     try:
         root = psutil.Process(root_pid)
         processes = {
             process.pid: process for process in [root, *root.children(recursive=True)]
         }
-        return sum(process.memory_info().rss for process in processes.values())
-    except (psutil.Error, OSError):
-        raise P7C4B2CError("memory_sampler_failure") from None
+    except (psutil.Error, OSError) as exc:
+        raise P7C4B2CError("memory_sampler_failure") from exc
+    total = 0
+    for sampled_pid, process in processes.items():
+        try:
+            total += process.memory_info().rss
+        except (psutil.NoSuchProcess, psutil.ZombieProcess) as exc:
+            # A child can exit after recursive enumeration.  It is benign only
+            # when a second OS-level check proves that this exact PID is gone.
+            if psutil.pid_exists(sampled_pid):
+                raise P7C4B2CError("memory_sampler_failure") from exc
+        except (psutil.AccessDenied, OSError, psutil.Error) as exc:
+            raise P7C4B2CError("memory_sampler_failure") from exc
+    return total
 
 
 def _terminate_and_reap(processes: list[Any]) -> bool:
@@ -1775,6 +1787,7 @@ def _validate_artifacts(
     *,
     allow_missing_derived: bool = False,
     allow_missing_marker: bool = False,
+    allow_incomplete: bool = False,
     repo_root: Path | None = None,
 ) -> dict[str, Any]:
     run_dir = run_dir.resolve()
@@ -1824,7 +1837,7 @@ def _validate_artifacts(
     )
     if any(path.name not in set(expected_ids) for path in actual_dirs):
         codes.append("unexpected_sample")
-    if set(expected_ids) - {path.name for path in actual_dirs}:
+    if not allow_incomplete and set(expected_ids) - {path.name for path in actual_dirs}:
         codes.append("missing_planned_sample")
     records = []
     task_by_id = {task["sample_id"]: task for task in expected}
@@ -1951,3 +1964,37 @@ def validate_artifacts(
 ) -> dict[str, Any]:
     """Validate a persisted run; completed runs always require their run marker."""
     return _validate_artifacts(run_dir, repo_root=repo_root)
+
+
+def validate_resume_state(
+    run_dir: Path, *, repo_root: Path | None = None
+) -> dict[str, Any]:
+    """Assess whether persisted state is structurally safe to resume.
+
+    This is deliberately distinct from final artifact validation: missing planned
+    samples, final derived artifacts, and the global completion marker are normal
+    before finalization.  Every persisted sample and all core/provenance/runtime
+    invariants remain subject to the ordinary fail-closed validator.
+    """
+    report = _validate_artifacts(
+        run_dir,
+        allow_missing_derived=True,
+        allow_missing_marker=True,
+        allow_incomplete=True,
+        repo_root=repo_root,
+    )
+    completed, expected = report.get("completed"), report.get("expected")
+    incomplete = (
+        isinstance(completed, int)
+        and isinstance(expected, int)
+        and 0 <= completed < expected
+    )
+    completion_marker_present = (run_dir / "COMPLETED.json").exists()
+    return {
+        **report,
+        "completion_state": "incomplete" if incomplete else "not_incomplete",
+        "resume_safe": bool(report.get("valid"))
+        and incomplete
+        and not completion_marker_present,
+        "completion_marker_present": completion_marker_present,
+    }

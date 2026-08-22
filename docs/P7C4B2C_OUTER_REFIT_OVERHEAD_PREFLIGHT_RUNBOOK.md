@@ -299,8 +299,13 @@ transaction itself is incomplete, recovery is fail-closed: keep its evidence for
 review and do not guess the exit code or resubmit.
 
 For runner resume, first rebuild `SNAPSHOT_P1` with the proven key/value parser.
-Resume only a validator-recognized incomplete run with inactive unit/process and
-the original controls. A corrupt, completed, mismatched, or active run is NO-GO.
+Resume only a B2c structurally safe incomplete run with inactive unit/process and
+the original controls. Missing planned samples, final derived artifacts, and the
+global completion marker are expected before finalization; they do not by
+themselves make a run terminal. Resumability is determined from structural and
+integrity invariants, never by matching validator reason-code text. A corrupt
+persisted sample, provenance/runtime/control mismatch, completed run, or active
+unit is NO-GO.
 
 ```bash
 "$PYTHON" -m creditrep.experiments.p7c4b2e_operations_cli resume-precheck \

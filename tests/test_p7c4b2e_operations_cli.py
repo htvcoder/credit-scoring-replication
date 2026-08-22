@@ -2526,11 +2526,42 @@ def test_outer_resume_precheck_rejects_active_unit_before_mutation(
     ):
         _input(tmp_path / name, "{}")
     monkeypatch.setattr(
-        "creditrep.experiments.p7c4b2c_preflight.validate_artifacts",
-        lambda _path: {"completed": 1, "expected": 2, "reason_codes": []},
+        "creditrep.experiments.p7c4b2c_preflight.validate_resume_state",
+        lambda _path: {
+            "completed": 1,
+            "expected": 2,
+            "reason_codes": [],
+            "resume_safe": True,
+        },
     )
     snapshot = {field: "" for field in UNIT_SNAPSHOT_FIELDS}
     snapshot["ActiveState"] = "active"
     result = resume_precheck(tmp_path, unit_snapshot=snapshot)
     assert result["valid"] is False
     assert "resume_precheck_unit_active" in result["reason_codes"]
+
+
+def test_outer_resume_precheck_consumes_canonical_structural_resume_state(
+    tmp_path, monkeypatch
+):
+    for name in (
+        "plan.json",
+        "manifest.json",
+        "environment.json",
+        "authorization_runtime.json",
+    ):
+        _input(tmp_path / name, "{}")
+    monkeypatch.setattr(
+        "creditrep.experiments.p7c4b2c_preflight.validate_resume_state",
+        lambda _path: {
+            "completed": 1,
+            "expected": 2,
+            "reason_codes": ["future_derived_summary_mismatch"],
+            "resume_safe": True,
+        },
+    )
+    snapshot = {field: "" for field in UNIT_SNAPSHOT_FIELDS}
+    snapshot["ActiveState"] = "inactive"
+    snapshot["MainPID"] = "0"
+    result = resume_precheck(tmp_path, unit_snapshot=snapshot)
+    assert result["valid"] is True
